@@ -41,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tpub-backend-jar
-          path: BackEnd/target/*.jar
+          path: BackEnd/target/BackEnd-*.jar
           retention-days: 7
 
   flyway-validation:
@@ -64,28 +64,32 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
-    container:
-      image: maven:3.9.9-eclipse-temurin-21
-
-    defaults:
-      run:
-        working-directory: BackEnd
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
 
-      - name: Install curl
-        run: apt-get update && apt-get install -y curl
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tpub-backend-jar
+          path: app-jar
 
       - name: Start app against PostgreSQL (Flyway + JPA validate)
-        run: mvn -B spring-boot:start
+        run: |
+          JAR=$(ls app-jar/BackEnd-*.jar | head -1)
+          echo "Starting $JAR"
+          java -jar "$JAR" &
+          echo $! > app.pid
         env:
           SPRING_PROFILES_ACTIVE: docker
-          DB_HOST: postgres
+          DB_HOST: localhost
           DB_PORT: 5432
           POSTGRES_DB: tpub
           POSTGRES_USER: tpub_user
+          POSTGRES_PASSWORD: ci_test_password
           SPRING_DATASOURCE_USERNAME: tpub_user
           SPRING_DATASOURCE_PASSWORD: ci_test_password
           JWT_SECRET: ci_jwt_secret_min_32_characters_long_xx
@@ -105,13 +109,4 @@ jobs:
 
       - name: Stop application
         if: always()
-        run: mvn -B spring-boot:stop
-        env:
-          SPRING_PROFILES_ACTIVE: docker
-          DB_HOST: postgres
-          DB_PORT: 5432
-          POSTGRES_DB: tpub
-          POSTGRES_USER: tpub_user
-          SPRING_DATASOURCE_USERNAME: tpub_user
-          SPRING_DATASOURCE_PASSWORD: ci_test_password
-          JWT_SECRET: ci_jwt_secret_min_32_characters_long_xx
+        run: kill $(cat app.pid) 2>/dev/null || true
