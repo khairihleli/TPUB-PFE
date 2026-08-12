@@ -1,0 +1,117 @@
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'BackEnd/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'BackEnd/**'
+      - '.github/workflows/ci.yml'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Maven Build & Tests
+    runs-on: ubuntu-latest
+    container:
+      image: maven:3.9.9-eclipse-temurin-21
+
+    defaults:
+      run:
+        working-directory: BackEnd
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run tests
+        run: mvn -B clean test
+
+      - name: Build application JAR
+        run: mvn -B package -DskipTests
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpub-backend-jar
+          path: BackEnd/target/*.jar
+          retention-days: 7
+
+  flyway-validation:
+    name: Flyway Migration Check
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tpub
+          POSTGRES_USER: tpub_user
+          POSTGRES_PASSWORD: ci_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U tpub_user -d tpub"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    container:
+      image: maven:3.9.9-eclipse-temurin-21
+
+    defaults:
+      run:
+        working-directory: BackEnd
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install curl
+        run: apt-get update && apt-get install -y curl
+
+      - name: Start app against PostgreSQL (Flyway + JPA validate)
+        run: mvn -B spring-boot:start
+        env:
+          SPRING_PROFILES_ACTIVE: docker
+          DB_HOST: postgres
+          DB_PORT: 5432
+          POSTGRES_DB: tpub
+          POSTGRES_USER: tpub_user
+          SPRING_DATASOURCE_USERNAME: tpub_user
+          SPRING_DATASOURCE_PASSWORD: ci_test_password
+          JWT_SECRET: ci_jwt_secret_min_32_characters_long_xx
+
+      - name: Wait for health endpoint
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/actuator/health; then
+              echo "Application is healthy"
+              exit 0
+            fi
+            echo "Waiting for app... ($i/30)"
+            sleep 5
+          done
+          echo "Application failed to start"
+          exit 1
+
+      - name: Stop application
+        if: always()
+        run: mvn -B spring-boot:stop
+        env:
+          SPRING_PROFILES_ACTIVE: docker
+          DB_HOST: postgres
+          DB_PORT: 5432
+          POSTGRES_DB: tpub
+          POSTGRES_USER: tpub_user
+          SPRING_DATASOURCE_USERNAME: tpub_user
+          SPRING_DATASOURCE_PASSWORD: ci_test_password
+          JWT_SECRET: ci_jwt_secret_min_32_characters_long_xx
