@@ -1,0 +1,24 @@
+# Maven build output — never copy into image context
+target/
+
+# Version control & IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+
+# Runtime / secrets
+uploads/
+.env
+.env.*
+
+# Docs & misc (not needed to compile)
+*.md
+**/.DS_Store
+*.log
+hs_err_pid*
+
+# Test reports (large, irrelevant to image build)
+**/surefire-reports/
+**/test-classes/

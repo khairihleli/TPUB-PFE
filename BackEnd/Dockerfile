@@ -1,26 +1,25 @@
+# syntax=docker/dockerfile:1
 # =============================================================================
 # TPUB Backend — Multi-stage Docker build
 # Stage 1: Maven build  |  Stage 2: JRE runtime (eclipse-temurin 21 Alpine)
 # =============================================================================
 
 # --- Build stage -------------------------------------------------------------
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
 
 WORKDIR /app
 
-# Install Maven (not bundled in temurin JRE/JDK slim images)
-RUN apk add --no-cache maven
-
-# Cache dependency layer: copy POM first so source changes don't bust deps
+# Layer 1 — dependencies only (re-runs when pom.xml changes, NOT when src/ changes)
 COPY pom.xml .
-COPY .mvn/ .mvn/
-COPY mvnw mvnw.cmd ./
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -q \
+    org.apache.maven.plugins:maven-dependency-plugin:3.8.1:go-offline \
+    -DskipTests
 
-RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
-
-# Copy source and build the fat JAR (skip tests in container build)
+# Layer 2 — compile & package (deps already in ~/.m2 cache mount)
 COPY src/ src/
-RUN ./mvnw clean package -DskipTests -B
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -q package -DskipTests
 
 # --- Runtime stage ------------------------------------------------------------
 FROM eclipse-temurin:21-jre-alpine AS runtime
@@ -28,24 +27,21 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 LABEL org.opencontainers.image.title="TPUB Backend"
 LABEL org.opencontainers.image.description="TPUB intelligent advertising platform — Spring Boot API"
 
-# Non-root user for security
 RUN addgroup -S tpub && adduser -S tpub -G tpub
 
 WORKDIR /app
 
-# Create upload directory with correct ownership
 RUN mkdir -p /app/uploads && chown -R tpub:tpub /app
 
-# Runtime utilities for container health probing
 RUN apk add --no-cache curl
 
-COPY --from=builder --chown=tpub:tpub /app/target/*.jar app.jar
+COPY --from=builder --chown=tpub:tpub /app/target/BackEnd-*.jar app.jar
 
 USER tpub
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD curl -f http://localhost:8080/actuator/health || exit 1
 
 ENTRYPOINT ["java", \
