@@ -1,5 +1,7 @@
 package com.example.tpubpfe.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -27,8 +29,17 @@ public class CampaignRequest {
     @PositiveOrZero
     private BigDecimal budget;
 
+    @Schema(type = "string", format = "date", example = "2026-06-01")
     private LocalDate startDate;
+
+    @Schema(type = "string", format = "date", example = "2026-08-31")
     private LocalDate endDate;
+
+    @Schema(type = "string", format = "time", example = "08:00:00", description = "Format HH:mm:ss — laisser vide si non utilisé")
+    @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime startTime;
+
+    @Schema(type = "string", format = "time", example = "22:00:00", description = "Format HH:mm:ss — laisser vide si non utilisé")
+    @JsonFormat(pattern = "HH:mm:ss")
     private LocalTime endTime;
 }

@@ -31,6 +31,9 @@ public class TpubProperties {
     public static class Ai {
         private String serviceUrl;
         private long timeoutMs;
+        private boolean openaiEnabled = true;
+        private String openaiApiKey;
+        private String openaiModel = "gpt-4o-mini";
     }
 
     @Data
