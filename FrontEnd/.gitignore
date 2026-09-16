@@ -1,0 +1,25 @@
+# dependencies
+node_modules
+
+# next.js
+.next
+out
+next-env.d.ts.bak
+*.tsbuildinfo
+
+# local data / QA artefacts
+.data
+.qa
+
+# tests
+test-results
+playwright-report
+coverage
+
+# env
+.env*.local
+.env
+
+# misc
+.DS_Store
+npm-debug.log*

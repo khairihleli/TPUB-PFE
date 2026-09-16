@@ -1,0 +1,144 @@
+/*
+ * Network map — scoped overrides of MapLibre's default controls + map-only effects.
+ * Colours come from the design tokens (CSS variables in globals.css) only.
+ */
+
+.tpub-map {
+  --tpub-map-surface: var(--surface-2);
+}
+
+/*
+ * Map chrome surface (search, toolbar, panels, labels, cards): opaque token, no backdrop-filter.
+ * A blur over the WebGL canvas repaints on every map frame (VD-03, FFA-15).
+ */
+.tpub-map-surface {
+  background-color: var(--tpub-map-surface, var(--surface-2));
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--elev-lift);
+}
+
+.tpub-map .maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--blue-text);
+  outline-offset: -2px;
+}
+
+.tpub-map .maplibregl-map {
+  font: inherit;
+  background: var(--bg);
+}
+
+/* Markers: let our buttons own the focus ring & cursor */
+.tpub-map .maplibregl-marker {
+  outline: none;
+}
+.tpub-map .maplibregl-marker:has(:focus-visible) {
+  z-index: 40 !important;
+}
+.tpub-map .maplibregl-marker.maplibregl-marker-draggable:active {
+  cursor: grabbing;
+}
+
+/* Attribution (compact) */
+.tpub-map .maplibregl-ctrl-bottom-right,
+.tpub-map .maplibregl-ctrl-bottom-left {
+  z-index: 2;
+}
+.tpub-map .maplibregl-ctrl.maplibregl-ctrl-attrib,
+.tpub-map .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  background-color: var(--bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  margin: 0 8px 8px 0;
+}
+/* Narrow maps: lift scale + attribution above the bottom status chips (no overlap). */
+@media (max-width: 47.99rem) {
+  .tpub-map .maplibregl-ctrl-bottom-right {
+    bottom: 2.75rem;
+  }
+}
+/* Desktop: the vertical tool rail owns the right edge (it can run the full map height), so
+   scale + attribution sit to its left instead of underneath it. */
+@media (min-width: 48rem) {
+  .tpub-map:not([data-map-chrome="compact"]) .maplibregl-ctrl-bottom-right {
+    right: 4.25rem;
+  }
+}
+.tpub-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  min-height: 24px;
+  padding: 2px 28px 2px 8px;
+}
+.tpub-map .maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  padding: 0;
+}
+.tpub-map .maplibregl-ctrl.maplibregl-ctrl-attrib a {
+  color: var(--ink-soft);
+}
+.tpub-map .maplibregl-ctrl-attrib a:hover {
+  color: var(--blue-text);
+}
+.tpub-map .maplibregl-ctrl-attrib-button {
+  background-color: color-mix(in srgb, var(--ink) 88%, transparent);
+  border-radius: 999px;
+}
+.tpub-map .maplibregl-ctrl-attrib-button:focus-visible,
+.tpub-map .maplibregl-ctrl-attrib a:focus-visible {
+  outline: 2px solid var(--blue-text);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* Scale */
+.tpub-map .maplibregl-ctrl.maplibregl-ctrl-scale {
+  background-color: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-top: 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  margin: 0 0 10px 12px;
+}
+
+/* Focus pulse on a Porteur marker */
+@keyframes tpub-map-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.tpub-map-pulse {
+  animation: tpub-map-pulse 1.4s cubic-bezier(0.16, 1, 0.3, 1) 3;
+}
+
+/* Measure / catchment crosshair at the centre of the view (keyboard helper) */
+.tpub-map-crosshair::before,
+.tpub-map-crosshair::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: var(--blue-text);
+  opacity: 0.8;
+}
+.tpub-map-crosshair::before {
+  width: 22px;
+  height: 1.5px;
+  transform: translate(-50%, -50%);
+}
+.tpub-map-crosshair::after {
+  width: 1.5px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tpub-map-pulse {
+    animation: none;
+    display: none;
+  }
+}

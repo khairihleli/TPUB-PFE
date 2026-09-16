@@ -18,7 +18,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -63,6 +65,21 @@ public class DiffusionSupport {
 
     @Column(name = "visibility_score", precision = 5, scale = 2)
     private BigDecimal visibilityScore;
+
+    // Explicit VARCHAR: Hibernate maps a length-1 enum to CHAR(1) by default, the column is VARCHAR(1).
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "porteur_type", length = 1)
+    private PorteurType porteurType;
+
+    @Column(name = "mast_height_m")
+    private Short mastHeightM;
+
+    @Column(name = "heading_deg")
+    private Short headingDeg;
+
+    @Column(length = 255)
+    private String address;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

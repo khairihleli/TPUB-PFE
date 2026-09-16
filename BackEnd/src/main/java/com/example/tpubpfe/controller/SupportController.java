@@ -1,11 +1,13 @@
 package com.example.tpubpfe.controller;
 
+import com.example.tpubpfe.dto.SupportAvailabilitySlot;
 import com.example.tpubpfe.dto.SupportRequest;
 import com.example.tpubpfe.dto.SupportResponse;
 import com.example.tpubpfe.service.SupportService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -15,8 +17,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -52,6 +56,17 @@ public class SupportController {
     @GetMapping("/{id}")
     public ResponseEntity<SupportResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(supportService.getById(id));
+    }
+
+    @Operation(summary = "Booked periods of a support (TEMPORAIRE/CONFIRMEE reservations overlapping [from, to])")
+    @PreAuthorize("hasAnyRole('ADMINISTRATEUR', 'SUPERVISEUR', 'OPERATEUR', 'ANNONCEUR')")
+    @GetMapping("/{id}/availability")
+    public ResponseEntity<List<SupportAvailabilitySlot>> getAvailability(
+            @PathVariable Long id,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return ResponseEntity.ok(supportService.getAvailability(id, from, to));
     }
 
     @Operation(summary = "Update a support")

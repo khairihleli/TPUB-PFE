@@ -22,4 +22,8 @@ public class SupportResponse {
     private BigDecimal longitude;
     private String technicalStatus;
     private Short diffusionCapacity;
+    private String porteurType;
+    private Short mastHeightM;
+    private Short headingDeg;
+    private String address;
 }

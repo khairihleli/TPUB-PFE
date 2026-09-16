@@ -35,6 +35,21 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     @Query("""
             SELECT r FROM Reservation r
             WHERE r.support.id = :supportId
+              AND r.reservationStatus IN :statuses
+              AND r.startDate <= :to
+              AND r.endDate >= :from
+            ORDER BY r.startDate ASC, r.endDate ASC, r.startTime ASC
+            """)
+    List<Reservation> findBookedPeriodsForSupport(
+            @Param("supportId") Long supportId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
+            @Param("statuses") List<ReservationStatus> statuses
+    );
+
+    @Query("""
+            SELECT r FROM Reservation r
+            WHERE r.support.id = :supportId
               AND r.reservationStatus = :status
               AND r.startDate <= :date
               AND r.endDate >= :date
