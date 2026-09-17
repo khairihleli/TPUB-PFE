@@ -229,7 +229,7 @@ export interface HeatPointInput {
   features: {
     type: "Feature";
     geometry: { type: "Point"; coordinates: [number, number] };
-    properties: { weight: number } & Record<string, unknown>;
+    properties: { weight: number };
   }[];
 }
 

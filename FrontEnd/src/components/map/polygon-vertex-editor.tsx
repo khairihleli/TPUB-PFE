@@ -108,9 +108,10 @@ export function PolygonVertexEditor({
               <span className="min-w-14 font-label text-[0.75rem] font-semibold text-muted-2">
                 Sommet {index + 1}
               </span>
-              <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
-                <span>Latitude</span>
+              <div className="flex flex-col gap-1 text-[0.75rem] text-muted">
+                <label htmlFor={`${id}-lat-${index}`}>Latitude</label>
                 <Input
+                  id={`${id}-lat-${index}`}
                   type="number"
                   step="0.000001"
                   min={-90}
@@ -124,10 +125,11 @@ export function PolygonVertexEditor({
                   }}
                   className="w-32"
                 />
-              </label>
-              <label className="flex flex-col gap-1 text-[0.75rem] text-muted">
-                <span>Longitude</span>
+              </div>
+              <div className="flex flex-col gap-1 text-[0.75rem] text-muted">
+                <label htmlFor={`${id}-lng-${index}`}>Longitude</label>
                 <Input
+                  id={`${id}-lng-${index}`}
                   type="number"
                   step="0.000001"
                   min={-180}
@@ -141,7 +143,7 @@ export function PolygonVertexEditor({
                   }}
                   className="w-32"
                 />
-              </label>
+              </div>
               <div className="ml-auto flex items-center gap-1">
                 <Button
                   type="button"

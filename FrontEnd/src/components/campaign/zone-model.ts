@@ -19,7 +19,27 @@ import type {
 import { translateFieldMessage } from "@/lib/api/messages";
 import { AVAILABILITY_STATUS_ORDER } from "@/lib/campaign-status";
 import { formatCount, formatDateRange, formatNumber } from "@/lib/format";
-import { CAMPAIGN_ZONE_LIMITS, distanceKm } from "@/lib/geo";
+import type {
+  CampaignZoneInput,
+  CampaignZoneResponseCarte,
+  PriceBreakdown,
+} from "@/lib/api/types-carte";
+import { CAMPAIGN_ZONE_LIMITS, distanceKm, withinKm } from "@/lib/geo";
+import type { LngLat } from "@/lib/network/geo";
+import {
+  EMPTY_POLYGON_DRAFT,
+  partsToDraft,
+  type MapPolygon,
+  type PolygonDraft,
+} from "@/lib/network/overlays";
+import {
+  formatAreaKm2,
+  geoJsonToRings,
+  pointInPolygon,
+  polygonAreaKm2,
+  ringsToGeoJson,
+  validatePolygon,
+} from "@/lib/polygon";
 import { formatSlot, normalizeTime } from "@/lib/time-slots";
 
 /** Radius slider of the step (a narrower range than the API's 0.1..50 km). */
@@ -93,6 +113,207 @@ export function sameCircles(
       (c.label ?? "") === (d.label ?? "")
     );
   });
+}
+
+// ---------------------------------------------------------------------------
+// Zones: circles and polygons (docs/round2-contract.md §4.3)
+// ---------------------------------------------------------------------------
+
+export interface DraftPolygon {
+  key: string;
+  /** Closed ring, open vertex list (≥ 3 once valid). */
+  vertices: LngLat[];
+  label: string | null;
+}
+
+export type DraftZone =
+  | ({ type: "CERCLE" } & DraftCircle)
+  | ({ type: "POLYGONE" } & DraftPolygon);
+
+export function isPolygonZone(zone: DraftZone): zone is { type: "POLYGONE" } & DraftPolygon {
+  return zone.type === "POLYGONE";
+}
+
+export function newZoneKey(): string {
+  return newCircleKey();
+}
+
+/** Draft zones of a campaign (polygons keep their stored ring). */
+export function zonesFromResponse(
+  zones: readonly CampaignZoneResponseCarte[] | undefined,
+): DraftZone[] {
+  return (zones ?? []).map((z) => {
+    if (z.type === "POLYGONE" && z.polygon) {
+      const parts = geoJsonToRings(z.polygon);
+      return {
+        type: "POLYGONE" as const,
+        key: `zone-${z.id}`,
+        vertices: partsToDraft(parts).vertices,
+        label: z.label,
+      };
+    }
+    return {
+      type: "CERCLE" as const,
+      key: `zone-${z.id}`,
+      latitude: z.latitude,
+      longitude: z.longitude,
+      radiusKm: z.radiusKm,
+      label: z.label,
+    };
+  });
+}
+
+/** Body of `campaignZonesApi.set` (labels trimmed, coordinates rounded). */
+export function toZonesRequest(zones: readonly DraftZone[]): CampaignZoneInput[] {
+  return zones.map((zone) => {
+    const label = zone.label?.trim() ? zone.label.trim().slice(0, 150) : null;
+    if (isPolygonZone(zone)) {
+      return { type: "POLYGONE", polygon: ringsToGeoJson([[zone.vertices]]), label };
+    }
+    return {
+      type: "CERCLE",
+      latitude: roundCoordinate(zone.latitude),
+      longitude: roundCoordinate(zone.longitude),
+      radiusKm: Math.round(zone.radiusKm * 10) / 10,
+      label,
+    };
+  });
+}
+
+/** Same geometry, order and labels. */
+export function sameZones(a: readonly DraftZone[], b: readonly DraftZone[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((zone, i) => {
+    const other = b[i];
+    if (!other || other.type !== zone.type || (zone.label ?? "") !== (other.label ?? "")) {
+      return false;
+    }
+    if (isPolygonZone(zone)) {
+      const o = other as { type: "POLYGONE" } & DraftPolygon;
+      return (
+        zone.vertices.length === o.vertices.length &&
+        zone.vertices.every((v, j) => {
+          const w = o.vertices[j];
+          return w !== undefined && Math.abs(v.lat - w.lat) < 1e-7 && Math.abs(v.lng - w.lng) < 1e-7;
+        })
+      );
+    }
+    const o = other as { type: "CERCLE" } & DraftCircle;
+    return (
+      Math.abs(zone.latitude - o.latitude) < 1e-6 &&
+      Math.abs(zone.longitude - o.longitude) < 1e-6 &&
+      Math.abs(zone.radiusKm - o.radiusKm) < 1e-6
+    );
+  });
+}
+
+/** Draft of the polygon being edited (empty for a circle). */
+export function zoneDraft(zone: DraftZone | null | undefined): PolygonDraft {
+  if (!zone || !isPolygonZone(zone)) return EMPTY_POLYGON_DRAFT;
+  return { vertices: zone.vertices, closed: zone.vertices.length >= 3 };
+}
+
+/** π·r² for a circle, planar area for a polygon (null while the polygon is incomplete). */
+export function zoneAreaKm2(zone: DraftZone): number | null {
+  if (isPolygonZone(zone)) {
+    if (zone.vertices.length < 3) return null;
+    return polygonAreaKm2([[zone.vertices]]);
+  }
+  return Math.round(Math.PI * zone.radiusKm * zone.radiusKm * 1000) / 1000;
+}
+
+/** « 3,2 km² », null while a polygon has fewer than 3 vertices. */
+export function zoneAreaLabel(zone: DraftZone): string | null {
+  const area = zoneAreaKm2(zone);
+  return area === null ? null : formatAreaKm2(area);
+}
+
+/** French reason when the zone cannot be saved yet (same rules as the backend). */
+export function zoneError(zone: DraftZone): string | null {
+  if (!isPolygonZone(zone)) return null;
+  if (zone.vertices.length < 3) return "Un polygone doit avoir au moins 3 sommets.";
+  const result = validatePolygon([[zone.vertices]]);
+  return result.ok ? null : result.reason;
+}
+
+/** Porteurs inside a zone (client-side: haversine for a circle, point-in-polygon otherwise). */
+export function supportsInsideZone<S extends { latitude: number; longitude: number }>(
+  zone: DraftZone,
+  supports: readonly S[],
+): S[] {
+  if (isPolygonZone(zone)) {
+    if (zone.vertices.length < 3) return [];
+    return supports.filter((s) => pointInPolygon({ lng: s.longitude, lat: s.latitude }, [[zone.vertices]]));
+  }
+  return supports.filter((s) =>
+    withinKm(s.latitude, s.longitude, zone.latitude, zone.longitude, zone.radiusKm),
+  );
+}
+
+/** Circles drawn as pseudo-zones; polygons keep their index so both share « Zone n ». */
+export function zonesAsMapZones(zones: readonly DraftZone[]): ZoneResponse[] {
+  return zones.flatMap((zone, i) =>
+    isPolygonZone(zone)
+      ? []
+      : [
+          {
+            id: circleMapId(i),
+            name: circleName(zone, i),
+            latitude: zone.latitude,
+            longitude: zone.longitude,
+            radiusKm: zone.radiusKm,
+            isActive: true,
+          },
+        ],
+  );
+}
+
+/** Polygons drawn by the map (the active one is highlighted, the edited one is skipped). */
+export function zonesAsMapPolygons(
+  zones: readonly DraftZone[],
+  options: { activeKey?: string | null; editingKey?: string | null; tone?: MapPolygon["tone"] } = {},
+): MapPolygon[] {
+  return zones.flatMap((zone, i) =>
+    isPolygonZone(zone) && zone.vertices.length >= 3 && zone.key !== options.editingKey
+      ? [
+          {
+            id: zone.key,
+            rings: [[zone.vertices]],
+            label: circleName(zone, i),
+            tone: options.tone ?? "brand",
+            active: zone.key === options.activeKey,
+          },
+        ]
+      : [],
+  );
+}
+
+/** Zones of a saved campaign drawn on a read-only map. */
+export function responseZonesAsMapPolygons(
+  zones: readonly CampaignZoneResponseCarte[] | undefined,
+): MapPolygon[] {
+  return zonesAsMapPolygons(zonesFromResponse(zones));
+}
+
+/** « ×1,18 » chip of a dynamic price (null when the multiplier is 1 or absent). */
+export function multiplierLabel(multiplier: number | null | undefined): string | null {
+  if (multiplier === null || multiplier === undefined) return null;
+  if (Math.abs(multiplier - 1) < 0.005) return null;
+  return `×${multiplier.toLocaleString("fr-TN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Sum of the base costs of a breakdown list (« Coût de base »). */
+export function totalBaseCost(
+  lines: readonly { baseCost?: number; estimatedCost: number }[],
+): number {
+  return Math.round(lines.reduce((sum, l) => sum + (l.baseCost ?? l.estimatedCost), 0) * 1000) / 1000;
+}
+
+/** Explanations of a breakdown, with a fallback when the backend sent none. */
+export function breakdownExplanations(pricing: PriceBreakdown | null | undefined): string[] {
+  if (!pricing) return [];
+  if (pricing.explanations.length > 0) return pricing.explanations;
+  return pricing.enabled ? [] : ["Tarification dynamique désactivée : tarif de base appliqué."];
 }
 
 /** Display name of a circle: its label, else « Zone n ». */

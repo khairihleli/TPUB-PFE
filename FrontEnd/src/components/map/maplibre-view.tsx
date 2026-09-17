@@ -308,7 +308,7 @@ export function MapLibreView(props: EngineProps) {
         ],
         { layers: [MAP_LAYER_IDS.polygonDraftVertices] },
       );
-      const index = hit[0]?.properties?.index;
+      const index: unknown = hit[0]?.properties?.index;
       if (typeof index !== "number") return;
       e.preventDefault();
       dragIndex = index;

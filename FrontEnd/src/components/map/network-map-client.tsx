@@ -440,7 +440,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
           break;
       }
     },
-    [ui.tool, runPlace, onMapClick],
+    [ui.tool, runPlace, onMapClick, polygonDraft, applyDraft],
   );
 
   const onReady = useCallback((controller: MapController) => {
