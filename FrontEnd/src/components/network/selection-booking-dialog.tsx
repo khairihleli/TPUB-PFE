@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { BATCH_BOOKING_DEPS } from "@/components/network/booking-deps";
 import {
   availabilityWindow,
   BOOKING_EXPLAINER,
@@ -23,7 +24,7 @@ import {
   isDraftCampaign,
   OFF_PERIOD_LABEL,
   OFF_PERIOD_WARNING,
-  runBookingPlan,
+  runBatchBooking,
   sameSchedule,
   scheduleFromCampaign,
   summarizeOutcomes,
@@ -176,11 +177,13 @@ function SelectionBookingContent({
         for (const r of requests) next.set(r.supportId, { status: "pending" });
         return next;
       });
-      const outcomes = await runBookingPlan(
-        requests,
-        (request) => reservationsApi.create(request),
-        (supportId, outcome) => setResults((prev) => new Map(prev ?? []).set(supportId, outcome)),
-      );
+      // Zones first (the Porteurs must lie inside a campaign circle), then one batch.
+      const outcomes = await runBatchBooking(requests, supports, BATCH_BOOKING_DEPS);
+      setResults((prev) => {
+        const next = new Map(prev ?? []);
+        for (const [supportId, outcome] of outcomes) next.set(supportId, outcome);
+        return next;
+      });
       // Per-Porteur results stay inline in the dialog (no toast on top of it).
       const reservedIds = [...outcomes.entries()]
         .filter(([, o]) => o.status === "reserved")

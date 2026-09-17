@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AvailabilityStrip } from "@/components/network/availability-strip";
+import { BATCH_BOOKING_DEPS } from "@/components/network/booking-deps";
 import {
   availabilityWindow,
   AVAILABILITY_STRIP_DAYS,
@@ -24,6 +25,7 @@ import {
   proposeDefaultSchedule,
   reserveBlocker,
   reserveButtonLabel,
+  runBatchBooking,
   sameSchedule,
   scheduleFromCampaign,
   scheduleLengthDays,
@@ -37,7 +39,6 @@ import {
 import { CampaignPicker } from "@/components/network/campaign-picker";
 import { ConfiguratorIdentity } from "@/components/network/configurator-identity";
 import {
-  adoptExplorerCreative,
   CreativePreviewImport,
   type StudioCreativeState,
 } from "@/components/network/creative-preview-import";
@@ -53,7 +54,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useStickyBarOffset } from "@/components/ui/use-sticky-bar-offset";
-import { campaignsApi, reservationsApi, supportsApi } from "@/lib/api/endpoints";
+import { campaignsApi, supportsApi } from "@/lib/api/endpoints";
 import type { CampaignResponse, ReservationResponse, SupportResponse } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
 import { formatDateRange } from "@/lib/format";
@@ -107,7 +108,7 @@ export const CHOOSE_CAMPAIGN_MESSAGE =
 
 /**
  * Configurator of the Studio sheet, campaign first (FLOW-03): 01 Campagne · 02 Créneau ·
- * 03 Aperçu · 04 Identité, then « Réserver ce Porteur · dates » → POST /reservations with the
+ * 03 Aperçu · 04 Identité, then « Réserver ce Porteur · dates » → POST /reservations/batch (campaign zones extended first) for the
  * Porteur's own zoneId. A chosen draft applies and locks its period; « Réserver hors période »
  * needs an explicit acknowledgement.
  */
@@ -281,9 +282,20 @@ export function PorteurConfigurator({
         }
         return;
       }
-      const reservation = await reservationsApi.create(
-        toReservationRequest(support, campaign.id, validation.period),
+      // The Porteur must lie inside a campaign circle: zones are extended first if needed.
+      const outcomes = await runBatchBooking(
+        [toReservationRequest(support, campaign.id, validation.period)],
+        [support],
+        BATCH_BOOKING_DEPS,
       );
+      const result = outcomes.get(support.id);
+      if (!result || result.status !== "reserved") {
+        const failed = result ?? outcomeFromError(new Error("Réservation non effectuée."));
+        setOutcome(failed);
+        if (failed.status === "conflict") availability.reload();
+        return;
+      }
+      const reservation = result.reservation;
       availability.setData((prev) => [
         ...(prev ?? []),
         {
@@ -294,7 +306,7 @@ export function PorteurConfigurator({
           reservationStatus: "TEMPORAIRE",
         },
       ]);
-      adoptExplorerCreative(campaign.id, creative.campaignCreative !== null);
+
       // Inline confirmation in the footer (FFA-11): no toast over the sheet.
       setSuccess({ reservation, campaign });
       setAttempted(false);
@@ -493,7 +505,7 @@ export function PorteurConfigurator({
             <CreativePreviewImport
               creative={creative.creative}
               source={creative.source}
-              storeKey={creative.storeKey}
+              campaignId={creative.campaignId}
             />
           ) : null}
           <StudioControls

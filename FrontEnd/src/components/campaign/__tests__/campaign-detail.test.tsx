@@ -1,57 +1,65 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
   mine: vi.fn(),
   remove: vi.fn(),
-  submit: vi.fn(),
+  reopen: vi.fn(),
   update: vi.fn(),
   duplicate: vi.fn(),
   byCampaign: vi.fn(),
-  createReservation: vi.fn(),
+  cancel: vi.fn(),
   report: vi.fn(),
   checkContent: vi.fn(),
+  mediaList: vi.fn(),
+  estimate: vi.fn(),
+  campaignStats: vi.fn(),
+  exportCsv: vi.fn(),
   supportsAll: vi.fn(),
-  zonesAll: vi.fn(),
-  zonesActive: vi.fn(),
   push: vi.fn(),
   replace: vi.fn(),
-  params: { value: "" },
 }));
 
 vi.mock("@/lib/api/endpoints", () => ({
   campaignsApi: {
+    get: mocks.get,
     mine: mocks.mine,
     remove: mocks.remove,
-    submit: mocks.submit,
+    reopen: mocks.reopen,
     update: mocks.update,
     duplicate: mocks.duplicate,
   },
-  reservationsApi: { byCampaign: mocks.byCampaign, create: mocks.createReservation },
+  reservationsApi: { byCampaign: mocks.byCampaign, cancel: mocks.cancel },
   aiApi: { report: mocks.report, checkContent: mocks.checkContent },
+  mediaApi: { list: mocks.mediaList },
+  estimatesApi: { campaign: mocks.estimate },
+  statisticsApi: { campaign: mocks.campaignStats, exportCsv: mocks.exportCsv },
   supportsApi: { all: mocks.supportsAll },
-  zonesApi: { all: mocks.zonesAll, active: mocks.zonesActive },
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(mocks.params.value),
+  useSearchParams: () => new URLSearchParams(""),
   usePathname: () => "/espace/campagnes/7",
   useRouter: () => ({ push: mocks.push, replace: mocks.replace, back: vi.fn() }),
 }));
 
-import Link from "next/link";
+// MapLibre never loads in jsdom: the read-only zones map is covered by zone-model tests.
+vi.mock("@/components/campaign/campaign-zones-map", () => ({
+  CampaignZonesMap: () => null,
+}));
 
 import { CampaignDetail, deleteDescription } from "@/components/campaign/campaign-detail";
 import { CampaignEdit } from "@/components/campaign/campaign-edit";
-import { NavigationGuardProvider } from "@/components/shell/navigation-guard";
 import { ToastProvider } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/errors";
 import type {
+  AiReport,
+  CampaignEstimateResponse,
   CampaignResponse,
+  MediaFileResponse,
   ReservationResponse,
-  SupportResponse,
-  ZoneResponse,
 } from "@/lib/api/types";
 import { todayISO } from "@/lib/format";
 import { resetUnsavedGuards } from "@/lib/forms/unsaved-guard";
@@ -71,15 +79,26 @@ function campaign(partial: Partial<CampaignResponse> = {}): CampaignResponse {
     objective: "Notoriété de la nouvelle gamme",
     budget: 2500,
     consumedBudget: 0,
+    remainingBudget: 2500,
+    estimatedCost: 250,
     status: "BROUILLON",
     aiStatus: null,
     adminStatus: null,
     startDate: isoInDays(5),
     endDate: isoInDays(30),
-    startTime: "08:00:00",
-    endTime: "22:00:00",
+    startTime: "07:00:00",
+    endTime: "12:00:00",
     estimatedViews: 1000,
     priorityScore: 0,
+    rejectionReason: null,
+    adminComment: null,
+    terminationReason: null,
+    mediaCount: 0,
+    zones: [],
+    reservationsCount: 1,
+    editable: true,
+    submittable: true,
+    deletable: true,
     createdAt: "2026-09-01T10:00:00Z",
     submittedAt: null,
     validatedAt: null,
@@ -87,69 +106,90 @@ function campaign(partial: Partial<CampaignResponse> = {}): CampaignResponse {
   };
 }
 
-const ZONE: ZoneResponse = {
-  id: 1,
-  name: "Tunis Centre",
-  latitude: 36.8,
-  longitude: 10.18,
-  radiusKm: 3,
-  isActive: true,
-};
-
-const SCREENS: SupportResponse[] = [
-  {
-    id: 11,
-    zoneId: 1,
-    zoneName: "Tunis Centre",
-    name: "Écran LED Avenue",
-    supportType: "ECRAN",
-    latitude: 0,
-    longitude: 0,
-    technicalStatus: "ACTIF",
-    diffusionCapacity: 6,
-  },
-  {
-    id: 12,
-    zoneId: 1,
-    zoneName: "Tunis Centre",
-    name: "Totem Passage",
-    supportType: "PANNEAU_NUMERIQUE",
-    latitude: 0,
-    longitude: 0,
-    technicalStatus: "ACTIF",
-    diffusionCapacity: 2,
-  },
-];
-
 function reservation(partial: Partial<ReservationResponse> = {}): ReservationResponse {
-  const c = campaign();
   return {
     id: 100,
     campaignId: 7,
+    campaignName: "Lancement Café Démo",
     zoneId: 1,
+    zoneName: "Tunis Centre",
     supportId: 11,
-    startDate: c.startDate!,
-    endDate: c.endDate!,
-    startTime: "08:00:00",
-    endTime: "22:00:00",
+    supportName: "Écran LED Avenue",
+    supportType: "ECRAN",
+    startDate: isoInDays(5),
+    endDate: isoInDays(30),
+    startTime: "07:00:00",
+    endTime: "12:00:00",
     availabilityStatus: "RESERVE",
     reservationStatus: "TEMPORAIRE",
     estimatedViews: 1000,
     estimatedCost: 250,
+    cancellable: true,
     ...partial,
   };
 }
 
-function noReport() {
-  return new ApiError(400, "x", { rawMessage: "No AI report found for campaign: 7" });
+const ESTIMATE: CampaignEstimateResponse = {
+  campaignId: 7,
+  budget: 2500,
+  consumedBudget: 0,
+  remainingBudget: 2500,
+  lines: [],
+  totalViews: 1000,
+  totalCost: 250,
+  budgetCoverage: 10,
+  budgetSufficient: true,
+};
+
+const MEDIA: MediaFileResponse = {
+  id: 3,
+  campaignId: 7,
+  fileName: "affiche-cafe.png",
+  fileType: "IMAGE",
+  mimeType: "image/png",
+  fileSizeBytes: 120_000,
+  durationSeconds: null,
+  widthPx: 1920,
+  heightPx: 1080,
+  url: "/uploads/campaigns/7/a.png",
+  checksum: "abc",
+  sortOrder: 0,
+  createdAt: "2026-09-01T10:00:00Z",
+};
+
+function report(partial: Partial<AiReport> = {}): AiReport {
+  return {
+    campaignId: 7,
+    checkId: 1,
+    aiStatus: "REJECTED",
+    riskScore: 85,
+    qualityScore: 40,
+    detectedIssues: ["alcool"],
+    issues: [{ label: "Mot interdit : alcool", severity: "HIGH", source: "REGLE" }],
+    recommendation: "Contenu non diffusable en l'état : corrigez les points signalés",
+    recommendations: ["Retirez la mention d'alcool"],
+    reason: null,
+    sector: "RESTAURATION",
+    contentType: "IMAGE",
+    extractedText: "happy hour biere",
+    ocrEngine: "SIMULE",
+    engine: "LOCAL",
+    mediaAnalyses: [],
+    matchedRules: [],
+    preview: false,
+    adminDecision: null,
+    checkedAt: "2026-09-10T10:00:00Z",
+    ...partial,
+  };
+}
+
+function serve(c: CampaignResponse, reservations: ReservationResponse[] = [reservation()]) {
+  mocks.get.mockResolvedValue(c);
+  mocks.byCampaign.mockResolvedValue(reservations);
 }
 
 function renderWithToasts(ui: React.ReactElement) {
   return render(<ToastProvider>{ui}</ToastProvider>);
-}
-
-function setVisibility(value: DocumentVisibilityState) {
-  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => value });
 }
 
 beforeEach(() => {
@@ -157,343 +197,231 @@ beforeEach(() => {
   clearResourceCache();
   resetUnsavedGuards();
   window.sessionStorage.clear();
-  mocks.params.value = "";
-  mocks.supportsAll.mockResolvedValue(SCREENS);
-  mocks.zonesAll.mockResolvedValue([ZONE]);
-  mocks.zonesActive.mockResolvedValue([ZONE]);
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-  setVisibility("visible");
+  mocks.report.mockRejectedValue(new ApiError(404, "x", { code: "AI_REPORT_NOT_FOUND" }));
+  mocks.mediaList.mockResolvedValue([]);
+  mocks.estimate.mockResolvedValue(ESTIMATE);
+  mocks.supportsAll.mockResolvedValue([]);
+  mocks.mine.mockResolvedValue([]);
+  mocks.campaignStats.mockRejectedValue(new ApiError(503, "Indisponible"));
 });
 
 describe("CampaignDetail", () => {
-  it("never shows a campaign that is not in /campaigns/mine (IA-23)", async () => {
+  it("shows « Campagne introuvable » for a campaign that is not the caller's (404)", async () => {
+    mocks.get.mockRejectedValue(new ApiError(404, "x", { code: "CAMPAIGN_NOT_FOUND" }));
     mocks.mine.mockResolvedValue([campaign({ id: 3, name: "Soldes d'été" })]);
     renderWithToasts(<CampaignDetail idParam="7" />);
     expect(
       await screen.findByRole("heading", { level: 1, name: "Campagne introuvable" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("Cette campagne n'existe pas ou n'appartient pas à votre espace."),
-    ).toBeInTheDocument();
-    // trail Campagnes › Introuvable (inline outside the shell)
-    expect(screen.getByRole("navigation", { name: "Fil d'Ariane" })).toHaveTextContent(
-      /Campagnes.*Introuvable/,
-    );
-    // recent campaigns from /mine, served by the shared cache
     expect(await screen.findByRole("link", { name: "Soldes d'été" })).toHaveAttribute(
       "href",
       "/espace/campagnes/3",
     );
-    expect(screen.getByRole("button", { name: /Rechercher/ })).toBeInTheDocument();
-    expect(mocks.mine).toHaveBeenCalledTimes(1);
     expect(mocks.byCampaign).not.toHaveBeenCalled();
-    expect(mocks.report).not.toHaveBeenCalled();
   });
 
-  it("renders a draft: header actions, sections, linked objects, no AI report request", async () => {
-    mocks.mine.mockResolvedValue([campaign()]);
-    mocks.byCampaign.mockResolvedValue([reservation()]);
+  it("renders a draft with its reservations, estimate, media section and cancel action", async () => {
+    const user = userEvent.setup();
+    serve(campaign());
+    mocks.cancel.mockResolvedValue(reservation({ reservationStatus: "ANNULEE" }));
     renderWithToasts(<CampaignDetail idParam="7" />);
 
     const h1 = await screen.findByRole("heading", { level: 1, name: "Lancement Café Démo" });
-    // status pill right after the title (VD-20), advertiser wording
-    expect(h1.nextElementSibling).toHaveTextContent("Brouillon");
     expect(screen.getByText("CAMP-00007")).toBeInTheDocument();
-    expect(mocks.report).not.toHaveBeenCalled();
-
     const header = h1.closest("header")!;
-    const finalise = within(header).getByRole("link", { name: /Finaliser/ });
-    expect(finalise).toHaveAttribute("href", "/espace/campagnes/nouvelle?id=7&etape=3");
-    const details = within(header).getByRole("link", { name: /Modifier les détails/ });
-    expect(details).toHaveAttribute("href", "/espace/campagnes/nouvelle?id=7&etape=1");
-    // one editing flow per status: no /modifier for drafts (IA-05)
-    expect(
-      screen.queryAllByRole("link").filter((l) => l.getAttribute("href")?.endsWith("/modifier")),
-    ).toHaveLength(0);
-    // tab order primary → secondary → overflow (FFA-24)
-    const focusables = Array.from(header.querySelectorAll<HTMLElement>("a[href], button"));
-    const labels = focusables.map((el) => el.getAttribute("aria-label") ?? el.textContent?.trim());
-    expect(labels.indexOf("Finaliser")).toBeLessThan(labels.indexOf("Modifier les détails"));
-    expect(labels.indexOf("Modifier les détails")).toBeLessThan(labels.indexOf("Plus d'actions"));
-    // no submit gate on the detail page: submission lives in the wizard
-    expect(screen.queryByRole("button", { name: /^Soumettre/ })).not.toBeInTheDocument();
+    expect(within(header).getByRole("link", { name: /Finaliser/ })).toHaveAttribute(
+      "href",
+      "/espace/campagnes/nouvelle?id=7&etape=4",
+    );
 
-    // sections
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Suivi de la campagne" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Coût estimé des créneaux" }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Budget déclaré", { selector: "dt" }).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Budget total/)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Suivi de la campagne" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: "Estimation et budget" })).toBeVisible();
+    expect(screen.getByText("Aucun média")).toBeInTheDocument();
     expect(screen.getByText("Aucune analyse pour cette campagne")).toBeInTheDocument();
-
-    // linked objects (IA-06, IA-07, IA-13)
+    expect(screen.getByText("Pas encore de diffusion")).toBeInTheDocument();
+    expect(mocks.campaignStats).not.toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Écran LED Avenue" })).toHaveAttribute(
       "href",
       "/espace/reseau?porteur=11",
     );
-    expect(screen.getByRole("link", { name: /Voir en 3D.*Écran LED Avenue/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Tunis Centre/ })).toHaveAttribute(
-      "href",
-      "/espace/reseau?zone=1",
-    );
-    expect(screen.getByRole("link", { name: /Tout voir dans Réservations/ })).toHaveAttribute(
-      "href",
-      "/espace/reservations?campagne=7",
-    );
-    expect(screen.getByText("Bloqué · en attente de décision TPUB")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Annuler.*Écran LED Avenue/ }));
+    await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith(100, expect.any(String)));
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2)); // reloaded
   });
 
-  it("deletes after a confirmation naming the campaign and the créneaux released", async () => {
+  it("deletes after a confirmation naming the campaign and the reservations released", async () => {
     const user = userEvent.setup();
-    mocks.mine.mockResolvedValue([campaign()]);
-    mocks.byCampaign.mockResolvedValue([reservation(), reservation({ id: 101, supportId: 12 })]);
+    serve(campaign(), [reservation(), reservation({ id: 101, supportId: 12 })]);
     mocks.remove.mockResolvedValue(undefined);
     renderWithToasts(<CampaignDetail idParam="7" />);
 
     await screen.findByRole("heading", { level: 1, name: "Lancement Café Démo" });
     await user.click(screen.getAllByRole("button", { name: "Plus d'actions" })[0]!);
-    const items = await screen.findAllByRole("menuitem");
-    expect(items.map((i) => i.textContent)).toEqual(["Dupliquer", "Supprimer"]);
-    await user.click(items[1]!);
-
-    const dialog = await screen.findByRole("dialog", {
-      // frTypo binds « » and ? with no-break spaces.
-      name: /^Supprimer «\sLancement Café Démo\s»\s\?$/,
-    });
-    expect(dialog).toHaveTextContent(
-      /2 créneaux bloqués du .+ seront libérés\. Action définitive\./,
+    const item = (await screen.findAllByRole("menuitem")).find((i) =>
+      /Supprimer/.test(i.textContent ?? ""),
     );
+    await user.click(item!);
+    const dialog = await screen.findByRole("dialog", { name: /Supprimer.*Lancement Café Démo/ });
+    expect(dialog).toHaveTextContent(/2 réservations .* seront libérées/);
     await user.click(within(dialog).getByRole("button", { name: "Supprimer" }));
-
     await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith(7));
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/espace/campagnes"));
   });
 
-  it("offers « Dupliquer et corriger » for REJECTED_BY_AI and opens step 2 of the copy", async () => {
+  it("shows the TPUB refusal reason and reopens a BLOCKED campaign for correction", async () => {
     const user = userEvent.setup();
-    const rejected = campaign({
-      status: "REJECTED_BY_AI",
-      aiStatus: "REJECTED",
-      submittedAt: "2026-09-10T10:00:00Z",
-    });
-    mocks.mine.mockResolvedValue([rejected]);
-    mocks.byCampaign.mockResolvedValue([reservation()]);
-    mocks.report.mockResolvedValue({
-      campaignId: 7,
-      aiStatus: "REJECTED",
-      riskScore: 80,
-      qualityScore: 30,
-      detectedIssues: ["texte ambigu"],
-      recommendation: "Revoir le message",
-    });
-    mocks.duplicate.mockResolvedValue(campaign({ id: 8 }));
-    renderWithToasts(<CampaignDetail idParam="7" />);
-
-    expect(await screen.findByText("texte ambigu")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Prochaine étape" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Soumettre/ })).not.toBeInTheDocument();
-
-    // non-draft editable status keeps /modifier, in the overflow menu
-    await user.click(screen.getByRole("button", { name: "Plus d'actions" }));
-    expect(
-      await screen.findByRole("menuitem", { name: /Modifier les informations/ }),
-    ).toHaveAttribute("href", "/espace/campagnes/7/modifier");
-    await user.keyboard("{Escape}");
-
-    await user.click(screen.getAllByRole("button", { name: /Dupliquer et corriger/ })[0]!);
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Dupliquer" }));
-
-    await waitFor(() => expect(mocks.duplicate).toHaveBeenCalledWith(rejected));
-    expect(mocks.remove).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(mocks.push).toHaveBeenCalledWith("/espace/campagnes/nouvelle?id=8&etape=2"),
-    );
-  });
-
-  it("tells the truth about a validated campaign that starts later (FLOW-14, §6.4–6.5)", async () => {
-    mocks.mine.mockResolvedValue([
+    serve(
       campaign({
-        status: "ACTIVE",
-        aiStatus: "APPROVED",
-        adminStatus: "VALIDATED",
-        submittedAt: "2026-09-01T10:00:00Z",
-        validatedAt: "2026-09-02T10:00:00Z",
+        status: "BLOCKED",
+        adminStatus: "REJECTED",
+        rejectionReason: "Visuel illisible sur écran extérieur.",
+        submittable: false,
+        submittedAt: "2026-09-10T10:00:00Z",
       }),
-    ]);
-    mocks.byCampaign.mockResolvedValue([reservation({ reservationStatus: "CONFIRMEE" })]);
-    mocks.report.mockResolvedValue({
-      campaignId: 7,
-      aiStatus: "APPROVED",
-      riskScore: 10,
-      qualityScore: 80,
-      detectedIssues: [],
-      recommendation: "Conforme",
-    });
-    renderWithToasts(<CampaignDetail idParam="7" />);
-
-    const h1 = await screen.findByRole("heading", { level: 1, name: "Lancement Café Démo" });
-    expect(h1.nextElementSibling).toHaveTextContent("Programmée");
-    const stepper = screen.getByRole("list", { name: "Étapes de la campagne" });
-    const steps = within(stepper).getAllByRole("listitem");
-    expect(steps[2]).toHaveTextContent("Validation TPUB — Terminée");
-    expect(steps[3]).toHaveTextContent("Diffusion — À venir");
-    expect(steps[3]).toHaveTextContent("Dans 5 jours");
-    expect(steps[3]).not.toHaveAttribute("aria-current");
-    expect(screen.getAllByText("Diffusion dans 5 jours").length).toBeGreaterThan(0);
-
-    const mail = screen.getByRole("link", { name: /Envoyer le visuel par e-mail/ });
-    expect(mail.getAttribute("href")).toMatch(/^mailto:/);
-    expect(decodeURIComponent(mail.getAttribute("href")!)).toContain("CAMP-00007");
-    // no edit, no delete once validated
-    expect(screen.queryByRole("button", { name: "Plus d'actions" })).not.toBeInTheDocument();
-  });
-
-  it("gives a contact for a refused campaign", async () => {
-    mocks.mine.mockResolvedValue([
-      campaign({ status: "BLOCKED", submittedAt: "2026-09-01T10:00:00Z" }),
-    ]);
-    mocks.byCampaign.mockResolvedValue([reservation({ reservationStatus: "ANNULEE" })]);
-    mocks.report.mockRejectedValue(noReport());
-    renderWithToasts(<CampaignDetail idParam="7" />);
-
-    expect(
-      await screen.findByText("Contactez TPUB pour connaître le motif du refus."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Contacter TPUB/ }).getAttribute("href")).toMatch(
-      /^mailto:.*Motif/,
+      [reservation({ reservationStatus: "ANNULEE", cancellable: false })],
     );
-    expect(screen.getByText("Libéré")).toBeInTheDocument();
-  });
-
-  it("states the support hours while TPUB reviews, with the refresh time", async () => {
-    mocks.mine.mockResolvedValue([
-      campaign({ status: "REVIEW_REQUIRED", submittedAt: "2026-09-01T10:00:00Z" }),
-    ]);
-    mocks.byCampaign.mockResolvedValue([reservation()]);
-    mocks.report.mockRejectedValue(noReport());
+    mocks.reopen.mockResolvedValue(campaign());
     renderWithToasts(<CampaignDetail idParam="7" />);
 
-    expect(await screen.findByText(/lun–⁠?ven, 9\s?h–⁠?18\s?h/)).toBeInTheDocument();
-    expect(screen.getByText(/Mis à jour à \d{2}:\d{2}/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Actualiser" })).toBeInTheDocument();
-    expect(screen.getByText(/Actualisation automatique chaque minute/)).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent(/Vous serez informé/);
+    expect(await screen.findByText("Motif du refus TPUB")).toBeInTheDocument();
+    expect(screen.getByText("Visuel illisible sur écran extérieur.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Annuler.*Écran LED Avenue/ })).toBeNull();
+
+    await user.click(screen.getAllByRole("button", { name: /Corriger/ })[0]!);
+    const dialog = await screen.findByRole("dialog", { name: /Corriger la campagne/ });
+    await user.click(within(dialog).getByRole("button", { name: "Remettre en brouillon" }));
+    await waitFor(() => expect(mocks.reopen).toHaveBeenCalledWith(7));
+    await waitFor(() =>
+      expect(mocks.push).toHaveBeenCalledWith("/espace/campagnes/nouvelle?id=7&etape=2"),
+    );
   });
 
-  it("polls every 10 s while the AI check is pending, pauses when hidden, stops after 2 minutes", async () => {
-    vi.useFakeTimers();
-    mocks.mine.mockResolvedValue([
-      campaign({ status: "PENDING_AI_CHECK", submittedAt: "2026-09-12T10:00:00Z" }),
-    ]);
-    mocks.byCampaign.mockResolvedValue([reservation()]);
-    mocks.report.mockRejectedValue(noReport());
+  it("renders the full AI report of a REJECTED_BY_AI campaign (issues, OCR, sector)", async () => {
+    serve(
+      campaign({
+        status: "REJECTED_BY_AI",
+        aiStatus: "REJECTED",
+        aiRiskScore: 85,
+        aiQualityScore: 40,
+        aiSector: "RESTAURATION",
+        submittable: false,
+        submittedAt: "2026-09-10T10:00:00Z",
+      }),
+    );
+    mocks.report.mockResolvedValue(report());
     renderWithToasts(<CampaignDetail idParam="7" />);
 
-    await act(() => vi.advanceTimersByTimeAsync(50));
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Lancement Café Démo" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Le résultat s'affiche ici dès qu'il est prêt (actualisation automatique pendant 2 minutes).",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Relancer l'analyse/ })).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent(/Vous serez informé/);
-    expect(mocks.mine).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Mot interdit : alcool")).toBeInTheDocument();
+    expect(screen.getByText("Retirez la mention d'alcool")).toBeInTheDocument();
+    expect(screen.getByText("happy hour biere")).toBeInTheDocument();
+    expect(screen.getAllByText(/OCR simulé/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Restauration/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Risque 85\/100 · qualité 40\/100/)).toBeInTheDocument();
+  });
 
-    // React commits state updates when act() ends: flush the refetch it schedules.
-    const advance = async (ms: number) => {
-      await act(() => vi.advanceTimersByTimeAsync(ms));
-      await act(() => vi.advanceTimersByTimeAsync(50));
-    };
+  it("duplicates through the server, with or without the media", async () => {
+    const user = userEvent.setup();
+    serve(campaign({ status: "TERMINATED", mediaCount: 2, terminationReason: "PERIODE_TERMINEE" }));
+    mocks.mediaList.mockResolvedValue([MEDIA]);
+    mocks.campaignStats.mockResolvedValue({
+      campaignId: 7,
+      name: "Lancement Café Démo",
+      status: "TERMINATED",
+      budget: 2500,
+      consumedBudget: 120.5,
+      remainingBudget: 2379.5,
+      estimatedViews: 1000,
+      estimatedCost: 250,
+      views: 900,
+      clicks: 12,
+      interactions: 3,
+      lastDiffusionAt: "2026-09-12T10:00:00Z",
+      daily: [{ date: "2026-09-12", views: 900, clicks: 12, interactions: 3, cost: 120.5 }],
+      bySupport: [
+        { supportId: 11, name: "Écran LED Avenue", zoneName: "Tunis Centre", views: 900 },
+      ],
+      byZone: [{ zoneId: 1, name: "Tunis Centre", views: 900 }],
+    });
+    mocks.duplicate.mockResolvedValue(campaign({ id: 8, name: "Copie de Lancement Café Démo" }));
+    renderWithToasts(<CampaignDetail idParam="7" />);
 
-    await advance(10_000);
-    expect(mocks.mine).toHaveBeenCalledTimes(2);
+    await screen.findByRole("heading", { level: 1, name: "Lancement Café Démo" });
+    expect(screen.getAllByText("Période de diffusion terminée").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: "Exporter en CSV" })).toBeInTheDocument();
+    expect(mocks.campaignStats).toHaveBeenCalledWith(7, expect.anything());
+    expect(screen.getAllByRole("img", { name: /affiche-cafe\.png/ }).length).toBeGreaterThan(0);
 
-    setVisibility("hidden");
-    await advance(30_000);
-    expect(mocks.mine).toHaveBeenCalledTimes(2);
-
-    setVisibility("visible");
-    await advance(90_000);
-    const calls = mocks.mine.mock.calls.length;
-    expect(calls).toBeGreaterThan(2);
-    await advance(60_000);
-    expect(mocks.mine).toHaveBeenCalledTimes(calls);
-    expect(screen.getByText(/Actualisation automatique arrêtée/)).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Plus d'actions" })[0]!);
+    const item = (await screen.findAllByRole("menuitem")).find((i) =>
+      /Dupliquer/.test(i.textContent ?? ""),
+    );
+    await user.click(item!);
+    const dialog = await screen.findByRole("dialog", { name: /Dupliquer/ });
+    await user.click(within(dialog).getByRole("checkbox", { name: /Inclure les médias/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Dupliquer" }));
+    await waitFor(() => expect(mocks.duplicate).toHaveBeenCalledWith(7, { includeMedia: false }));
+    await waitFor(() =>
+      expect(mocks.push).toHaveBeenCalledWith("/espace/campagnes/nouvelle?id=8&etape=3"),
+    );
   });
 });
 
 describe("deleteDescription", () => {
-  it("names the créneaux released, or says there are none", () => {
-    expect(deleteDescription({ startDate: "2026-10-14", endDate: "2026-10-20" }, 1)).toBe(
-      "1 créneau bloqué du mer. 14 oct. au mar. 20 oct. 2026 sera libéré. Action définitive.",
+  it("names the reservations released, or says there are none", () => {
+    expect(deleteDescription({ startDate: "2026-10-14", endDate: "2026-10-20" }, 1)).toMatch(
+      /^1 réservation .*14 oct.* sera libérée, ainsi que les médias\. Action définitive\.$/,
     );
     expect(deleteDescription({ startDate: null, endDate: null }, 0)).toBe(
-      "Aucun créneau n'est bloqué pour cette campagne. Action définitive.",
+      "Aucun Porteur n'est réservé pour cette campagne. Action définitive.",
     );
   });
 });
 
 describe("CampaignEdit (/modifier)", () => {
-  it("redirects a draft to the wizard « Détails » step (IA-05)", async () => {
-    mocks.mine.mockResolvedValue([campaign()]);
-    mocks.byCampaign.mockResolvedValue([]);
+  it("redirects a draft to the wizard « Détails » step", async () => {
+    serve(campaign(), []);
     renderWithToasts(<CampaignEdit idParam="7" />);
     await waitFor(() =>
       expect(mocks.replace).toHaveBeenCalledWith("/espace/campagnes/nouvelle?id=7&etape=1"),
     );
-    expect(screen.queryByRole("button", { name: /Enregistrer/ })).not.toBeInTheDocument();
   });
 
-  it("guards a dirty edit when leaving through a link (FLOW-07)", async () => {
+  it("explains the reopen, then saves a BLOCKED campaign back to BROUILLON and resumes the wizard", async () => {
     const user = userEvent.setup();
-    mocks.mine.mockResolvedValue([campaign({ status: "REJECTED_BY_AI", aiStatus: "REJECTED" })]);
-    mocks.byCampaign.mockResolvedValue([]);
-    render(
-      <ToastProvider>
-        <NavigationGuardProvider>
-          <nav aria-label="Navigation principale">
-            <Link href="/espace">Tableau de bord</Link>
-          </nav>
-          <CampaignEdit idParam="7" />
-        </NavigationGuardProvider>
-      </ToastProvider>,
+    const blocked = campaign({
+      status: "BLOCKED",
+      rejectionReason: "Objectif trompeur.",
+      reservationsCount: 0,
+    });
+    serve(blocked, []);
+    mocks.update.mockImplementation((_id: number, body: { name: string }) =>
+      Promise.resolve(campaign({ name: body.name, status: "BROUILLON", reservationsCount: 0 })),
     );
-
-    const name = await screen.findByLabelText(/Nom de la campagne/);
-    await user.type(name, " v2");
-    await user.click(screen.getByRole("link", { name: "Tableau de bord" }));
-    expect(
-      await screen.findByRole("dialog", { name: /^Quitter sans enregistrer\s\?$/ }),
-    ).toBeInTheDocument();
-  });
-
-  it("restores a local draft (FFA-01, key campaign:{id}:edit)", async () => {
-    window.sessionStorage.setItem(
-      "tpub:draft:v1:anon:campaign:7:edit",
-      JSON.stringify({ savedAt: Date.now() - 60_000, value: { name: "Nom restauré" } }),
-    );
-    mocks.mine.mockResolvedValue([campaign({ status: "REJECTED_BY_AI", aiStatus: "REJECTED" })]);
-    mocks.byCampaign.mockResolvedValue([]);
     renderWithToasts(<CampaignEdit idParam="7" />);
 
-    expect(await screen.findByText(/Saisie restaurée/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Nom de la campagne/)).toHaveValue("Nom restauré");
+    expect(await screen.findByText("La campagne repassera en brouillon")).toBeInTheDocument();
+    expect(screen.getByText("Objectif trompeur.")).toBeInTheDocument();
+    const name = screen.getByLabelText(/Nom de la campagne/);
+    await user.clear(name);
+    await user.type(name, "Lancement Café corrigé");
+    await user.click(screen.getByRole("button", { name: /Enregistrer les modifications/ }));
+
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ name: "Lancement Café corrigé" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(mocks.push).toHaveBeenCalledWith("/espace/campagnes/nouvelle?id=7&etape=2"),
+    );
+    expect(await screen.findByText("Campagne remise en brouillon")).toBeInTheDocument();
   });
 
-  it("summarises several errors on submit without calling the API (FFA-12)", async () => {
+  it("summarises several errors on submit without calling the API", async () => {
     const user = userEvent.setup();
-    mocks.mine.mockResolvedValue([campaign({ status: "REJECTED_BY_AI", aiStatus: "REJECTED" })]);
-    mocks.byCampaign.mockResolvedValue([]);
+    serve(campaign({ status: "REJECTED_BY_AI", aiStatus: "REJECTED" }), []);
     renderWithToasts(<CampaignEdit idParam="7" />);
 
     await user.clear(await screen.findByLabelText(/Nom de la campagne/));

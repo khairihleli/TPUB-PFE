@@ -1,8 +1,6 @@
 /**
- * Per-advertiser figures, computed client-side ONLY from the caller's own campaigns
- * (`GET /campaigns/mine`) and their reservations (`GET /reservations/campaign/{id}`).
- * `/statistics/dashboard` is platform-wide and must never feed these screens (contract §5.8).
- *
+ * Advertiser figures (contract §5 F2): measured and estimated totals come from
+ * `GET /statistics/mine`; only status buckets, to-dos and deadlines are derived from `/mine`.
  * Pure functions: no fetch, no Date.now() unless a `today` is omitted.
  */
 import type {
@@ -10,6 +8,7 @@ import type {
   CampaignStatus,
   ReservationResponse,
   ReservationStatus,
+  StatisticsMineResponse,
 } from "@/lib/api/types";
 import {
   CAMPAIGN_BUCKETS,
@@ -24,8 +23,6 @@ import { routes } from "@/lib/routes";
 // Campaign buckets: the shared definition from campaign-status (UX-PLAN §4.8)
 // ---------------------------------------------------------------------------
 export { CAMPAIGN_BUCKETS, type CampaignBucketKey } from "@/lib/campaign-status";
-/** @deprecated alias of CampaignBucketKey. */
-export type CampaignBucket = CampaignBucketKey;
 
 type CampaignLike = Pick<CampaignResponse, "status" | "startDate" | "endDate">;
 
@@ -36,12 +33,12 @@ export function campaignBucket(
   return getCampaignBucket(campaign, today).key;
 }
 
-/** Refused campaigns do not commit budget (their reservations are released). */
+/** Refused campaigns (AI or TPUB): they need a correction before diffusion. */
 export function isRefused(status: CampaignStatus): boolean {
   return status === "REJECTED_BY_AI" || status === "BLOCKED";
 }
 
-/** Reservations that still hold a slot. */
+/** Reservations that still hold a Porteur. */
 export const HOLDING_RESERVATION_STATUSES: readonly ReservationStatus[] = [
   "TEMPORAIRE",
   "CONFIRMEE",
@@ -61,29 +58,8 @@ function safeNumber(n: unknown): number {
 }
 
 // ---------------------------------------------------------------------------
-// KPIs
+// Campaign counts (client) and KPIs (GET /statistics/mine)
 // ---------------------------------------------------------------------------
-export interface AdvertiserKpis {
-  campaignCount: number;
-  byBucket: Record<CampaignBucketKey, number>;
-  /** « Budget déclaré »: sum of budgets, refused campaigns excluded (TND). */
-  totalBudget: number;
-  /** Sum of consumedBudget (TND). Always 0 with the current backend: never displayed as a figure. */
-  consumedBudget: number;
-  reservationCount: number;
-  reservationsByStatus: Record<ReservationStatus, number>;
-  /** « Créneaux actifs »: TEMPORAIRE + CONFIRMEE. */
-  holdingReservationCount: number;
-  /** Distinct Porteurs held by a TEMPORAIRE/CONFIRMEE reservation. */
-  reservedScreens: number;
-  /** Distinct zones held by a TEMPORAIRE/CONFIRMEE reservation. */
-  reservedZones: number;
-  /** Sum of campaign.estimatedViews, refused campaigns excluded. Hard-coded backend value. */
-  estimatedViews: number;
-  /** « Coût estimé des créneaux »: estimatedCost of holding reservations (TND). Hard-coded rule. */
-  estimatedCost: number;
-}
-
 const BUCKET_WORDS: Record<CampaignBucketKey, [string, string]> = {
   brouillons: ["brouillon", "brouillons"],
   "a-corriger": ["à corriger", "à corriger"],
@@ -112,137 +88,102 @@ export function emptyBuckets(): Record<CampaignBucketKey, number> {
   >;
 }
 
-export function emptyReservationCounts(): Record<ReservationStatus, number> {
-  return { TEMPORAIRE: 0, CONFIRMEE: 0, ANNULEE: 0, EXPIREE: 0 };
-}
-
-/**
- * Only reservations belonging to one of `campaigns` are counted (the reservation
- * endpoint has no ownership check, so never trust stray rows).
- */
-export function computeAdvertiserKpis(
-  campaigns: readonly CampaignResponse[],
-  reservations: readonly ReservationResponse[],
+export function countBuckets(
+  campaigns: readonly CampaignLike[],
   today: string = todayISO(),
-): AdvertiserKpis {
+): Record<CampaignBucketKey, number> {
   const byBucket = emptyBuckets();
-  let totalBudget = 0;
-  let consumedBudget = 0;
-  let estimatedViews = 0;
-  const ownIds = new Set<number>();
-
-  for (const c of campaigns) {
-    ownIds.add(c.id);
-    byBucket[campaignBucket(c, today)] += 1;
-    consumedBudget += safeNumber(c.consumedBudget);
-    if (!isRefused(c.status)) {
-      totalBudget += safeNumber(c.budget);
-      estimatedViews += safeNumber(c.estimatedViews);
-    }
-  }
-
-  const reservationsByStatus = emptyReservationCounts();
-  const screens = new Set<number>();
-  const zones = new Set<number>();
-  let reservationCount = 0;
-  let holdingReservationCount = 0;
-  let estimatedCost = 0;
-
-  for (const r of reservations) {
-    if (!ownIds.has(r.campaignId)) continue;
-    reservationCount += 1;
-    reservationsByStatus[r.reservationStatus] += 1;
-    if (isHoldingReservation(r)) {
-      holdingReservationCount += 1;
-      screens.add(r.supportId);
-      zones.add(r.zoneId);
-      estimatedCost += safeNumber(r.estimatedCost);
-    }
-  }
-
-  return {
-    campaignCount: campaigns.length,
-    byBucket,
-    totalBudget: roundTND(totalBudget),
-    consumedBudget: roundTND(consumedBudget),
-    reservationCount,
-    reservationsByStatus,
-    holdingReservationCount,
-    reservedScreens: screens.size,
-    reservedZones: zones.size,
-    estimatedViews,
-    estimatedCost: roundTND(estimatedCost),
-  };
+  for (const c of campaigns) byBucket[campaignBucket(c, today)] += 1;
+  return byBucket;
 }
 
-// ---------------------------------------------------------------------------
-// Budget vs estimated cost, per campaign (statistics chart)
-// ---------------------------------------------------------------------------
-export interface CampaignBudgetRow {
-  id: number;
-  name: string;
-  budget: number;
-  estimatedCost: number;
-  reservationCount: number;
+export interface KpiTileData {
+  key: string;
+  label: string;
+  value: number;
+  /** "money" values are TND. */
+  kind: "count" | "money";
+  /** Measured from diffusion logs, estimated at booking, or a plain count. */
+  source: "mesure" | "estimation" | "compte";
+  hint: string;
 }
 
-export function budgetByCampaign(
-  campaigns: readonly CampaignResponse[],
-  reservations: readonly ReservationResponse[],
-  limit = 8,
-): CampaignBudgetRow[] {
-  const cost = new Map<number, { sum: number; count: number }>();
-  for (const r of reservations) {
-    if (!isHoldingReservation(r)) continue;
-    const entry = cost.get(r.campaignId) ?? { sum: 0, count: 0 };
-    entry.sum += safeNumber(r.estimatedCost);
-    entry.count += 1;
-    cost.set(r.campaignId, entry);
-  }
-  return campaigns
-    .filter((c) => !isRefused(c.status))
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      budget: roundTND(safeNumber(c.budget)),
-      estimatedCost: roundTND(cost.get(c.id)?.sum ?? 0),
-      reservationCount: cost.get(c.id)?.count ?? 0,
-    }))
-    .sort((a, b) => b.budget - a.budget || a.name.localeCompare(b.name, "fr"))
-    .slice(0, Math.max(0, limit));
+/** Dashboard / statistics tiles from GET /statistics/mine (never aggregated client-side). */
+export function mineKpis(stats: Pick<StatisticsMineResponse, "totals">): KpiTileData[] {
+  const t = stats.totals;
+  return [
+    {
+      key: "views",
+      label: "Affichages",
+      value: safeNumber(t.views),
+      kind: "count",
+      source: "mesure",
+      hint: "Passages de vos publicités sur les Porteurs.",
+    },
+    {
+      key: "clicks",
+      label: "Clics",
+      value: safeNumber(t.clicks),
+      kind: "count",
+      source: "mesure",
+      hint: "Touches sur l'écran pendant une diffusion.",
+    },
+    {
+      key: "interactions",
+      label: "Interactions",
+      value: safeNumber(t.interactions),
+      kind: "count",
+      source: "mesure",
+      hint: "Autres interactions enregistrées.",
+    },
+    {
+      key: "estimatedCost",
+      label: "Coût estimé",
+      value: roundTND(safeNumber(t.estimatedCost)),
+      kind: "money",
+      source: "estimation",
+      hint: `${formatCount(safeNumber(t.estimatedViews), "affichage estimé", "affichages estimés")} sur les Porteurs réservés.`,
+    },
+    {
+      key: "consumedBudget",
+      label: "Budget consommé",
+      value: roundTND(safeNumber(t.consumedBudget)),
+      kind: "money",
+      source: "mesure",
+      hint: "Coût des diffusions réellement effectuées.",
+    },
+    {
+      key: "activeCampaigns",
+      label: "Campagnes en diffusion",
+      value: safeNumber(t.activeCampaigns),
+      kind: "count",
+      source: "compte",
+      hint: `${formatCount(safeNumber(t.pendingCampaigns), "en attente", "en attente")} · ${formatCount(safeNumber(t.campaigns), "campagne", "campagnes")} au total`,
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
 // « À faire »
 // ---------------------------------------------------------------------------
-/** `finalize`: a draft whose reservations could not be loaded (no guess between reserve/submit). */
-export type TodoKind = "submit" | "reserve" | "duplicate" | "analysis" | "blocked" | "finalize";
+/** `finalize`: a draft whose reservation count is unknown (older payload). */
+export type TodoKind = "submit" | "reserve" | "correct" | "analysis" | "finalize";
 
 export interface TodoItem {
   key: string;
   kind: TodoKind;
   campaignId: number;
   campaignName: string;
-  /** Navigation target. For `duplicate` the dashboard opens DuplicateCampaignDialog instead. */
   href: string;
 }
 
 const TODO_ORDER: Record<TodoKind, number> = {
-  submit: 0,
-  reserve: 1,
-  finalize: 2,
-  duplicate: 3,
+  correct: 0,
+  submit: 1,
+  reserve: 2,
+  finalize: 3,
   analysis: 4,
-  blocked: 5,
 };
-
-export interface BuildTodosOptions {
-  /**
-   * Campaigns whose reservations are known (loaded). Drafts outside this set become `finalize`
-   * (→ detail page). Omit when every campaign's reservations are loaded.
-   */
-  knownCampaignIds?: ReadonlySet<number>;
-}
 
 function todoHref(kind: TodoKind, id: number): string {
   switch (kind) {
@@ -256,37 +197,31 @@ function todoHref(kind: TodoKind, id: number): string {
 }
 
 /**
- * - BROUILLON with a holding reservation → « Soumettre » (wizard, Vérification)
- * - BROUILLON without reservation → « Réserver des créneaux » (wizard, Porteurs)
- * - BROUILLON with unknown reservations → « Finaliser » (detail)
- * - REJECTED_BY_AI → « Dupliquer et corriger » (dead end, contract §7.13)
+ * - REJECTED_BY_AI / BLOCKED → « Corriger » (detail: reason, reopen, resubmit)
+ * - BROUILLON with a reservation → « Soumettre » (wizard, Vérification)
+ * - BROUILLON without reservation → « Réserver des Porteurs » (wizard, Zone & Porteurs)
+ * - BROUILLON with an unknown count → « Finaliser » (detail)
  * - PENDING_AI_CHECK → analysis not finished (detail)
- * - BLOCKED → refused by TPUB (detail)
  */
-export function buildTodos(
-  campaigns: readonly CampaignResponse[],
-  reservations: readonly ReservationResponse[],
-  { knownCampaignIds }: BuildTodosOptions = {},
-): TodoItem[] {
-  const holding = new Set<number>();
-  for (const r of reservations) if (isHoldingReservation(r)) holding.add(r.campaignId);
-
+export function buildTodos(campaigns: readonly CampaignResponse[]): TodoItem[] {
   const items: TodoItem[] = [];
   for (const c of campaigns) {
     let kind: TodoKind | null = null;
     switch (c.status) {
       case "BROUILLON":
-        if (knownCampaignIds && !knownCampaignIds.has(c.id)) kind = "finalize";
-        else kind = holding.has(c.id) ? "submit" : "reserve";
+        kind =
+          c.reservationsCount === undefined
+            ? "finalize"
+            : c.reservationsCount > 0
+              ? "submit"
+              : "reserve";
         break;
       case "REJECTED_BY_AI":
-        kind = "duplicate";
+      case "BLOCKED":
+        kind = "correct";
         break;
       case "PENDING_AI_CHECK":
         kind = "analysis";
-        break;
-      case "BLOCKED":
-        kind = "blocked";
         break;
       default:
         kind = null;
@@ -321,44 +256,38 @@ export interface Milestone {
   done: boolean;
 }
 
-/**
- * Brouillon créé · Porteurs réservés · Soumise. Nothing is counted from page visits or
- * local flags. A submitted campaign implies Porteurs were reserved (submission requires one).
- */
+/** Brouillon créé · Porteurs réservés · Soumise (from /mine only). */
 export function onboardingMilestones(
-  campaigns: readonly Pick<CampaignResponse, "id" | "status">[],
-  reservations: readonly Pick<ReservationResponse, "campaignId" | "reservationStatus">[],
+  campaigns: readonly Pick<CampaignResponse, "id" | "status" | "reservationsCount">[],
 ): Milestone[] {
   const submitted = campaigns.some((c) => c.status !== "BROUILLON");
   const drafts = campaigns.filter((c) => c.status === "BROUILLON");
-  const holding = new Set(reservations.filter(isHoldingReservation).map((r) => r.campaignId));
-  const draftWithout = drafts.find((c) => !holding.has(c.id));
-  const draftWith = drafts.find((c) => holding.has(c.id));
+  const draftWithout = drafts.find((c) => !((c.reservationsCount ?? 0) > 0));
+  const draftWith = drafts.find((c) => (c.reservationsCount ?? 0) > 0);
   return [
     {
       key: "brouillon",
       title: "Créer un brouillon",
       description:
-        "Nom, objectif, budget et période. Il reste modifiable tant qu'il n'est pas soumis.",
+        "Nom, objectif, budget, période et créneau. Modifiable tant qu'il n'est pas soumis.",
       href: routes.espace.wizard(null),
       done: campaigns.length > 0,
     },
     {
       key: "porteurs",
-      title: "Réserver des Porteurs",
-      description:
-        "Choisissez les Porteurs libres sur votre période : leurs créneaux sont bloqués.",
+      title: "Choisir la zone et les Porteurs",
+      description: "Placez votre zone sur la carte et réservez les Porteurs disponibles.",
       href: draftWithout
         ? routes.espace.wizard(draftWithout.id, "porteurs")
         : drafts[0]
           ? routes.espace.wizard(drafts[0].id, "porteurs")
           : routes.espace.wizard(null),
-      done: submitted || reservations.length > 0,
+      done: submitted || draftWith !== undefined,
     },
     {
       key: "soumission",
-      title: "Soumettre à la modération",
-      description: "Analyse IA, puis examen par l'équipe TPUB.",
+      title: "Soumettre la campagne",
+      description: "Analyse IA immédiate, puis validation par l'équipe TPUB.",
       href: draftWith
         ? routes.espace.wizard(draftWith.id, "verification")
         : drafts[0]

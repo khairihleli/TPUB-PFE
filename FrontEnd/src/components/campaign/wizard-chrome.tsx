@@ -11,7 +11,8 @@ import {
 import { activeReservations, sumEstimatedCost } from "@/components/campaign/campaign-data";
 import type { CampaignResponse, ReservationResponse } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
-import { formatDateRange, formatEstimate, formatTimeRange, formatTND } from "@/lib/format";
+import { formatDateRange, formatEstimate, formatTND } from "@/lib/format";
+import { formatSlot } from "@/lib/time-slots";
 
 /** CSS variable: bottom edge of the sticky wizard strip (zone headers stick under it). */
 export const WIZARD_STICKY_VAR = "--wizard-sticky-top";
@@ -21,7 +22,7 @@ function stepLabel(step: WizardStep): string {
   return WIZARD_STEPS.find((s) => s.step === step)?.label ?? "";
 }
 
-/** « Étape 2/3 · Porteurs → Vérification & envoi » (visible below sm). */
+/** « Étape 3/4 · Zone & Porteurs → Vérification & envoi » (visible below sm). */
 export function compactStepLabel(current: WizardStep): string {
   const next = WIZARD_STEPS.find((s) => s.step === current + 1);
   return `Étape ${current}/${WIZARD_STEPS.length} · ${stepLabel(current)}${next ? ` → ${next.label}` : ""}`;
@@ -90,14 +91,14 @@ export function WizardStrip({
             : "À définir",
         },
         {
-          label: "Horaires",
+          label: "Créneau",
           value: campaign.startTime
-            ? formatTimeRange(campaign.startTime, campaign.endTime)
+            ? formatSlot(campaign.startTime, campaign.endTime)
             : "À définir",
         },
         { label: "Budget", value: formatTND(campaign.budget) },
         {
-          label: "Créneaux",
+          label: "Porteurs",
           value: active.length > 0 ? `${active.length} · ${formatEstimate(cost, "DT")}` : "Aucun",
         },
       ]

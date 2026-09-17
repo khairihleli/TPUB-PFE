@@ -1,22 +1,29 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { campaign, reservation, support, zone } from "@/components/espace/__tests__/fixtures";
-import type * as EspaceData from "@/components/espace/espace-data";
+import { campaign, reservation } from "@/components/espace/__tests__/fixtures";
+import { EMPTY_TOTALS } from "@/components/espace/statistics-model";
+import type * as Endpoints from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/errors";
-import type { CampaignResponse, ReservationResponse, SessionUser } from "@/lib/api/types";
+import type { SessionUser, StatisticsMineResponse } from "@/lib/api/types";
 import { clearResourceCache } from "@/lib/resource-cache";
 
-const loaders = vi.hoisted(() => ({
-  loadMyCampaigns: vi.fn(),
-  loadReservationsSettled: vi.fn(),
-  loadNetworkLookups: vi.fn(),
-  loadNetworkCatalogue: vi.fn(),
+const api = vi.hoisted(() => ({
+  campaignsMine: vi.fn(),
+  statsMine: vi.fn(),
+  reservationsMine: vi.fn(),
+  cancel: vi.fn(),
+  exportCsv: vi.fn(),
 }));
 
-vi.mock("@/components/espace/espace-data", async (importOriginal) => {
-  const actual = await importOriginal<typeof EspaceData>();
-  return { ...actual, ...loaders };
+vi.mock("@/lib/api/endpoints", async (importOriginal) => {
+  const actual = await importOriginal<typeof Endpoints>();
+  return {
+    ...actual,
+    campaignsApi: { ...actual.campaignsApi, mine: api.campaignsMine },
+    statisticsApi: { ...actual.statisticsApi, mine: api.statsMine, exportCsv: api.exportCsv },
+    reservationsApi: { ...actual.reservationsApi, mine: api.reservationsMine, cancel: api.cancel },
+  };
 });
 
 const nav = vi.hoisted(() => ({
@@ -56,34 +63,18 @@ import { ReservationsView } from "@/components/espace/reservations-view";
 import { StatisticsView } from "@/components/espace/statistics-view";
 import { ToastProvider } from "@/components/ui/toast";
 
-/** Settled reservations fixture: `failed` campaigns contribute nothing. */
-function settled(
-  campaigns: readonly CampaignResponse[],
-  reservations: readonly ReservationResponse[],
-  failed: readonly number[] = [],
-): EspaceData.ReservationsSettled {
-  const byCampaign = new Map<number, ReservationResponse[]>();
-  for (const c of campaigns) {
-    if (failed.includes(c.id)) continue;
-    byCampaign.set(
-      c.id,
-      reservations.filter((r) => r.campaignId === c.id),
-    );
-  }
+function stats(partial: Partial<StatisticsMineResponse> = {}): StatisticsMineResponse {
   return {
-    reservations: [...byCampaign.values()].flat(),
-    reservationsByCampaign: byCampaign,
-    failedCampaignIds: [...failed],
+    from: "2026-08-19",
+    to: "2026-09-17",
+    totals: { ...EMPTY_TOTALS },
+    statusCounts: {} as StatisticsMineResponse["statusCounts"],
+    daily: [],
+    byCampaign: [],
+    bySupport: [],
+    byZone: [],
+    ...partial,
   };
-}
-
-function serve(
-  campaigns: CampaignResponse[],
-  reservations: ReservationResponse[] = [],
-  failed: number[] = [],
-) {
-  loaders.loadMyCampaigns.mockResolvedValue(campaigns);
-  loaders.loadReservationsSettled.mockResolvedValue(settled(campaigns, reservations, failed));
 }
 
 beforeEach(() => {
@@ -94,158 +85,131 @@ beforeEach(() => {
   nav.pathname.value = "/espace";
   nav.router.replace.mockReset();
   nav.router.push.mockReset();
-  for (const fn of Object.values(loaders)) fn.mockReset();
+  for (const fn of Object.values(api)) fn.mockReset();
+  api.statsMine.mockResolvedValue(stats());
 });
 
 describe("DashboardView — first run", () => {
   it("shows one primary action, 3 real milestones and no KPI tile", async () => {
-    serve([]);
+    api.campaignsMine.mockResolvedValue([]);
     render(<DashboardView />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Bonjour, Sami" })).toBeInTheDocument();
-    expect(screen.getByText("Chargement du tableau de bord…")).toBeInTheDocument();
-
     expect(
       await screen.findByRole("heading", { name: "Lancez votre première campagne" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Indicateurs de vos campagnes" })).toBeNull();
-    expect(screen.queryByRole("region", { name: "Estimations" })).toBeNull();
-    expect(screen.queryByText(/Rien à faire pour le moment/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "Vos 30 derniers jours" })).toBeNull();
 
     const primaries = [...document.querySelectorAll("a, button")].filter((el) =>
       el.className.includes("bg-brand-blue "),
     );
     expect(primaries).toHaveLength(1);
-    expect(primaries[0]).toHaveTextContent("Créer ma première campagne");
     expect(primaries[0]).toHaveAttribute("href", "/espace/campagnes/nouvelle");
-    expect(screen.getByRole("link", { name: "Voir les Porteurs en 3D" })).toHaveAttribute(
-      "href",
-      "/espace/reseau",
-    );
-
-    expect(screen.getByRole("progressbar", { name: "Vos premiers pas" })).toHaveAttribute(
-      "aria-valuenow",
-      "0",
-    );
     expect(screen.getByText("0 sur 3")).toBeInTheDocument();
-
-    const todo = screen.getByRole("region", { name: "À faire" });
-    expect(within(todo).getByRole("link", { name: /Créer un brouillon/ })).toHaveAttribute(
-      "href",
-      "/espace/campagnes/nouvelle",
-    );
-    expect(screen.getByRole("region", { name: "Comment ça marche" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Vérifier les informations de votre société" }),
-    ).toHaveAttribute("href", "/espace/profil#societe");
   });
 
   it("shows a retryable page error only when /mine fails", async () => {
-    loaders.loadMyCampaigns
+    api.campaignsMine
       .mockRejectedValueOnce(new ApiError(502, "Le service TPUB est momentanément indisponible."))
       .mockResolvedValueOnce([]);
-    loaders.loadReservationsSettled.mockResolvedValue(settled([], []));
     render(<DashboardView />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Réessayer" }));
     expect(
       await screen.findByRole("heading", { name: "Lancez votre première campagne" }),
     ).toBeInTheDocument();
-    expect(loaders.loadMyCampaigns).toHaveBeenCalledTimes(2);
+    expect(api.campaignsMine).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("DashboardView — returning advertiser", () => {
   const campaigns = [
-    campaign({ id: 3, name: "Nouveauté", status: "BROUILLON" }),
-    campaign({
-      id: 2,
-      name: "Lancement Café",
-      status: "BROUILLON",
-      budget: 2500,
-      estimatedViews: 1000,
-    }),
+    campaign({ id: 3, name: "Nouveauté", status: "BROUILLON", reservationsCount: 0 }),
+    campaign({ id: 2, name: "Lancement Café", status: "BROUILLON", reservationsCount: 2 }),
     campaign({ id: 1, name: "Soldes", status: "REJECTED_BY_AI" }),
   ];
 
-  it("puts À faire before the KPI strip, with per-kind targets", async () => {
-    serve(campaigns, [reservation({ id: 1, campaignId: 2, supportId: 4, estimatedCost: 250 })]);
+  it("shows KPIs from /statistics/mine, the to-do list with per-kind targets and the daily chart", async () => {
+    api.campaignsMine.mockResolvedValue(campaigns);
+    api.statsMine.mockResolvedValue(
+      stats({
+        totals: { ...EMPTY_TOTALS, views: 4321, clicks: 12, estimatedCost: 80, campaigns: 3 },
+        daily: [{ date: "2026-09-16", views: 4321, clicks: 12, interactions: 0, cost: 34.5 }],
+      }),
+    );
     render(
       <ToastProvider>
         <DashboardView />
       </ToastProvider>,
     );
 
-    const todo = await screen.findByRole("region", { name: "À faire" });
-    await waitFor(() =>
-      expect(
-        within(todo).getByRole("link", { name: /Soumettre «\sLancement Café\s»/ }),
-      ).toHaveAttribute("href", "/espace/campagnes/nouvelle?id=2&etape=3"),
-    );
+    const todo = await screen.findByRole("region", { name: /À faire/ });
     expect(
-      within(todo).getByRole("link", { name: /Réserver des créneaux pour «\sNouveauté\s»/ }),
-    ).toHaveAttribute("href", "/espace/campagnes/nouvelle?id=3&etape=2");
-    const duplicate = within(todo).getByRole("button", {
-      name: /Dupliquer et corriger «\sSoldes\s»/,
-    });
-
-    const kpis = screen.getByRole("region", { name: "Indicateurs de vos campagnes" });
-    expect(todo.compareDocumentPosition(kpis) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(kpis).getByText("Budget déclaré")).toBeInTheDocument();
-    expect(within(kpis).getByText("Créneaux actifs")).toBeInTheDocument();
-    expect(screen.queryByText(/Budget total/)).toBeNull();
-
-    expect(screen.getByRole("region", { name: "Prochaines échéances" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Lancement Café" })).toHaveAttribute(
+      within(todo).getByRole("link", { name: /Soumettre «\sLancement Café\s»/ }),
+    ).toHaveAttribute("href", "/espace/campagnes/nouvelle?id=2&etape=4");
+    expect(
+      within(todo).getByRole("link", { name: /zone et les Porteurs de «\sNouveauté\s»/ }),
+    ).toHaveAttribute("href", "/espace/campagnes/nouvelle?id=3&etape=3");
+    expect(within(todo).getByRole("link", { name: /Corriger «\sSoldes\s»/ })).toHaveAttribute(
       "href",
-      "/espace/campagnes/2",
+      "/espace/campagnes/1",
     );
-    const estimates = screen.getByRole("region", { name: "Estimations" });
-    expect(within(estimates).getByText("Estimation")).toBeInTheDocument();
 
-    fireEvent.click(duplicate);
+    const kpis = screen.getByRole("region", { name: "Vos 30 derniers jours" });
+    await waitFor(() => expect(within(kpis).getAllByText(/4.321/).length).toBeGreaterThan(0));
+    expect(within(kpis).getAllByText("Mesuré").length).toBeGreaterThan(0);
+    expect(within(kpis).getByText("Estimation")).toBeInTheDocument();
+    expect(api.statsMine).toHaveBeenCalledTimes(1);
     expect(
-      await screen.findByRole("dialog", { name: /^Dupliquer et corriger\s\?$/ }),
+      screen.getByRole("table", { name: "Affichages, clics et interactions par jour" }),
     ).toBeInTheDocument();
   });
 
-  it("renders campaigns as soon as /mine resolves, before reservations", async () => {
-    loaders.loadMyCampaigns.mockResolvedValue(campaigns);
-    loaders.loadReservationsSettled.mockReturnValue(new Promise(() => undefined));
+  it("keeps campaigns visible when the statistics fail", async () => {
+    api.campaignsMine.mockResolvedValue(campaigns);
+    api.statsMine.mockRejectedValue(new ApiError(502, "Indisponible"));
     render(<DashboardView />);
-
     expect(await screen.findByRole("link", { name: "Lancement Café" })).toBeInTheDocument();
-    expect(screen.getByText("Chargement des actions…")).toBeInTheDocument();
-  });
-
-  it("keeps campaign names and flags partial data when one reservation call fails", async () => {
-    serve(campaigns, [], [2]);
-    render(<DashboardView />);
-
-    expect(await screen.findByRole("link", { name: "Lancement Café" })).toBeInTheDocument();
-    expect((await screen.findAllByText("Données partielles")).length).toBeGreaterThan(0);
-    const todo = screen.getByRole("region", { name: "À faire" });
-    expect(
-      within(todo).getByRole("link", { name: /Finaliser «\sLancement Café\s»/ }),
-    ).toHaveAttribute("href", "/espace/campagnes/2");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(await screen.findByText("Indicateurs indisponibles")).toBeInTheDocument();
   });
 });
 
 describe("ReservationsView", () => {
-  const campaigns = [campaign({ id: 1, name: "Rentrée" }), campaign({ id: 2, name: "Été" })];
   const reservations = [
-    reservation({ id: 1, campaignId: 1, supportId: 10, zoneId: 1, startDate: "2026-10-05" }),
-    reservation({ id: 2, campaignId: 1, supportId: 11, zoneId: 2, reservationStatus: "CONFIRMEE" }),
-    reservation({ id: 3, campaignId: 2, supportId: 10, zoneId: 1 }),
+    reservation({
+      id: 1,
+      campaignId: 1,
+      campaignName: "Rentrée",
+      supportId: 10,
+      supportName: "Écran Bourguiba",
+      zoneId: 1,
+      zoneName: "Tunis Centre",
+      startDate: "2026-10-05",
+      cancellable: true,
+    }),
+    reservation({
+      id: 2,
+      campaignId: 1,
+      campaignName: "Rentrée",
+      supportId: 11,
+      supportName: "Mât Lac 2",
+      zoneId: 2,
+      zoneName: "Les Berges du Lac",
+      reservationStatus: "CONFIRMEE",
+      cancellable: false,
+    }),
+    reservation({
+      id: 3,
+      campaignId: 2,
+      campaignName: "Été",
+      supportId: 10,
+      supportName: "Écran Bourguiba",
+      zoneId: 1,
+      zoneName: "Tunis Centre",
+      reservationStatus: "EXPIREE",
+      cancellable: false,
+    }),
   ];
-  const lookups = {
-    supports: [
-      support({ id: 10, name: "Écran Bourguiba" }),
-      support({ id: 11, name: "Mât Lac 2" }),
-    ],
-    zones: [zone({ id: 1, name: "Tunis Centre" }), zone({ id: 2, name: "Les Berges du Lac" })],
-  };
 
   beforeEach(() => {
     nav.pathname.value = "/espace/reservations";
@@ -254,27 +218,23 @@ describe("ReservationsView", () => {
   it("pre-filters from the URL and writes filter changes with replace", async () => {
     nav.params.value = "campagne=1&statut=TEMPORAIRE";
     window.history.replaceState(null, "", "/espace/reservations?campagne=1&statut=TEMPORAIRE");
-    serve(campaigns, reservations);
-    loaders.loadNetworkLookups.mockResolvedValue(lookups);
-    render(<ReservationsView />);
+    api.reservationsMine.mockResolvedValue(reservations);
+    render(
+      <ToastProvider>
+        <ReservationsView />
+      </ToastProvider>,
+    );
 
     const table = await screen.findByRole("table", { name: "Réservations de vos campagnes" });
-    const rows = within(table).getAllByRole("row");
-    expect(rows).toHaveLength(2); // header + 1 row
+    expect(within(table).getAllByRole("row")).toHaveLength(2); // header + 1 row
     expect(within(table).getByRole("link", { name: /Écran Bourguiba/ })).toHaveAttribute(
       "href",
       "/espace/reseau?porteur=10",
-    );
-    expect(within(table).getByText("Voir en 3D")).toBeInTheDocument();
-    expect(within(table).getByRole("link", { name: "Tunis Centre" })).toHaveAttribute(
-      "href",
-      "/espace/reseau?zone=1",
     );
     expect(within(table).getByRole("link", { name: "Rentrée" })).toHaveAttribute(
       "href",
       "/espace/campagnes/1",
     );
-    expect(screen.getAllByText(/Trié par : début, du plus proche au plus lointain/).length).toBe(1);
     expect(screen.getByRole("tab", { name: /Bloqué/ })).toHaveAttribute("aria-selected", "true");
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Confirmé/ }));
@@ -283,117 +243,139 @@ describe("ReservationsView", () => {
       { scroll: false },
     );
     expect(nav.router.push).not.toHaveBeenCalled();
-
-    fireEvent.click(within(table).getByRole("button", { name: "Trier par coût estimé" }));
-    expect(nav.router.replace).toHaveBeenLastCalledWith(
-      "/espace/reservations?campagne=1&statut=TEMPORAIRE&tri=cout",
-      { scroll: false },
-    );
   });
 
-  it("shows the inline filtered empty state with a reset", async () => {
-    nav.params.value = "statut=EXPIREE";
-    window.history.replaceState(null, "", "/espace/reservations?statut=EXPIREE");
-    serve(campaigns, reservations);
-    loaders.loadNetworkLookups.mockResolvedValue(lookups);
-    render(<ReservationsView />);
+  it("counts EXPIREE and shows the filtered empty state with a reset", async () => {
+    nav.params.value = "statut=ANNULEE&campagne=2";
+    window.history.replaceState(null, "", "/espace/reservations?statut=ANNULEE&campagne=2");
+    api.reservationsMine.mockResolvedValue(reservations);
+    render(
+      <ToastProvider>
+        <ReservationsView />
+      </ToastProvider>,
+    );
 
     expect(await screen.findByText("Aucun résultat pour ces filtres")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Passé/ })).toHaveTextContent("1");
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser les filtres" }));
     expect(nav.router.replace).toHaveBeenCalledWith("/espace/reservations", { scroll: false });
   });
 
-  it("lets the explainer be dismissed and shows the KPI « Créneaux actifs »", async () => {
-    serve(campaigns, reservations);
-    loaders.loadNetworkLookups.mockResolvedValue(lookups);
-    render(<ReservationsView />);
-
-    const summary = await screen.findByRole("region", { name: "Synthèse des réservations" });
-    expect(within(summary).getByText("Créneaux actifs")).toBeInTheDocument();
-    await waitFor(() => expect(within(summary).getAllByText("3").length).toBeGreaterThan(0));
-    fireEvent.click(screen.getByRole("button", { name: "Masquer cette explication" }));
-    expect(screen.queryByText("Bloqué, puis confirmé")).toBeNull();
-    expect(window.localStorage.getItem("tpub:dismissed:anon:hint:reservations-explainer")).toBe(
-      "1",
+  it("cancels a TEMPORAIRE slot after confirmation, with an optional reason", async () => {
+    api.reservationsMine.mockResolvedValue(reservations);
+    api.cancel.mockImplementation((id: number, reason: string | null) =>
+      Promise.resolve({
+        ...reservations[0],
+        id,
+        reservationStatus: "ANNULEE",
+        cancelReason: reason,
+        cancellable: false,
+      }),
     );
-  });
+    render(
+      <ToastProvider>
+        <ReservationsView />
+      </ToastProvider>,
+    );
 
-  it("renders a partial notice instead of an error page when one campaign fails", async () => {
-    serve(campaigns, reservations, [2]);
-    loaders.loadNetworkLookups.mockResolvedValue(lookups);
-    render(<ReservationsView />);
+    const table = await screen.findByRole("table", { name: "Réservations de vos campagnes" });
+    // Only the cancellable row offers the action.
+    const buttons = within(table).getAllByRole("button", { name: /Annuler.*Bourguiba/ });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]!);
 
-    expect(
-      await screen.findByRole("table", { name: "Réservations de vos campagnes" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Données partielles/)).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    const dialog = await screen.findByRole("dialog", { name: /Libérer ce créneau/ });
+    fireEvent.change(within(dialog).getByLabelText(/Motif/), {
+      target: { value: "Changement de plan" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Libérer le créneau" }));
+
+    await waitFor(() => expect(api.cancel).toHaveBeenCalledWith(1, "Changement de plan"));
+    await waitFor(() =>
+      expect(within(table).queryAllByRole("button", { name: /Annuler.*Bourguiba/ })).toHaveLength(
+        0,
+      ),
+    );
+    expect((await screen.findAllByText("Motif : Changement de plan")).length).toBeGreaterThan(0);
   });
 
   it("shows the first-use empty state when nothing is booked", async () => {
-    serve([]);
-    loaders.loadNetworkLookups.mockResolvedValue({ supports: [], zones: [] });
-    render(<ReservationsView />);
+    api.reservationsMine.mockResolvedValue([]);
+    render(
+      <ToastProvider>
+        <ReservationsView />
+      </ToastProvider>,
+    );
     expect(await screen.findByText("Aucun créneau réservé.")).toBeInTheDocument();
   });
 });
 
 describe("StatisticsView", () => {
-  it("draws drill-down charts with data tables and honest labels", async () => {
-    const campaigns = [
-      campaign({ id: 1, name: "Rentrée", budget: 3000 }),
-      campaign({
-        id: 2,
-        name: "Été",
-        status: "ACTIVE",
-        startDate: "2026-01-01",
-        endDate: "2099-01-01",
-      }),
-    ];
-    serve(campaigns, [reservation({ id: 1, campaignId: 1, estimatedCost: 300 })]);
+  it("renders measured and estimated figures, tables by campaign/Porteur/zone and the CSV export", async () => {
     nav.pathname.value = "/espace/statistiques";
-    render(<StatisticsView />);
+    nav.params.value = "periode=7";
+    api.campaignsMine.mockResolvedValue([campaign({ id: 1, name: "Rentrée" })]);
+    api.statsMine.mockResolvedValue(
+      stats({
+        totals: { ...EMPTY_TOTALS, views: 250, clicks: 5 },
+        daily: [{ date: "2026-09-16", views: 250, clicks: 5, interactions: 1, cost: 2 }],
+        byCampaign: [
+          {
+            campaignId: 1,
+            name: "Rentrée",
+            status: "ACTIVE",
+            views: 250,
+            clicks: 5,
+            interactions: 1,
+            estimatedViews: 900,
+            estimatedCost: 7.2,
+            budget: 100,
+            consumedBudget: 2,
+          },
+        ],
+        bySupport: [
+          { supportId: 10, name: "Écran Bourguiba", zoneName: "Tunis Centre", views: 250 },
+        ],
+        byZone: [{ zoneId: 1, name: "Tunis Centre", views: 250 }],
+      }),
+    );
+    api.exportCsv.mockResolvedValue("tpub-statistiques-mine.csv");
+    render(
+      <ToastProvider>
+        <StatisticsView />
+      </ToastProvider>,
+    );
 
     expect(
-      await screen.findByRole("img", {
-        name: /Campagnes par statut : Brouillons 1, À corriger 0, En examen 0, Programmées 0, En diffusion 1/,
-      }),
+      await screen.findByRole("table", { name: "Statistiques par campagne" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^En examen :/ })).toHaveAttribute(
-      "href",
-      "/espace/campagnes?statut=en-examen",
+    expect(api.statsMine).toHaveBeenCalledWith(
+      expect.objectContaining({ from: expect.any(String), to: expect.any(String) }),
     );
-    expect(await screen.findByRole("link", { name: /^Bloqué :/ })).toHaveAttribute(
-      "href",
-      "/espace/reservations?statut=TEMPORAIRE",
+    expect(screen.getByRole("table", { name: "Affichages par Porteur" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Affichages par zone" })).toBeInTheDocument();
+    // 5 clicks / 250 views = 2 % (fr-TN puts a narrow space before %).
+    expect(screen.getAllByText((t) => /^2\s?%$/.test(t)).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "7 jours" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Exporter en CSV" }));
+    await waitFor(() =>
+      expect(api.exportCsv).toHaveBeenCalledWith(expect.objectContaining({ type: "mine" })),
     );
-    expect(
-      screen.getByRole("table", {
-        name: "Budget déclaré et coût estimé des créneaux par campagne",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Budget déclaré").length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Budget estimé|Budget consommé/)).toBeNull();
-    expect(screen.getByText(/Suivi de consommation : pas encore disponible/)).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
-        name: "Journal de diffusion par campagne — mise en service progressive",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Contacter TPUB/ })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/^mailto:/),
-    );
-    expect(screen.queryByText(/\bLIVE\b|en direct|Recevez la preuve/i)).toBeNull();
   });
 
-  it("keeps charts that only need campaigns when reservations partially fail", async () => {
-    const campaigns = [campaign({ id: 1, name: "Rentrée" }), campaign({ id: 2, name: "Été" })];
-    serve(campaigns, [], [1]);
-    render(<StatisticsView />);
-
-    expect(await screen.findByRole("img", { name: /Campagnes par statut/ })).toBeInTheDocument();
-    expect((await screen.findAllByText("Données partielles")).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("alert")).toBeNull();
+  it("explains an invalid custom period", async () => {
+    nav.pathname.value = "/espace/statistiques";
+    nav.params.value = "periode=perso&du=2026-09-10&au=2026-09-01";
+    api.campaignsMine.mockResolvedValue([campaign({ id: 1 })]);
+    render(
+      <ToastProvider>
+        <StatisticsView />
+      </ToastProvider>,
+    );
+    expect(
+      await screen.findByText("La date de fin doit suivre la date de début."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Exporter en CSV" })).toBeNull();
   });
 });

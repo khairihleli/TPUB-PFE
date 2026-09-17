@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,8 +22,10 @@ import java.time.LocalTime;
 public class CampaignRequest {
 
     @NotBlank
+    @Size(min = 1, max = 200)
     private String name;
 
+    @Size(max = 5000)
     private String objective;
 
     @NotNull
@@ -35,11 +38,11 @@ public class CampaignRequest {
     @Schema(type = "string", format = "date", example = "2026-08-31")
     private LocalDate endDate;
 
-    @Schema(type = "string", format = "time", example = "08:00:00", description = "Format HH:mm:ss — laisser vide si non utilisé")
-    @JsonFormat(pattern = "HH:mm:ss")
+    @Schema(type = "string", example = "08:00", description = "HH:mm ou HH:mm:ss — laisser vide si non utilisé")
+    @JsonFormat(pattern = "HH:mm[:ss]")
     private LocalTime startTime;
 
-    @Schema(type = "string", format = "time", example = "22:00:00", description = "Format HH:mm:ss — laisser vide si non utilisé")
-    @JsonFormat(pattern = "HH:mm:ss")
+    @Schema(type = "string", example = "22:00", description = "HH:mm ou HH:mm:ss — laisser vide si non utilisé")
+    @JsonFormat(pattern = "HH:mm[:ss]")
     private LocalTime endTime;
 }

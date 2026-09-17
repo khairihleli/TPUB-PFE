@@ -326,6 +326,19 @@ function SupportForm({
               onChange={(e) => set("diffusionCapacity", e.target.value)}
             />
           </Field>
+          <Field
+            label="Score de visibilité"
+            hint="0 à 100 : pondère les affichages estimés (vide = visibilité standard)."
+            error={errors.visibilityScore}
+          >
+            <Input
+              value={values.visibilityScore}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="50"
+              onChange={(e) => set("visibilityScore", e.target.value)}
+            />
+          </Field>
         </div>
 
         <SectionTitle>Position</SectionTitle>

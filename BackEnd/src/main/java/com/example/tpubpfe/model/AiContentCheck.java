@@ -1,8 +1,5 @@
 package com.example.tpubpfe.model;
 
-import com.example.tpubpfe.model.AiAdminDecision;
-import com.example.tpubpfe.model.AiCheckStatus;
-import com.example.tpubpfe.model.AiContentType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -76,6 +73,47 @@ public class AiContentCheck {
     @Enumerated(EnumType.STRING)
     @Column(name = "admin_decision", length = 20)
     private AiAdminDecision adminDecision;
+
+    @Column(name = "extracted_text", columnDefinition = "TEXT")
+    private String extractedText;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ocr_engine", nullable = false, length = 20)
+    @Builder.Default
+    private OcrEngine ocrEngine = OcrEngine.AUCUN;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private AiSector sector;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private List<String> recommendations = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private List<AiIssue> issues = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "media_analyses", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private List<AiMediaAnalysis> mediaAnalyses = new ArrayList<>();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "matched_rules", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private List<AiMatchedRule> matchedRules = new ArrayList<>();
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private AiEngine engine = AiEngine.LOCAL;
+
+    @Column(name = "is_preview", nullable = false)
+    @Builder.Default
+    private Boolean isPreview = false;
 
     @Column(name = "checked_at", nullable = false)
     @Builder.Default

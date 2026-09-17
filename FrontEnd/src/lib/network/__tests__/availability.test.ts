@@ -5,6 +5,7 @@ import {
   addDaysISO,
   availabilityMessage,
   blockedDays,
+  isBlockSlot,
   buildCalendarStrip,
   conflictingSlots,
   DAY_PARTS,
@@ -163,6 +164,26 @@ describe("findFirstFreeWindow", () => {
       startDate: "2026-10-08",
       endDate: "2026-10-08",
     });
+  });
+});
+
+describe("v2 availability blocks", () => {
+  const block: SupportAvailabilitySlot = {
+    startDate: "2026-10-05",
+    endDate: "2026-10-05",
+    startTime: "07:00:00",
+    endTime: "12:00:00",
+    kind: "BLOCAGE",
+    reservationStatus: null,
+    availabilityStatus: "MAINTENANCE",
+    reason: "Remplacement de la dalle",
+  };
+
+  it("counts a TPUB block as blocking and shows it as taken", () => {
+    expect(isBlockSlot(block)).toBe(true);
+    expect([...blockedDays([block])]).toEqual(["2026-10-05"]);
+    const strip = buildCalendarStrip([block], "2026-10-04", 3);
+    expect(strip.map((d) => d.status)).toEqual(["libre", "confirmee", "libre"]);
   });
 });
 

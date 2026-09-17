@@ -24,7 +24,9 @@ import type { ResourceState } from "@/lib/use-resource";
 
 const api = vi.hoisted(() => ({
   availability: vi.fn(),
-  createReservation: vi.fn(),
+  createBatch: vi.fn(),
+  zones: vi.fn(),
+  setZones: vi.fn(),
   createCampaign: vi.fn(),
   getCampaign: vi.fn(),
 }));
@@ -34,10 +36,13 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => {
   return {
     ...actual,
     supportsApi: { ...actual.supportsApi, availability: api.availability },
-    reservationsApi: { ...actual.reservationsApi, create: api.createReservation },
     campaignsApi: { ...actual.campaignsApi, create: api.createCampaign, get: api.getCampaign },
   };
 });
+
+vi.mock("@/components/network/booking-deps", () => ({
+  BATCH_BOOKING_DEPS: { zones: api.zones, setZones: api.setZones, createBatch: api.createBatch },
+}));
 
 // three.js never loads in jsdom: keep the studio module light.
 vi.mock("@/components/porteur3d/porteur-studio", () => ({ PorteurStudio: () => null }));
@@ -73,12 +78,7 @@ const BOOKED_28_SEPT: SupportAvailabilitySlot = {
   reservationStatus: "TEMPORAIRE",
 };
 
-const NO_CREATIVE: StudioCreativeState = {
-  creative: null,
-  campaignCreative: null,
-  source: null,
-  storeKey: 0,
-};
+const NO_CREATIVE: StudioCreativeState = { creative: null, source: null, campaignId: null };
 
 const STRIP = { name: "Calendrier des disponibilités du Porteur" };
 const RESERVE = /^Réserver ce Porteur/;
@@ -136,7 +136,9 @@ function reserveButton() {
 
 beforeEach(() => {
   api.availability.mockReset().mockResolvedValue([BOOKED_28_SEPT]);
-  api.createReservation.mockReset();
+  api.createBatch.mockReset();
+  api.zones.mockReset().mockResolvedValue([]);
+  api.setZones.mockReset().mockResolvedValue({ zones: [], cancelledReservationIds: [] });
   api.createCampaign.mockReset();
   api.getCampaign
     .mockReset()
@@ -151,16 +153,18 @@ describe("PorteurConfigurator", () => {
   });
 
   it("applies and locks the chosen campaign period, then books inline (no toast)", async () => {
-    api.createReservation.mockImplementation((body: { supportId: number; campaignId: number }) =>
+    api.createBatch.mockImplementation((body: { supportIds: number[]; campaignId: number }) =>
       Promise.resolve(
-        reservation({
-          id: 77,
-          campaignId: body.campaignId,
-          supportId: body.supportId,
-          zoneId: 4,
-          startDate: "2026-09-14",
-          endDate: "2026-09-20",
-        }),
+        body.supportIds.map((supportId) =>
+          reservation({
+            id: 77,
+            campaignId: body.campaignId,
+            supportId,
+            zoneId: 4,
+            startDate: "2026-09-14",
+            endDate: "2026-09-20",
+          }),
+        ),
       ),
     );
     render(<Harness />);
@@ -195,14 +199,17 @@ describe("PorteurConfigurator", () => {
     expect(screen.getByRole("checkbox", { name: "Réserver hors période" })).not.toBeChecked();
     expect(reserveButton()).toHaveAccessibleName("Réserver ce Porteur · 14–20 sept.");
     expect(reserveButton()).not.toHaveAttribute("aria-disabled");
-    expect(screen.getByText("Non libérable en ligne.", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText(/Annulable depuis vos réservations/).length).toBeGreaterThan(0);
 
     fireEvent.click(reserveButton());
-    await waitFor(() => expect(api.createReservation).toHaveBeenCalledTimes(1), SLOW);
-    expect(api.createReservation).toHaveBeenCalledWith({
+    await waitFor(() => expect(api.createBatch).toHaveBeenCalledTimes(1), SLOW);
+    // The campaign has no zone yet: a circle around the Porteur is saved first.
+    expect(api.setZones).toHaveBeenCalledWith(5, [
+      expect.objectContaining({ latitude: 36.8, longitude: 10.18, radiusKm: 0.5 }),
+    ]);
+    expect(api.createBatch).toHaveBeenCalledWith({
       campaignId: 5,
-      zoneId: 4,
-      supportId: 6,
+      supportIds: [6],
       startDate: "2026-09-14",
       endDate: "2026-09-20",
       startTime: "19:00:00",
@@ -222,7 +229,7 @@ describe("PorteurConfigurator", () => {
     );
     expect(within(panel).getByRole("link", { name: /Continuer dans l'assistant/ })).toHaveAttribute(
       "href",
-      "/espace/campagnes/nouvelle?id=5&etape=3",
+      "/espace/campagnes/nouvelle?id=5&etape=4",
     );
     // No toast region content: the confirmation is inline only.
     expect(screen.getAllByText("Porteur réservé pour « Rentrée Médina »")).toHaveLength(1);
@@ -236,7 +243,7 @@ describe("PorteurConfigurator", () => {
     expect(section).not.toBeNull();
     expect(document.activeElement).toBe(section);
     expect(await screen.findByText(CHOOSE_CAMPAIGN_MESSAGE, undefined, SLOW)).toBeInTheDocument();
-    expect(api.createReservation).not.toHaveBeenCalled();
+    expect(api.createBatch).not.toHaveBeenCalled();
   });
 
   it("opens on the first free week without an alert when the default week is booked", async () => {
@@ -289,8 +296,8 @@ describe("PorteurConfigurator", () => {
   it("needs « Réserver hors période » to leave a booked campaign period", async () => {
     const october = campaign({ id: 8, name: "Octobre rose" }); // 1 → 31 oct., booked until 8 oct.
     api.getCampaign.mockResolvedValue(october);
-    api.createReservation.mockImplementation((body: { campaignId: number }) =>
-      Promise.resolve(reservation({ id: 90, campaignId: body.campaignId })),
+    api.createBatch.mockImplementation((body: { campaignId: number }) =>
+      Promise.resolve([reservation({ id: 90, campaignId: body.campaignId, supportId: 6 })]),
     );
     render(<Harness campaigns={[october]} />);
     await screen.findByRole("group", STRIP, SLOW);
@@ -302,7 +309,7 @@ describe("PorteurConfigurator", () => {
     expect(screen.queryByRole("button", { name: "Utiliser ces dates" })).toBeNull();
     expect(reserveButton()).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(reserveButton());
-    expect(api.createReservation).not.toHaveBeenCalled();
+    expect(api.createBatch).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Réserver hors période" }));
     expect(
@@ -313,8 +320,8 @@ describe("PorteurConfigurator", () => {
     expect(reserveButton()).toHaveAccessibleName("Réserver ce Porteur · 9 oct. – 8 nov.");
 
     fireEvent.click(reserveButton());
-    await waitFor(() => expect(api.createReservation).toHaveBeenCalledTimes(1), SLOW);
-    expect(api.createReservation).toHaveBeenCalledWith(
+    await waitFor(() => expect(api.createBatch).toHaveBeenCalledTimes(1), SLOW);
+    expect(api.createBatch).toHaveBeenCalledWith(
       expect.objectContaining({ startDate: "2026-10-09", endDate: "2026-11-08" }),
     );
   });
@@ -328,15 +335,13 @@ describe("PorteurConfigurator", () => {
     expect(
       await screen.findByText(CAMPAIGN_NOT_DRAFT_MESSAGE, undefined, SLOW),
     ).toBeInTheDocument();
-    expect(api.createReservation).not.toHaveBeenCalled();
+    expect(api.createBatch).not.toHaveBeenCalled();
     expect(screen.queryByRole("radio", { name: /Rentrée Médina/ })).toBeNull();
   });
 
   it("maps a backend conflict to an inline message", async () => {
-    api.createReservation.mockRejectedValue(
-      new ApiError(400, "Support déjà réservé", {
-        rawMessage: "Support already reserved for the selected period",
-      }),
+    api.createBatch.mockRejectedValue(
+      new ApiError(409, "Support déjà réservé", { code: "SUPPORT_ALREADY_RESERVED" }),
     );
     render(<Harness />);
     await screen.findByRole("group", STRIP, SLOW);

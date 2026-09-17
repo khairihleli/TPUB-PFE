@@ -214,6 +214,11 @@ export const NAV_SEQUENCES: Readonly<Record<ShellVariant, readonly NavSequence[]
     { keys: "g m", label: "Modération", href: "/admin/moderation" },
     { keys: "g r", label: "Réseau", href: "/admin/reseau" },
     { keys: "g u", label: "Messages prioritaires", href: "/admin/urgences" },
+    { keys: "g v", label: "Réservations", href: "/admin/reservations" },
+    { keys: "g s", label: "Statistiques", href: "/admin/statistiques" },
+    { keys: "g j", label: "Journal", href: "/admin/journal" },
+    { keys: "g e", label: "Utilisateurs", href: "/admin/utilisateurs" },
+    { keys: "g i", label: "Règles IA", href: "/admin/regles-ia" },
   ],
 };
 

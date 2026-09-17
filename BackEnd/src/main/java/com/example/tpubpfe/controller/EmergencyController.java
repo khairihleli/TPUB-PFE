@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -25,18 +26,18 @@ public class EmergencyController {
 
     private final EmergencyService emergencyService;
 
-    @Operation(summary = "Create a priority emergency message")
+    @Operation(summary = "Create a priority emergency message (zone or map circle, datetime window)")
     @PreAuthorize("hasRole('ADMINISTRATEUR')")
     @PostMapping
     public ResponseEntity<EmergencyResponse> create(@Valid @RequestBody EmergencyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(emergencyService.create(request));
     }
 
-    @Operation(summary = "List all emergency messages")
+    @Operation(summary = "List emergency messages, newest first (optional state PROGRAMME, EN_COURS, TERMINE, DESACTIVE)")
     @PreAuthorize("hasAnyRole('ADMINISTRATEUR', 'SUPERVISEUR', 'OPERATEUR')")
     @GetMapping
-    public ResponseEntity<List<EmergencyResponse>> getAll() {
-        return ResponseEntity.ok(emergencyService.getAll());
+    public ResponseEntity<List<EmergencyResponse>> getAll(@RequestParam(required = false) String state) {
+        return ResponseEntity.ok(emergencyService.getAll(state));
     }
 
     @Operation(summary = "Deactivate an emergency message")

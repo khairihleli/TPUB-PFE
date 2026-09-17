@@ -18,6 +18,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -48,6 +49,10 @@ public class DiffusionLog {
     @JoinColumn(name = "emergency_id")
     private EmergencyMessage emergency;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reservation_id")
+    private Reservation reservation;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "content_type", nullable = false, length = 30)
     @Builder.Default
@@ -65,6 +70,11 @@ public class DiffusionLog {
     @Column(nullable = false)
     @Builder.Default
     private Short priority = 0;
+
+    /** Simulated cost of this diffusion (unit cost for PUBLICITE, 0 otherwise). */
+    @Column(nullable = false, precision = 10, scale = 4)
+    @Builder.Default
+    private BigDecimal cost = BigDecimal.ZERO;
 
     @Column(name = "diffused_at", nullable = false)
     @Builder.Default

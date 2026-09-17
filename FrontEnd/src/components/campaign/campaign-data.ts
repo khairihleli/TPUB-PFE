@@ -1,14 +1,24 @@
 /**
- * Data loaders for the campaign module. Every campaign id comes from the URL and is NEVER
- * trusted: the backend has no ownership check (contract §7.16), so an id is only used once it
- * has been found in GET /campaigns/mine.
+ * Data loaders for the campaign module (contract §2). Every campaign id comes from the URL: the
+ * backend answers 404 CAMPAIGN_NOT_FOUND for a campaign that is not the caller's, which the UI
+ * renders as « Campagne introuvable ».
  */
-import { aiApi, campaignsApi, reservationsApi, supportsApi, zonesApi } from "@/lib/api/endpoints";
-import { isAbortError, isNoAiReportError } from "@/lib/api/errors";
+import {
+  aiApi,
+  campaignsApi,
+  estimatesApi,
+  mediaApi,
+  reservationsApi,
+  supportsApi,
+  zonesApi,
+} from "@/lib/api/endpoints";
+import { ApiError, isAbortError, isNoAiReportError } from "@/lib/api/errors";
 import type {
   AiReport,
+  CampaignEstimateResponse,
   CampaignResponse,
   CampaignStatus,
+  MediaFileResponse,
   ReservationResponse,
   SupportResponse,
   SupportType,
@@ -28,25 +38,22 @@ export function isCampaignNotFound(e: unknown): e is CampaignNotFoundError {
   return e instanceof CampaignNotFoundError;
 }
 
-/** Finds `id` in /campaigns/mine. Throws CampaignNotFoundError when it is not the caller's. */
+/** GET /campaigns/{id}; 404 (not found or not the caller's) and 403 → CampaignNotFoundError. */
 export async function loadOwnedCampaign(
   id: number | null,
   signal: AbortSignal,
 ): Promise<CampaignResponse> {
   if (id === null) throw new CampaignNotFoundError();
-  // Always fresh (staleTime 0), but shares an in-flight request with the nav badges / palette,
-  // and primes the /mine cache for the list and the not-found suggestions.
-  const mine = await fetchCached(
-    resourceKeys.campaignsMine,
-    (s) => campaignsApi.mine({ signal: s }),
-    {
-      signal,
-      staleTime: 0,
-    },
-  );
-  const campaign = mine.find((c) => c.id === id);
-  if (!campaign) throw new CampaignNotFoundError();
-  return campaign;
+  try {
+    const campaign = await campaignsApi.get(id, { signal });
+    primeCache(resourceKeys.campaign(id), campaign);
+    return campaign;
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+      throw new CampaignNotFoundError();
+    }
+    throw e;
+  }
 }
 
 export interface CampaignWithReservations {
@@ -69,20 +76,16 @@ export async function loadCampaignWithReservations(
 
 export type AiReportState =
   | { kind: "report"; report: AiReport }
-  /** 400 « No AI report found »: never analysed. */
+  /** 404 AI_REPORT_NOT_FOUND: never analysed (not even a pre-analysis). */
   | { kind: "none" }
   | { kind: "error"; error: unknown };
 
-/**
- * GET /ai/report — 400 means « pas encore analysée » (contract §7.25), never a page error.
- * A draft has never been submitted, so no report can exist: the request is skipped (FLOW-18).
- */
+/** GET /ai/report — « not found » is a normal state, never a page error. */
 export async function loadAiReportState(
-  campaign: number | Pick<CampaignResponse, "id" | "status">,
+  campaign: number | Pick<CampaignResponse, "id">,
   signal: AbortSignal,
 ): Promise<AiReportState> {
   const campaignId = typeof campaign === "number" ? campaign : campaign.id;
-  if (typeof campaign !== "number" && campaign.status === "BROUILLON") return { kind: "none" };
   try {
     return { kind: "report", report: await aiApi.report(campaignId, { signal }) };
   } catch (e) {
@@ -92,38 +95,22 @@ export async function loadAiReportState(
   }
 }
 
-export interface NetworkLookups {
-  /** null when the lookup failed: names degrade to « Écran n° … », the page still works. */
-  supports: ReadonlyMap<number, SupportResponse> | null;
-  zones: ReadonlyMap<number, ZoneResponse> | null;
-}
+/** Optional section: a failure degrades that section only. */
+export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-export async function loadNetworkLookups(
-  signal: AbortSignal,
-  /** Read supports/zones through the shared 30 s cache (detail page polling). */
-  { cached = false }: { cached?: boolean } = {},
-): Promise<NetworkLookups> {
-  const [supports, zones] = await Promise.allSettled(
-    cached
-      ? [
-          fetchCached(resourceKeys.supportsAll, (s) => supportsApi.all({ signal: s }), { signal }),
-          fetchCached(resourceKeys.zonesAll, (s) => zonesApi.all({ signal: s }), { signal }),
-        ]
-      : [supportsApi.all({ signal }), zonesApi.all({ signal })],
-  );
-  for (const r of [supports, zones]) {
-    if (r.status === "rejected" && isAbortError(r.reason)) throw r.reason;
+async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
+  try {
+    return { ok: true, value: await promise };
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { ok: false, error };
   }
-  return {
-    supports:
-      supports.status === "fulfilled" ? new Map(supports.value.map((s) => [s.id, s])) : null,
-    zones: zones.status === "fulfilled" ? new Map(zones.value.map((z) => [z.id, z])) : null,
-  };
 }
 
 export interface CampaignDetailData extends CampaignWithReservations {
   ai: AiReportState;
-  lookups: NetworkLookups;
+  media: Settled<MediaFileResponse[]>;
+  estimate: Settled<CampaignEstimateResponse>;
 }
 
 export async function loadCampaignDetail(
@@ -131,13 +118,14 @@ export async function loadCampaignDetail(
   signal: AbortSignal,
 ): Promise<CampaignDetailData> {
   const campaign = await loadOwnedCampaign(id, signal);
-  const [reservations, ai, lookups] = await Promise.all([
+  const [reservations, ai, media, estimate] = await Promise.all([
     reservationsApi.byCampaign(campaign.id, { signal }),
     loadAiReportState(campaign, signal),
-    loadNetworkLookups(signal, { cached: true }),
+    settle(mediaApi.list(campaign.id, { signal })),
+    settle(estimatesApi.campaign(campaign.id, { signal })),
   ]);
   primeCache(resourceKeys.reservationsByCampaign(campaign.id), reservations);
-  return { campaign, reservations, ai, lookups };
+  return { campaign, reservations, ai, media, estimate };
 }
 
 // ---------------------------------------------------------------------------
@@ -150,8 +138,7 @@ export const REVIEW_POLL_MS = 60_000;
 
 /**
  * Detail page polling: every 10 s while PENDING_AI_CHECK (only within the 2-minute window),
- * every 60 s while waiting for a TPUB decision, otherwise none. Pausing while the tab is hidden
- * is handled by useResource.
+ * every 60 s while waiting for a TPUB decision, otherwise none.
  */
 export function pollIntervalFor(
   status: CampaignStatus,
@@ -170,29 +157,38 @@ export function campaignReference(id: number): string {
 // ---------------------------------------------------------------------------
 // Joins & aggregates
 // ---------------------------------------------------------------------------
+export interface NetworkLookups {
+  /** null when the lookup failed or was not loaded: names fall back to the reservation's own. */
+  supports: ReadonlyMap<number, SupportResponse> | null;
+  zones: ReadonlyMap<number, ZoneResponse> | null;
+}
+
+export const NO_LOOKUPS: NetworkLookups = { supports: null, zones: null };
+
 export interface JoinedReservation extends ReservationResponse {
   supportName: string;
   zoneName: string;
   supportType: SupportType | null;
 }
 
+/** v2 reservations carry their names; lookups only fill gaps of older payloads. */
 export function joinReservations(
   reservations: readonly ReservationResponse[],
-  lookups: NetworkLookups,
+  lookups: NetworkLookups = NO_LOOKUPS,
 ): JoinedReservation[] {
   return reservations.map((r) => {
     const support = lookups.supports?.get(r.supportId);
     const zone = lookups.zones?.get(r.zoneId);
     return {
       ...r,
-      supportName: support?.name ?? `Porteur n° ${r.supportId}`,
-      zoneName: zone?.name ?? support?.zoneName ?? `Zone n° ${r.zoneId}`,
-      supportType: support?.supportType ?? null,
+      supportName: r.supportName ?? support?.name ?? `Porteur n° ${r.supportId}`,
+      zoneName: r.zoneName ?? zone?.name ?? support?.zoneName ?? `Zone n° ${r.zoneId}`,
+      supportType: r.supportType ?? support?.supportType ?? null,
     };
   });
 }
 
-/** Sum of the backend's hard-coded `estimatedCost` (always an estimate, never a price). */
+/** Sum of the backend `estimatedCost` (always an estimate, never a price). */
 export function sumEstimatedCost(
   reservations: readonly Pick<ReservationResponse, "estimatedCost">[],
 ) {
@@ -202,7 +198,7 @@ export function sumEstimatedCost(
   );
 }
 
-/** Reservations that still hold a screen (TEMPORAIRE / CONFIRMEE). */
+/** Reservations that still hold a Porteur (TEMPORAIRE / CONFIRMEE). */
 export function activeReservations<T extends Pick<ReservationResponse, "reservationStatus">>(
   reservations: readonly T[],
 ): T[] {
@@ -213,20 +209,15 @@ export function activeReservations<T extends Pick<ReservationResponse, "reservat
 
 export interface ScreenCatalogue {
   zones: ZoneResponse[];
-  /** Screens with technicalStatus ACTIF located in an active zone. */
-  screens: SupportResponse[];
-  /**
-   * Every Porteur located in an active zone, whatever its status or type (the « Carte » tab shows
-   * them all at their exact position; only `screens` can be booked).
-   */
+  /** Every Porteur located in an active zone (map context). */
   network: SupportResponse[];
 }
 
-/** Wizard step 2: GET /zones/active + GET /supports filtered on ACTIF. */
+/** Zone step: GET /zones/active + GET /supports (map context around the campaign circles). */
 export async function loadScreenCatalogue(signal: AbortSignal): Promise<ScreenCatalogue> {
   const [zones, supports] = await Promise.all([
-    zonesApi.active({ signal }),
-    supportsApi.all({ signal }),
+    fetchCached(resourceKeys.zonesActive, (s) => zonesApi.active({ signal: s }), { signal }),
+    fetchCached(resourceKeys.supportsAll, (s) => supportsApi.all({ signal: s }), { signal }),
   ]);
   return buildScreenCatalogue(zones, supports);
 }
@@ -242,6 +233,5 @@ export function buildScreenCatalogue(
   const network = supports
     .filter((s) => ids.has(s.zoneId))
     .sort((a, b) => a.name.localeCompare(b.name, "fr"));
-  const screens = network.filter((s) => s.technicalStatus === "ACTIF");
-  return { zones: activeZones, screens, network };
+  return { zones: activeZones, network };
 }

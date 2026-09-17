@@ -1,21 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  mine: vi.fn(),
+  get: vi.fn(),
   byCampaign: vi.fn(),
   report: vi.fn(),
-  checkContent: vi.fn(),
-  submit: vi.fn(),
-  supportsAll: vi.fn(),
-  zonesAll: vi.fn(),
+  mediaList: vi.fn(),
+  estimate: vi.fn(),
 }));
 
 vi.mock("@/lib/api/endpoints", () => ({
-  campaignsApi: { mine: mocks.mine, submit: mocks.submit },
+  campaignsApi: { get: mocks.get },
   reservationsApi: { byCampaign: mocks.byCampaign },
-  aiApi: { report: mocks.report, checkContent: mocks.checkContent },
-  supportsApi: { all: mocks.supportsAll },
-  zonesApi: { all: mocks.zonesAll, active: vi.fn() },
+  aiApi: { report: mocks.report },
+  mediaApi: { list: mocks.mediaList },
+  estimatesApi: { campaign: mocks.estimate },
+  supportsApi: { all: vi.fn() },
+  zonesApi: { active: vi.fn() },
 }));
 
 import {
@@ -102,16 +102,17 @@ beforeEach(() => {
   clearResourceCache();
 });
 
-describe("ownership (contract §7.16)", () => {
-  it("returns the campaign only when it belongs to /campaigns/mine", async () => {
-    mocks.mine.mockResolvedValue([campaign({ id: 4 }), campaign({ id: 9 })]);
+describe("ownership (contract §2.0 CampaignAccessGuard)", () => {
+  it("loads the campaign and primes its cache entry", async () => {
+    mocks.get.mockResolvedValue(campaign({ id: 9 }));
     await expect(loadOwnedCampaign(9, signal)).resolves.toMatchObject({ id: 9 });
-    // /mine primes the shared cache (list, badges, palette, not-found suggestions)
-    expect(getCached<CampaignResponse[]>(resourceKeys.campaignsMine)?.data).toHaveLength(2);
+    expect(getCached<CampaignResponse>(resourceKeys.campaign(9))?.data).toMatchObject({ id: 9 });
   });
 
-  it("refuses an id that is not in /mine, without calling other endpoints", async () => {
-    mocks.mine.mockResolvedValue([campaign({ id: 4 })]);
+  it("maps 404 CAMPAIGN_NOT_FOUND (not the caller's) to CampaignNotFoundError, without other calls", async () => {
+    mocks.get.mockRejectedValue(
+      new ApiError(404, "Campagne introuvable.", { code: "CAMPAIGN_NOT_FOUND" }),
+    );
     await expect(loadCampaignWithReservations(77, signal)).rejects.toBeInstanceOf(
       CampaignNotFoundError,
     );
@@ -120,12 +121,25 @@ describe("ownership (contract §7.16)", () => {
 
   it("refuses a missing id", async () => {
     await expect(loadOwnedCampaign(null, signal)).rejects.toBeInstanceOf(CampaignNotFoundError);
-    expect(mocks.mine).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("rethrows other errors", async () => {
+    const error = new ApiError(502, "Indisponible");
+    mocks.get.mockRejectedValue(error);
+    await expect(loadOwnedCampaign(3, signal)).rejects.toBe(error);
   });
 });
 
 describe("AI report state", () => {
-  it("treats 400 « No AI report found » as not analysed yet", async () => {
+  it("treats 404 AI_REPORT_NOT_FOUND as not analysed yet", async () => {
+    mocks.report.mockRejectedValue(
+      new ApiError(404, "Aucune analyse", { code: "AI_REPORT_NOT_FOUND" }),
+    );
+    await expect(loadAiReportState(3, signal)).resolves.toEqual({ kind: "none" });
+  });
+
+  it("keeps the legacy 400 « No AI report found » fallback", async () => {
     mocks.report.mockRejectedValue(
       new ApiError(400, "Aucune analyse", { rawMessage: "No AI report found for campaign: 3" }),
     );
@@ -138,47 +152,31 @@ describe("AI report state", () => {
     await expect(loadAiReportState(3, signal)).resolves.toEqual({ kind: "error", error });
   });
 
-  it("never calls GET /ai/report for a draft (FLOW-18, FFA-16)", async () => {
-    await expect(loadAiReportState({ id: 3, status: "BROUILLON" }, signal)).resolves.toEqual({
-      kind: "none",
-    });
-    expect(mocks.report).not.toHaveBeenCalled();
+  it("loads the detail with reservations, report, media and estimate", async () => {
+    const report = { campaignId: 3, aiStatus: "APPROVED", riskScore: 10, qualityScore: 80 };
+    mocks.get.mockResolvedValue(campaign({ id: 3, status: "APPROVED_BY_AI" }));
+    mocks.byCampaign.mockResolvedValue([reservation({ campaignId: 3 })]);
+    mocks.report.mockResolvedValue(report);
+    mocks.mediaList.mockResolvedValue([]);
+    mocks.estimate.mockResolvedValue({ campaignId: 3, lines: [], totalViews: 0, totalCost: 0 });
+    const data = await loadCampaignDetail(3, signal);
+    expect(data.reservations).toHaveLength(1);
+    expect(data.ai).toEqual({ kind: "report", report });
+    expect(data.media).toEqual({ ok: true, value: [] });
+    expect(data.estimate).toMatchObject({ ok: true });
   });
 
-  it("loads the detail of a draft without the AI report request", async () => {
-    mocks.mine.mockResolvedValue([campaign({ id: 3, status: "BROUILLON" })]);
-    mocks.byCampaign.mockResolvedValue([reservation({ campaignId: 3 })]);
-    mocks.supportsAll.mockResolvedValue([]);
-    mocks.zonesAll.mockResolvedValue([]);
+  it("degrades only the media and estimate sections when they fail", async () => {
+    const error = new ApiError(500, "Erreur");
+    mocks.get.mockResolvedValue(campaign({ id: 3 }));
+    mocks.byCampaign.mockResolvedValue([]);
+    mocks.report.mockRejectedValue(new ApiError(404, "x", { code: "AI_REPORT_NOT_FOUND" }));
+    mocks.mediaList.mockRejectedValue(error);
+    mocks.estimate.mockRejectedValue(error);
     const data = await loadCampaignDetail(3, signal);
     expect(data.ai).toEqual({ kind: "none" });
-    expect(data.reservations).toHaveLength(1);
-    expect(mocks.report).not.toHaveBeenCalled();
-  });
-
-  it("still asks for the report once submitted", async () => {
-    mocks.mine.mockResolvedValue([campaign({ id: 3, status: "PENDING_AI_CHECK" })]);
-    mocks.byCampaign.mockResolvedValue([]);
-    mocks.supportsAll.mockResolvedValue([]);
-    mocks.zonesAll.mockResolvedValue([]);
-    mocks.report.mockRejectedValue(
-      new ApiError(400, "Aucune analyse", { rawMessage: "No AI report found for campaign: 3" }),
-    );
-    await expect(loadCampaignDetail(3, signal)).resolves.toMatchObject({ ai: { kind: "none" } });
-    expect(mocks.report).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns the report", async () => {
-    const report = {
-      campaignId: 3,
-      aiStatus: "APPROVED",
-      riskScore: 20,
-      qualityScore: 75,
-      detectedIssues: [],
-      recommendation: "Contenu conforme pour diffusion",
-    };
-    mocks.report.mockResolvedValue(report);
-    await expect(loadAiReportState(3, signal)).resolves.toEqual({ kind: "report", report });
+    expect(data.media).toEqual({ ok: false, error });
+    expect(data.estimate).toEqual({ ok: false, error });
   });
 });
 
@@ -235,7 +233,7 @@ describe("joins and aggregates", () => {
     expect(sumEstimatedCost([reservation({ estimatedCost: Number.NaN })])).toBe(0);
   });
 
-  it("keeps only ACTIF screens located in active zones", () => {
+  it("keeps every Porteur located in an active zone", () => {
     const catalogue = buildScreenCatalogue(
       [
         { id: 2, name: "Sousse", latitude: 0, longitude: 0, radiusKm: null, isActive: true },
@@ -249,7 +247,6 @@ describe("joins and aggregates", () => {
       ],
     );
     expect(catalogue.zones.map((z) => z.name)).toEqual(["Ariana", "Sousse"]);
-    expect(catalogue.screens.map((s) => s.id)).toEqual([1, 4]);
     // the map shows every Porteur of the open zones (non-ACTIF included), never other zones
     expect(catalogue.network.map((s) => s.id)).toEqual([2, 1, 4]);
   });

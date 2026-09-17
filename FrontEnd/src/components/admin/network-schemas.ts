@@ -1,6 +1,8 @@
 /** Zone & support (écran) forms: client rules mirroring the DB checks (contract §5.5, §5.6). */
 import { z } from "zod";
 
+import { hasErrorCode } from "@/lib/api/errors";
+
 import {
   maxChars,
   parseDecimal,
@@ -120,6 +122,7 @@ export const SUPPORT_FIELDS = [
   "mastHeightM",
   "headingDeg",
   "address",
+  "visibilityScore",
 ] as const;
 export type SupportField = (typeof SUPPORT_FIELDS)[number];
 
@@ -143,6 +146,7 @@ export function supportFormFrom(support?: SupportResponse | null): SupportFormVa
     mastHeightM: support?.mastHeightM != null ? String(support.mastHeightM) : "",
     headingDeg: support?.headingDeg != null ? String(support.headingDeg) : "",
     address: support?.address ?? "",
+    visibilityScore: support?.visibilityScore != null ? String(support.visibilityScore) : "",
   };
 }
 
@@ -189,6 +193,7 @@ export function supportRequestFrom(
     mastHeightM: isMastHeightValue(support.mastHeightM) ? support.mastHeightM : null,
     headingDeg: support.headingDeg ?? null,
     address: support.address ?? null,
+    visibilityScore: support.visibilityScore ?? null,
     ...patch,
   };
 }
@@ -251,6 +256,19 @@ export const supportSchema = z
         { error: "Orientation en degrés entiers, de 0 (nord) à 359." },
       ),
     address: z.string().trim().max(ADDRESS_MAX, maxChars(ADDRESS_MAX)).default(""),
+    // Contract §2.4: 0..100, drives the views estimation (blank = neutral factor 1.0).
+    visibilityScore: z
+      .string()
+      .trim()
+      .default("")
+      .refine(
+        (v) => {
+          if (v === "") return true;
+          const n = parseInteger(v);
+          return n !== null && n >= 0 && n <= 100;
+        },
+        { error: "Score entier de 0 à 100 (vide = visibilité standard)." },
+      ),
   })
   .transform((v): SupportRequest => ({
     zoneId: parseInteger(v.zoneId) ?? 0,
@@ -265,6 +283,7 @@ export const supportSchema = z
     headingDeg: v.headingDeg === "" ? null : (parseInteger(v.headingDeg) ?? null),
     // Blank clears the address on update (backend rule); on create it stays empty.
     address: v.address,
+    visibilityScore: v.visibilityScore === "" ? null : (parseInteger(v.visibilityScore) ?? null),
   }));
 
 // ---------------------------------------------------------------------------
@@ -275,6 +294,8 @@ export const ZONE_IN_USE_MESSAGE =
 
 export function isZoneInUseError(e: unknown): boolean {
   if (typeof e !== "object" || e === null) return false;
+  // v2 backend: 409 ZONE_IN_USE (contract §2.4); pre-v2: 400 « Invalid data… ».
+  if (hasErrorCode(e, "ZONE_IN_USE", "DATA_INTEGRITY")) return true;
   const err = e as { status?: unknown; rawMessage?: unknown };
   return (
     err.status === 400 &&

@@ -1,6 +1,5 @@
 package com.example.tpubpfe.model;
 
-import com.example.tpubpfe.model.AiModerationSeverity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -33,8 +32,9 @@ public class AiModerationRule {
     @Column(name = "rule_name", nullable = false, unique = true, length = 150)
     private String ruleName;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "rule_type", nullable = false, length = 50)
-    private String ruleType;
+    private AiRuleType ruleType;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String pattern;
@@ -44,8 +44,9 @@ public class AiModerationRule {
     @Builder.Default
     private AiModerationSeverity severity = AiModerationSeverity.MEDIUM;
 
+    @Enumerated(EnumType.STRING)
     @Column(length = 50)
-    private String sector;
+    private AiSector sector;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default

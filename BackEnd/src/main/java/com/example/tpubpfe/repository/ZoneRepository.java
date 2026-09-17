@@ -8,4 +8,6 @@ import java.util.List;
 public interface ZoneRepository extends JpaRepository<Zone, Long> {
 
     List<Zone> findByIsActiveTrue();
+
+    long countByIsActiveTrue();
 }

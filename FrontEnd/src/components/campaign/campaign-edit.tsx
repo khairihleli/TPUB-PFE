@@ -1,13 +1,12 @@
 "use client";
 
-import { CopyPlus, Lock, Save } from "lucide-react";
+import { Lock, Save } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { parseCampaignId } from "@/components/campaign/campaign-actions";
 import {
-  activeReservations,
   type CampaignWithReservations,
   isCampaignNotFound,
   loadCampaignWithReservations,
@@ -21,7 +20,6 @@ import {
   campaignToFormValues,
 } from "@/components/campaign/campaign-schema";
 import { CampaignNotFound } from "@/components/campaign/campaign-ui";
-import { DuplicateCampaignDialog } from "@/components/campaign/duplicate-campaign-dialog";
 import { saveCampaign } from "@/components/campaign/step-details";
 import { useDocumentTitle } from "@/components/shell/breadcrumbs";
 import { useCommandPalette } from "@/components/shell/command-palette";
@@ -36,8 +34,8 @@ import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import { campaignsApi } from "@/lib/api/endpoints";
-import { getCampaignStatusMeta, isEditable } from "@/lib/campaign-status";
-import { todayISO } from "@/lib/format";
+import { editReopens, getCampaignStatusMeta, isEditable } from "@/lib/campaign-status";
+import { formatCount, todayISO } from "@/lib/format";
 import { useFormDraft } from "@/lib/forms/form-draft";
 import { useUnsavedChangesGuard } from "@/lib/forms/unsaved-guard";
 import { invalidate, resourceKeys } from "@/lib/resource-cache";
@@ -96,9 +94,7 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ErrorSummaryItem[]>([]);
   const [attempt, setAttempt] = useState(0);
-  const [duplicateOpen, setDuplicateOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  const lockSchedule = activeReservations(data.reservations).length > 0;
   const detailHref = routes.espace.campaign(campaign.id);
 
   const dirty = !sameFormValues(values, baseline);
@@ -144,7 +140,7 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
     if (saving) return;
     setSaving(true);
     setServerError(null);
-    const result = await saveCampaign({ values, campaign, today, lockSchedule });
+    const result = await saveCampaign({ values, campaign, today });
     setSaving(false);
     if (!result.ok) {
       setErrors(result.errors);
@@ -157,12 +153,26 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
     draft.clear();
     if (result.changed) {
       invalidate(resourceKeys.campaignsMine);
+      invalidate(resourceKeys.reservationsByCampaign(campaign.id));
     }
+    const released = (campaign.reservationsCount ?? 0) - (result.campaign.reservationsCount ?? 0);
+    const reopened =
+      result.changed && result.campaign.status === "BROUILLON" && campaign.status !== "BROUILLON";
     toast({
-      title: result.changed ? "Modifications enregistrées" : "Aucune modification",
-      variant: result.changed ? "success" : "info",
+      title: !result.changed
+        ? "Aucune modification"
+        : reopened
+          ? "Campagne remise en brouillon"
+          : "Modifications enregistrées",
+      description:
+        released > 0
+          ? `${formatCount(released, "réservation libérée", "réservations libérées")} : hors de la nouvelle période ou du nouveau créneau.`
+          : reopened
+            ? "Vérifiez le contenu et les Porteurs, puis soumettez-la à nouveau."
+            : undefined,
+      variant: !result.changed ? "info" : released > 0 ? "warning" : "success",
     });
-    router.push(detailHref);
+    router.push(reopened ? routes.espace.wizard(campaign.id, "contenu") : detailHref);
   };
 
   return (
@@ -189,33 +199,22 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
 
       <ErrorSummary errors={summary} focusKey={attempt} className="mb-6" />
 
-      {campaign.status === "REJECTED_BY_AI" ? (
+      {campaign.rejectionReason ? (
+        <Alert tone="danger" live="none" className="mb-6" title="Motif du dernier refus">
+          {campaign.rejectionReason}
+        </Alert>
+      ) : null}
+
+      {editReopens(campaign.status) ? (
         <Alert
           tone="warning"
           live="none"
           className="mb-6"
-          title="Modifier ne relance pas l'analyse"
-          action={
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              iconLeft={<CopyPlus aria-hidden="true" />}
-              onClick={() => setDuplicateOpen(true)}
-            >
-              Dupliquer et corriger
-            </Button>
-          }
+          title="La campagne repassera en brouillon"
         >
-          Une campagne à corriger ne peut pas être soumise à nouveau, même modifiée. Pour la
-          renvoyer en modération, dupliquez-la : le nouveau brouillon reprend ces informations.
-        </Alert>
-      ) : null}
-
-      {lockSchedule ? (
-        <Alert tone="info" live="none" className="mb-6" icon={<Lock />} title="Période verrouillée">
-          Des Porteurs sont déjà bloqués sur la période enregistrée : seuls le nom, l&apos;objectif
-          et le budget sont modifiables.
+          Enregistrer ces modifications remet la campagne en brouillon : vous pourrez ensuite
+          corriger son contenu et ses Porteurs, puis la soumettre à nouveau à l&apos;analyse IA et à
+          TPUB.
         </Alert>
       ) : null}
 
@@ -225,7 +224,11 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
           errors={errors}
           onChange={onChange}
           today={today}
-          lockSchedule={lockSchedule}
+          scheduleNote={
+            (campaign.reservationsCount ?? 0) > 0
+              ? "Les réservations hors de la nouvelle période ou du nouveau créneau seront libérées."
+              : undefined
+          }
           disabled={saving}
           idPrefix={ID_PREFIX}
         />
@@ -252,14 +255,6 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
           Enregistrer les modifications
         </Button>
       </div>
-
-      {campaign.status === "REJECTED_BY_AI" ? (
-        <DuplicateCampaignDialog
-          campaign={campaign}
-          open={duplicateOpen}
-          onOpenChange={setDuplicateOpen}
-        />
-      ) : null}
     </form>
   );
 }
@@ -313,8 +308,8 @@ function EditNotFound() {
 
 /**
  * /espace/campagnes/[id]/modifier — one editing flow per status (IA-05): drafts are edited in
- * the wizard (redirect to « Détails »), REJECTED_BY_AI here with an explicit « Enregistrer »,
- * other statuses are read-only.
+ * the wizard (redirect to « Détails »), REJECTED_BY_AI / BLOCKED here (saving reopens them to
+ * BROUILLON server-side), other statuses are read-only.
  */
 export function CampaignEdit({ idParam }: { idParam: string }) {
   const router = useRouter();

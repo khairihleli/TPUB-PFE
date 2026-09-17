@@ -3,6 +3,8 @@ package com.example.tpubpfe.dto;
 import com.example.tpubpfe.model.SupportType;
 import com.example.tpubpfe.model.TechnicalStatus;
 import com.example.tpubpfe.validation.AllowedIntValues;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -38,7 +40,13 @@ public class SupportRequest {
     private BigDecimal longitude;
 
     private TechnicalStatus technicalStatus;
+    @Min(1)
     private Short diffusionCapacity;
+
+    /** Optional ; 0..100 ; on update null = unchanged. Weighs estimated views (contract §2.6). */
+    @DecimalMin("0")
+    @DecimalMax("100")
+    private BigDecimal visibilityScore;
 
     /** Optional ; "A" | "B" | "C" | "D" ; on update null = unchanged. */
     @Pattern(regexp = "^[ABCD]$", message = "must be one of A, B, C, D")

@@ -2,10 +2,33 @@
 
 export const UNREACHABLE_BODY = {
   status: 502,
+  code: "BACKEND_UNREACHABLE",
   message: "Le service TPUB est momentanément indisponible.",
 } as const;
 
-export const SESSION_EXPIRED_BODY = { status: 401, message: "Session expirée" } as const;
+export const SESSION_EXPIRED_BODY = {
+  status: 401,
+  code: "SESSION_EXPIRED",
+  message: "Session expirée",
+} as const;
+
+/** Largest request body forwarded by the bridge (backend multipart limit, contract §2.3). */
+export const MAX_FORWARDED_BODY_BYTES = 60 * 1024 * 1024;
+
+export const PAYLOAD_TOO_LARGE_BODY = {
+  status: 413,
+  code: "PAYLOAD_TOO_LARGE",
+  message: "Le fichier envoyé est trop volumineux (60 Mo maximum).",
+} as const;
+
+/** JSON 401 codes of the security chain meaning « this session is over » (contract §2.0). */
+export const SESSION_END_CODES: ReadonlySet<string> = new Set([
+  "UNAUTHENTICATED",
+  "TOKEN_INVALID",
+  "TOKEN_EXPIRED",
+  "SESSION_REVOKED",
+  "ACCOUNT_DISABLED",
+]);
 
 export function backendUrl(): string {
   const raw = (process.env.TPUB_API_URL ?? "").trim() || "http://localhost:8080";
@@ -37,4 +60,47 @@ export function parseJsonSafe(text: string): unknown {
   } catch {
     return null;
   }
+}
+
+/** `code` of a backend error body, or null. */
+export function errorCodeOf(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const code = (data as { code?: unknown }).code;
+  return typeof code === "string" && code ? code : null;
+}
+
+/**
+ * Client context forwarded to Spring (session rows and login history store IP + user agent,
+ * contract §2.10). The first X-Forwarded-For hop is kept as sent by the proxy in front of Next.
+ */
+export function clientContextHeaders(source: Headers): Headers {
+  const out = new Headers();
+  const ua = source.get("user-agent");
+  if (ua) out.set("user-agent", ua);
+  const xff = source.get("x-forwarded-for") ?? source.get("x-real-ip");
+  if (xff) out.set("x-forwarded-for", xff);
+  return out;
+}
+
+/** Declared body size, or null when absent/invalid (chunked uploads). */
+export function declaredContentLength(headers: Headers): number | null {
+  const raw = headers.get("content-length");
+  if (raw === null || raw.trim() === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Segments that could escape the uploads directory, or are not plain file names. */
+export function isSafeUploadPath(segments: readonly string[]): boolean {
+  if (segments.length === 0) return false;
+  return segments.every(
+    (s) =>
+      s.length > 0 &&
+      s !== "." &&
+      s !== ".." &&
+      !s.includes("/") &&
+      !s.includes("\\") &&
+      !s.includes("\0") &&
+      !/%2e|%2f|%5c/i.test(s),
+  );
 }

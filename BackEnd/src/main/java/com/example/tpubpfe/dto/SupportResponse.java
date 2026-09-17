@@ -26,4 +26,8 @@ public class SupportResponse {
     private Short mastHeightM;
     private Short headingDeg;
     private String address;
+    /** 0..100, null when unknown. */
+    private BigDecimal visibilityScore;
+    /** Filled only by availability searches (distance to the searched target). */
+    private Double distanceKm;
 }

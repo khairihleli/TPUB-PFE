@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { campaign, reservation } from "@/components/espace/__tests__/fixtures";
+import { campaign } from "@/components/espace/__tests__/fixtures";
+import { EMPTY_TOTALS } from "@/components/espace/statistics-model";
 import {
   bucketSummary,
-  budgetByCampaign,
   buildTodos,
   CAMPAIGN_BUCKETS,
   campaignBucket,
-  computeAdvertiserKpis,
+  countBuckets,
   daysUntil,
   emptyBuckets,
   firstName,
   inDaysLabel,
+  mineKpis,
   onboardingMilestones,
   roundTND,
   upcomingDeadlines,
@@ -20,105 +21,65 @@ import { CAMPAIGN_BUCKETS as LIB_BUCKETS } from "@/lib/campaign-status";
 
 const TODAY = "2026-09-13";
 
-describe("computeAdvertiserKpis", () => {
-  it("returns zeros for a first-time advertiser", () => {
-    const k = computeAdvertiserKpis([], [], TODAY);
-    expect(k).toMatchObject({
-      campaignCount: 0,
-      totalBudget: 0,
-      reservationCount: 0,
-      reservedScreens: 0,
-      estimatedViews: 0,
-      estimatedCost: 0,
-    });
-    expect(Object.values(k.byBucket).every((n) => n === 0)).toBe(true);
+describe("mineKpis (GET /statistics/mine, never aggregated client-side)", () => {
+  it("returns zero tiles for a first-time advertiser", () => {
+    const tiles = mineKpis({ totals: EMPTY_TOTALS });
+    expect(tiles.map((t) => t.key)).toEqual([
+      "views",
+      "clicks",
+      "interactions",
+      "estimatedCost",
+      "consumedBudget",
+      "activeCampaigns",
+    ]);
+    expect(tiles.every((t) => t.value === 0)).toBe(true);
   });
 
+  it("labels measured and estimated figures honestly", () => {
+    const tiles = mineKpis({
+      totals: {
+        ...EMPTY_TOTALS,
+        views: 1200,
+        clicks: 30,
+        interactions: 4,
+        estimatedViews: 9000,
+        estimatedCost: 72.0004,
+        consumedBudget: 9.6,
+        activeCampaigns: 1,
+        pendingCampaigns: 2,
+        campaigns: 5,
+      },
+    });
+    const byKey = Object.fromEntries(tiles.map((t) => [t.key, t]));
+    expect(byKey.views).toMatchObject({ value: 1200, source: "mesure", kind: "count" });
+    expect(byKey.estimatedCost).toMatchObject({ value: 72, source: "estimation", kind: "money" });
+    expect(byKey.estimatedCost?.hint).toMatch(/^9.000 affichages estimés/);
+    expect(byKey.consumedBudget).toMatchObject({ value: 9.6, source: "mesure" });
+    expect(byKey.activeCampaigns?.hint).toMatch(/2 en attente · 5 campagnes au total/);
+  });
+
+  it("treats non-finite totals as zero", () => {
+    const tiles = mineKpis({ totals: { ...EMPTY_TOTALS, views: Number.NaN } });
+    expect(tiles[0]?.value).toBe(0);
+  });
+});
+
+describe("countBuckets", () => {
   it("counts campaigns per shared bucket, applying the derived Programmée / Terminée states", () => {
     const campaigns = [
       campaign({ id: 1, status: "BROUILLON" }),
       campaign({ id: 2, status: "PENDING_AI_CHECK" }),
       campaign({ id: 3, status: "REVIEW_REQUIRED" }),
-      campaign({ id: 4, status: "ACTIVE", startDate: "2026-10-01", endDate: "2026-10-31" }), // programmée
-      campaign({ id: 5, status: "ACTIVE", startDate: "2026-08-01", endDate: "2026-08-31" }), // terminée
+      campaign({ id: 4, status: "ACTIVE", startDate: "2026-10-01", endDate: "2026-10-31" }),
+      campaign({ id: 5, status: "ACTIVE", startDate: "2026-08-01", endDate: "2026-08-31" }),
       campaign({ id: 6, status: "REJECTED_BY_AI" }),
       campaign({ id: 7, status: "BLOCKED" }),
-      campaign({ id: 8, status: "ACTIVE", startDate: "2026-09-01", endDate: "2026-09-30" }), // en diffusion
+      campaign({ id: 8, status: "ACTIVE", startDate: "2026-09-01", endDate: "2026-09-30" }),
     ];
-    const k = computeAdvertiserKpis(campaigns, [], TODAY);
-    expect(k.campaignCount).toBe(8);
-    expect(k.byBucket).toEqual({
-      brouillons: 1,
-      "a-corriger": 1,
-      "en-examen": 2,
-      programmees: 1,
-      "en-diffusion": 1,
-      terminees: 1,
-      refusees: 1,
-    });
-  });
-
-  it("sums the declared budget and estimated views without refused campaigns", () => {
-    const campaigns = [
-      campaign({ id: 1, budget: 2500, estimatedViews: 2000 }),
-      campaign({ id: 2, budget: 1000.5, estimatedViews: 1000, status: "ACTIVE" }),
-      campaign({ id: 3, budget: 9000, estimatedViews: 5000, status: "BLOCKED" }),
-      campaign({ id: 4, budget: 400, estimatedViews: 1000, status: "REJECTED_BY_AI" }),
-    ];
-    const k = computeAdvertiserKpis(campaigns, [], TODAY);
-    expect(k.totalBudget).toBe(3500.5);
-    expect(k.estimatedViews).toBe(3000);
-  });
-
-  it("counts distinct Porteurs and zones and the estimated cost of holding reservations only", () => {
-    const campaigns = [campaign({ id: 1 }), campaign({ id: 2, status: "BLOCKED" })];
-    const reservations = [
-      reservation({ id: 1, campaignId: 1, supportId: 10, zoneId: 1, estimatedCost: 250.1 }),
-      reservation({
-        id: 2,
-        campaignId: 1,
-        supportId: 10,
-        zoneId: 1,
-        estimatedCost: 250.2,
-        reservationStatus: "CONFIRMEE",
-      }),
-      reservation({ id: 3, campaignId: 1, supportId: 11, zoneId: 2, estimatedCost: 0.3 }),
-      reservation({
-        id: 4,
-        campaignId: 2,
-        supportId: 12,
-        zoneId: 3,
-        estimatedCost: 900,
-        reservationStatus: "ANNULEE",
-      }),
-    ];
-    const k = computeAdvertiserKpis(campaigns, reservations, TODAY);
-    expect(k.reservationCount).toBe(4);
-    expect(k.holdingReservationCount).toBe(3);
-    expect(k.reservationsByStatus).toEqual({ TEMPORAIRE: 2, CONFIRMEE: 1, ANNULEE: 1, EXPIREE: 0 });
-    expect(k.reservedScreens).toBe(2);
-    expect(k.reservedZones).toBe(2);
-    expect(k.estimatedCost).toBe(500.6); // no float noise (250.1 + 250.2 + 0.3)
-  });
-
-  it("ignores reservations that do not belong to the advertiser's campaigns", () => {
-    const k = computeAdvertiserKpis(
-      [campaign({ id: 1 })],
-      [reservation({ id: 1, campaignId: 99, estimatedCost: 5000 })],
-      TODAY,
-    );
-    expect(k.reservationCount).toBe(0);
-    expect(k.estimatedCost).toBe(0);
-  });
-
-  it("treats non-finite amounts as zero", () => {
-    const k = computeAdvertiserKpis(
-      [campaign({ id: 1, budget: Number.NaN })],
-      [reservation({ id: 1, campaignId: 1, estimatedCost: Number.POSITIVE_INFINITY })],
-      TODAY,
-    );
-    expect(k.totalBudget).toBe(0);
-    expect(k.estimatedCost).toBe(0);
+    const byBucket = countBuckets(campaigns, TODAY);
+    expect(Object.values(byBucket).reduce((a, b) => a + b, 0)).toBe(8);
+    expect(byBucket["en-examen"]).toBe(2);
+    expect(byBucket["en-diffusion"]).toBe(1);
   });
 });
 
@@ -142,64 +103,27 @@ describe("buildTodos", () => {
   it("orders actions and points each kind to its screen", () => {
     const campaigns = [
       campaign({ id: 1, status: "BLOCKED" }),
-      campaign({ id: 2, status: "BROUILLON" }), // no reservation
+      campaign({ id: 2, status: "BROUILLON", reservationsCount: 0 }),
       campaign({ id: 3, status: "REJECTED_BY_AI" }),
-      campaign({ id: 4, status: "BROUILLON" }), // has a reservation
+      campaign({ id: 4, status: "BROUILLON", reservationsCount: 2 }),
       campaign({ id: 5, status: "APPROVED_BY_AI" }),
       campaign({ id: 6, status: "PENDING_AI_CHECK" }),
-      campaign({ id: 7, status: "BROUILLON" }), // only a cancelled reservation
+      campaign({ id: 7, status: "BROUILLON" }), // count unknown (older payload)
     ];
-    const reservations = [
-      reservation({ id: 1, campaignId: 4 }),
-      reservation({ id: 2, campaignId: 7, reservationStatus: "ANNULEE" }),
-    ];
-    const todos = buildTodos(campaigns, reservations);
-    expect(todos.map((t) => [t.kind, t.campaignId, t.href])).toEqual([
-      ["submit", 4, "/espace/campagnes/nouvelle?id=4&etape=3"],
-      ["reserve", 2, "/espace/campagnes/nouvelle?id=2&etape=2"],
-      ["reserve", 7, "/espace/campagnes/nouvelle?id=7&etape=2"],
-      ["duplicate", 3, "/espace/campagnes/3"],
+    expect(buildTodos(campaigns).map((t) => [t.kind, t.campaignId, t.href])).toEqual([
+      ["correct", 1, "/espace/campagnes/1"],
+      ["correct", 3, "/espace/campagnes/3"],
+      ["submit", 4, "/espace/campagnes/nouvelle?id=4&etape=4"],
+      ["reserve", 2, "/espace/campagnes/nouvelle?id=2&etape=3"],
+      ["finalize", 7, "/espace/campagnes/7"],
       ["analysis", 6, "/espace/campagnes/6"],
-      ["blocked", 1, "/espace/campagnes/1"],
     ]);
-  });
-
-  it("never guesses reserve/submit for drafts whose reservations are unknown", () => {
-    const campaigns = [
-      campaign({ id: 1, status: "BROUILLON" }),
-      campaign({ id: 2, status: "BROUILLON" }),
-    ];
-    const todos = buildTodos(campaigns, [], { knownCampaignIds: new Set([2]) });
-    expect(todos.map((t) => [t.kind, t.campaignId, t.href])).toEqual([
-      ["reserve", 2, "/espace/campagnes/nouvelle?id=2&etape=2"],
-      ["finalize", 1, "/espace/campagnes/1"],
-    ]);
-  });
-});
-
-describe("budgetByCampaign", () => {
-  it("sorts by budget, excludes refused campaigns and sums holding reservation costs", () => {
-    const campaigns = [
-      campaign({ id: 1, name: "Petite", budget: 500 }),
-      campaign({ id: 2, name: "Grande", budget: 4000 }),
-      campaign({ id: 3, name: "Refusée", budget: 9000, status: "BLOCKED" }),
-    ];
-    const reservations = [
-      reservation({ id: 1, campaignId: 2, estimatedCost: 400 }),
-      reservation({ id: 2, campaignId: 2, estimatedCost: 400, reservationStatus: "ANNULEE" }),
-      reservation({ id: 3, campaignId: 1, estimatedCost: 50, reservationStatus: "CONFIRMEE" }),
-    ];
-    expect(budgetByCampaign(campaigns, reservations)).toEqual([
-      { id: 2, name: "Grande", budget: 4000, estimatedCost: 400, reservationCount: 1 },
-      { id: 1, name: "Petite", budget: 500, estimatedCost: 50, reservationCount: 1 },
-    ]);
-    expect(budgetByCampaign(campaigns, reservations, 1)).toHaveLength(1);
   });
 });
 
 describe("onboardingMilestones", () => {
   it("starts at 0 of 3 with no campaign, from real data only", () => {
-    const m = onboardingMilestones([], []);
+    const m = onboardingMilestones([]);
     expect(m.map((s) => [s.key, s.done])).toEqual([
       ["brouillon", false],
       ["porteurs", false],
@@ -209,18 +133,15 @@ describe("onboardingMilestones", () => {
   });
 
   it("marks the draft, then the booking, then the submission", () => {
-    const draftOnly = onboardingMilestones([{ id: 3, status: "BROUILLON" }], []);
+    const draftOnly = onboardingMilestones([{ id: 3, status: "BROUILLON", reservationsCount: 0 }]);
     expect(draftOnly.map((s) => s.done)).toEqual([true, false, false]);
-    expect(draftOnly[1]?.href).toBe("/espace/campagnes/nouvelle?id=3&etape=2");
+    expect(draftOnly[1]?.href).toBe("/espace/campagnes/nouvelle?id=3&etape=3");
 
-    const booked = onboardingMilestones(
-      [{ id: 3, status: "BROUILLON" }],
-      [{ campaignId: 3, reservationStatus: "TEMPORAIRE" }],
-    );
+    const booked = onboardingMilestones([{ id: 3, status: "BROUILLON", reservationsCount: 1 }]);
     expect(booked.map((s) => s.done)).toEqual([true, true, false]);
-    expect(booked[2]?.href).toBe("/espace/campagnes/nouvelle?id=3&etape=3");
+    expect(booked[2]?.href).toBe("/espace/campagnes/nouvelle?id=3&etape=4");
 
-    const submitted = onboardingMilestones([{ id: 4, status: "PENDING_AI_CHECK" }], []);
+    const submitted = onboardingMilestones([{ id: 4, status: "PENDING_AI_CHECK" }]);
     expect(submitted.every((s) => s.done)).toBe(true);
   });
 });

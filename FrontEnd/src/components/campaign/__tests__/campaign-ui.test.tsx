@@ -159,31 +159,9 @@ describe("CampaignList", () => {
 
   it("sorts from ?tri= and offers « Finaliser » on drafts, towards the right wizard step", async () => {
     mocks.params.value = "tri=nom";
-    mocks.byCampaign.mockImplementation((id: number) =>
-      Promise.resolve(
-        id === 1
-          ? [
-              {
-                id: 10,
-                campaignId: 1,
-                zoneId: 1,
-                supportId: 11,
-                startDate: "2026-10-01",
-                endDate: "2026-10-31",
-                startTime: "08:00:00",
-                endTime: "22:00:00",
-                availabilityStatus: "RESERVE",
-                reservationStatus: "TEMPORAIRE",
-                estimatedViews: 1000,
-                estimatedCost: 100,
-              },
-            ]
-          : [],
-      ),
-    );
     mocks.mine.mockResolvedValue([
-      campaign({ id: 1, name: "Zèbre", status: "BROUILLON" }),
-      campaign({ id: 2, name: "Abeille", status: "BROUILLON" }),
+      campaign({ id: 1, name: "Zèbre", status: "BROUILLON", reservationsCount: 1 }),
+      campaign({ id: 2, name: "Abeille", status: "BROUILLON", reservationsCount: 0 }),
       campaign({
         id: 3,
         name: "Mouette",
@@ -197,18 +175,18 @@ describe("CampaignList", () => {
     const names = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
     expect(names).toEqual(["Abeille", "Mouette", "Zèbre"]);
 
-    // No StepSegments; the draft with a créneau goes to Vérification, the other to Porteurs.
+    // The draft with a reservation goes to Vérification, the other one to Contenu.
     await waitFor(() =>
       expect(screen.getByRole("link", { name: /Finaliser.*Zèbre/ })).toHaveAttribute(
         "href",
-        "/espace/campagnes/nouvelle?id=1&etape=3",
+        "/espace/campagnes/nouvelle?id=1&etape=4",
       ),
     );
     expect(screen.getByRole("link", { name: /Finaliser.*Abeille/ })).toHaveAttribute(
       "href",
       "/espace/campagnes/nouvelle?id=2&etape=2",
     );
-    expect(screen.getByText("1 créneau bloqué")).toBeInTheDocument();
+    expect(screen.getByText("1 Porteur réservé")).toBeInTheDocument();
     expect(screen.getAllByText("Aucun Porteur réservé")).toHaveLength(1);
     expect(screen.queryByRole("link", { name: /Finaliser.*Mouette/ })).not.toBeInTheDocument();
     // advertiser wording

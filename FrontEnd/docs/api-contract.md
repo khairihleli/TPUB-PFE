@@ -1,805 +1,308 @@
-# TPUB Backend: frontend API contract
+# TPUB Backend: frontend API contract (v2)
 
-Source of truth: `C:\Users\busin\Desktop\tpub\BackEnd` (Spring Boot **4.1.0**, Java 21, Spring Security, JJWT, Jackson 3, PostgreSQL + Flyway), plus `../.env.example` and `../docker-compose.yml`.
-Everything below was read directly from the code. Anything marked **GAP** or **BUG** is something the frontend has to work around. Nothing in this doc is aspirational.
+Source of truth: `../BackEnd` (Spring Boot 4.1, Java 21, Spring Security, JJWT, Jackson 3, PostgreSQL 16+ with Flyway V1–V5).
+This document describes the backend **as implemented** after the completion of the cahier des charges (Flyway V3 lifecycle & AI, V4 media/reservations/diffusion, V5 accounts/security/audit). It was checked against the running stack with `scripts/demo-scenario.mjs`.
+
+Where the shapes live:
+
+| What | File |
+|---|---|
+| Every request/response type and enum (TypeScript) | `src/lib/api/types.ts` |
+| One typed function per endpoint | `src/lib/api/endpoints.ts` (`campaignsApi`, `mediaApi`, `aiApi`, `adminApi`, `zonesApi`, `supportsApi`, `availabilityApi`, `estimatesApi`, `reservationsApi`, `statisticsApi`, `emergencyApi`, `diffusionApi`, `meApi`, `sessionApi`, `adminUsersApi`, `auditApi`) |
+| French label of every error code | `src/lib/api/messages.ts` |
+| Full business rules (formulas, status derivation, engine pseudo-code) | `../docs/completion-contract.md` §2 (binding) and §6 (deviations) |
 
 ---
 
 ## 0. TL;DR for frontend builders
 
-- Base URL: `http://localhost:8080`. No context path. Every business route starts with `/api/...`.
-- Auth: `POST /api/auth/login` or `POST /api/auth/register` returns `{ token, email, nom, role, userId }`. Send `Authorization: Bearer <token>` on every other call. The token lasts **24 h** and there is **no refresh endpoint**.
-- Roles: `"ADMINISTRATEUR" | "ANNONCEUR" | "OPERATEUR" | "SUPERVISEUR"`. Self-registration always creates an `ANNONCEUR`.
-- CORS defaults to `http://localhost:4200` (Angular). For Next.js, set `CORS_ALLOWED_ORIGINS=http://localhost:3000` or proxy `/api` through Next rewrites. The proxy is recommended.
-- **There is NO media upload endpoint and NO multipart endpoint at all.** There is also no campaign↔zone linking endpoint, no payment endpoint, no profile/me endpoint and no per-advertiser statistics. See §7.
-- Status enums come back as **UPPERCASE strings**, with two exceptions that are lowercase: `AiReportResponse.aiStatus` and `DiffusionResponse.type`.
-- Dates are `"YYYY-MM-DD"`. Times are `"HH:mm:ss"` and **must include seconds** for campaigns. Timestamps are ISO-8601 UTC strings. Money is a JSON number (TND).
-- Unauthenticated calls to protected routes return **403 with an empty body**, not 401. Plan for both.
+- The browser never calls Spring directly: every call goes through the Next bridge `/api/<path>` (same origin, JWT in an httpOnly cookie). Media are served through `/uploads/<path>`.
+- Auth: `POST /api/auth/login` or `/register` returns `{ token, email, nom, role, userId, sessionId, expiresAt }`. The token lasts 24 h (`JWT_EXPIRATION_MS`) and is bound to a server-side **session** (`sid` claim): logout, password change, deactivation or an admin revoke kill it immediately (401 `SESSION_REVOKED` / `ACCOUNT_DISABLED`).
+- Every error is JSON `{ timestamp, status, code, message, path, errors? }` with a stable `code` and a French `message` (§4). 401 = not/no longer authenticated, 403 `ACCESS_DENIED` = wrong role (checked **before** body validation).
+- Lists that can grow are paginated: `?page=0&size=20&sort=field,desc` → `{ items, page, size, totalItems, totalPages }` (size max 100). List params that accept several values are comma-separated (`status=BROUILLON,BLOCKED`).
+- Dates `"YYYY-MM-DD"`; times are returned `"HH:mm:ss"` and accepted as `"HH:mm"` or `"HH:mm:ss"`; instants are ISO-8601 UTC; `datetime` query params are local (`Africa/Tunis`) without offset. Money is a TND number.
+- Lowercase exceptions kept for compatibility: `AiReportResponse.aiStatus` (`"approved" | "review_required" | "rejected"`) and `DiffusionResponse.type` (`"publicite" | "urgence" | "defaut"`). Everything else is UPPERCASE.
+- The campaign wizard order is **details → content (media) → zone & Porteurs (circles + reservations) → submit**. `submit` runs the AI synchronously and returns the resulting status.
 
 ---
 
-## 1. Infrastructure, CORS, auth, security
+## 1. Infrastructure, auth, security
 
 ### 1.1 Server
 
-| Item | Value | Source |
-|---|---|---|
-| Port | `${SERVER_PORT:8080}` | application.yml `server.port` |
-| Context path | `/` (none) | `server.servlet.context-path: /` |
-| Docker port | host `${SERVER_PORT:-8080}` → container 8080 | docker-compose `backend` |
-| Profiles | `dev` (default), `docker`, (`prod` mentioned in .env but not defined) | application.yml |
-| Health | `GET /actuator/health` (public) → `{"status":"UP"}` | management config |
-| Swagger UI | `GET /swagger-ui.html` (public) | springdoc |
-| OpenAPI JSON | `GET /v3/api-docs` (public) | springdoc |
-| Multipart limits | `max-file-size: 100MB`, `max-request-size: 100MB` (configured but **unused**: there is no upload controller) | application.yml |
-| Default Spring error body | `server.error.include-message: never`, `include-stacktrace: never` | application.yml |
-| pgAdmin | `http://localhost:5050` | docker-compose |
-| DB | postgres:16, db `tpub`, user `tpub_user` | .env.example |
-
-Suggested frontend env: `NEXT_PUBLIC_API_BASE_URL=http://localhost:8080`, or a Next rewrite `/api/:path*` → `http://localhost:8080/api/:path*`. The rewrite avoids CORS completely.
-
-### 1.2 CORS (`CorsConfig.java`)
-
-- Env var: **`CORS_ALLOWED_ORIGINS`**. It binds to `tpub.cors.allowed-origins`, with default **`http://localhost:4200`** in both application.yml and .env.example.
-- It is a comma-separated list, e.g. `CORS_ALLOWED_ORIGINS=http://localhost:3000,https://tpub.tn`. Don't put spaces in it. If the list is empty, the code falls back to `http://localhost:4200`.
-- Allowed methods: `GET, POST, PUT, PATCH, DELETE, OPTIONS`. Allowed headers: `*`. `allowCredentials = true`. Applies to path `/**`.
-- Origins must match exactly. `*` is not allowed with credentials.
-- `OPTIONS /**` is `permitAll` in SecurityConfig, so preflight works.
-- **Action:** the Next.js dev server runs on `:3000`, which is **not** allowed by default. Either set `CORS_ALLOWED_ORIGINS=http://localhost:3000` in `.env` or use a same-origin proxy.
-
-### 1.3 JWT issuance and use
-
-- The token is issued by `POST /api/auth/login` (200) and `POST /api/auth/register` (201). It is in the `token` field of the JSON body. There is **no cookie**.
-- To use it, send the header exactly as `Authorization: Bearer <token>`. `JwtAuthenticationFilter` takes `substring(7)`.
-- Algorithm: HMAC via `Keys.hmacShaKeyFor(JWT_SECRET bytes)`. The .env secret is 64 chars, which gives HS512. The default yml secret gives HS256. The client never needs to verify it.
-- Claims:
-  - `sub` = user email
-  - `role` = `"ROLE_ANNONCEUR"`. Note the **`ROLE_` prefix in the JWT claim**, while `AuthResponse.role` has no prefix.
-  - `iat`, `exp`
-- Expiry: `JWT_EXPIRATION_MS`, default **86400000 (24 h)**. `JWT_REFRESH_EXPIRATION_MS` (7 days) is configured but **never used**: there are no refresh tokens and no refresh endpoint.
-- Stateless: `SessionCreationPolicy.STATELESS`, CSRF disabled. There is **no logout endpoint**. To log out, drop the token client-side.
-- Each request, the filter loads the user by email and checks `username == sub && !expired`. A deactivated user (`is_active=false`) is still authenticated by the filter, because it doesn't check `isEnabled`. They just can't log in again.
-- Recommended client behaviour: decode `exp` (base64 payload) and proactively redirect to `/connexion` before expiry. Treat any 401/403 on a protected route while holding a token as "session expired".
-
-**Gotchas in the filter:**
-
-1. The filter parses **any** `Authorization: Bearer ...` header, **including on public routes**. If you send an expired or invalid token to `/api/auth/login`, JJWT throws inside the filter, and the request fails with an empty-body 403 or 500 instead of logging in. **Never attach the Authorization header to `/api/auth/*` calls.** Strip stale tokens before login.
-2. Filter exceptions (expired token, bad signature, unknown user) are **not** handled by `GlobalExceptionHandler`. You get an empty body, typically 403.
-3. Anonymous requests to protected routes are rejected by the security chain with the default entry point: **403, empty body**. No JSON and no 401.
-
-### 1.4 Public vs protected routes (`SecurityConfig.java`, exact)
-
-```java
-PUBLIC_ENDPOINTS = {
-  "/api/auth/**",
-  "/api/diffusion/next",
-  "/actuator/health",
-  "/v3/api-docs/**",
-  "/swagger-ui/**",
-  "/swagger-ui.html"
-};
-.requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-.anyRequest().authenticated()
-```
-
-On top of that, `@EnableMethodSecurity` adds per-method `@PreAuthorize("hasRole('X')")` / `hasAnyRole(...)`. When a role check fails for an authenticated user, `AccessDeniedException` is caught by the handler and returns **403 JSON** `{ timestamp, status: 403, message: "Access denied" }`.
-
-**Consequence for the marketing site:** zones and supports are NOT public. An anonymous visitor can't list the screen network or the zones. The marketing pages have to use static/hard-coded content, or the backend has to add public endpoints (GAP).
-
-### 1.5 Roles
-
-Roles are seeded by Flyway `V1__init_schema.sql`:
-
-| code (`RoleCode`) | name | description | permissions (informational only, NOT enforced) |
-|---|---|---|---|
-| `ADMINISTRATEUR` | Administrateur | Accès complet : validation, gestion et supervision | campaigns:read/write/validate, users:read/write, supports:read/write, zones:read/write, ai:read/validate, emergency:write, statistics:read, logs:read |
-| `ANNONCEUR` | Annonceur | Client publicitaire : création de campagnes, réservation, suivi statistiques | campaigns:read/write, media:upload, reservations:read/write, statistics:read:own, profile:read/write |
-| `OPERATEUR` | Opérateur | Supervision des supports et diffusions | supports:read, diffusion:read, statistics:read, emergency:read |
-| `SUPERVISEUR` | Superviseur | Consultation, filtres avancés, suivi réservations | campaigns:read, supports:read, zones:read, reservations:read, statistics:read, ai:read, logs:read, search:advanced |
-
-Only `@PreAuthorize` role checks are enforced. The `permissions` JSON is never read.
-
-How roles reach the client is `AuthResponse.role`, a plain role code without a prefix:
-
-```ts
-export type RoleCode = "ADMINISTRATEUR" | "ANNONCEUR" | "OPERATEUR" | "SUPERVISEUR";
-
-export interface AuthResponse {
-  token: string;      // JWT
-  email: string;
-  nom: string;        // display name
-  role: RoleCode;     // e.g. "ANNONCEUR" (no ROLE_ prefix)
-  userId: number;     // users.id — NOT the clients.id used in CampaignResponse.clientId
-}
-```
-
-There is no endpoint that returns the current user from a token. Persist `AuthResponse` minus the token, e.g. in localStorage or a cookie, at login.
-
----
-
-## 2. Serialization conventions
-
-| Java type | JSON | Notes |
-|---|---|---|
-| `Long`, `Integer`, `Short`, `long` | number | IDs are numbers |
-| `BigDecimal` | number (e.g. `1500.00` → `1500.0`/`1500`) | budget/cost in TND; lat/lng |
-| `LocalDate` | `"2026-06-01"` | |
-| `LocalTime` | `"08:00:00"` | **CampaignRequest has `@JsonFormat(pattern="HH:mm:ss")`, so `"08:00"` is rejected with 400.** Reservation and Emergency requests accept `"08:00"` or `"08:00:00"`. Always send `HH:mm:ss`. An HTML `<input type="time">` gives `HH:mm`, so append `:00`. |
-| `Instant` | `"2026-09-12T10:15:30.123456Z"` | createdAt, submittedAt, validatedAt, error timestamp |
-| enum in request | exact UPPERCASE string | unknown value → 400 "Invalid request body…" |
-| `null` fields | included as `null` | no `@JsonInclude(NON_NULL)` |
-
-No pagination, sorting or filtering query params exist anywhere. All list endpoints return a plain JSON array of every row.
-
----
-
-## 3. Enums (TypeScript)
-
-Values are exact and match both the Java enums and the DB CHECK constraints.
-
-```ts
-// ---- Roles
-export type RoleCode = "ADMINISTRATEUR" | "ANNONCEUR" | "OPERATEUR" | "SUPERVISEUR";
-
-// ---- Campaign (CampaignResponse.status / aiStatus / adminStatus — UPPERCASE)
-export type CampaignStatus =
-  | "BROUILLON"          // draft (created / editable)
-  | "PENDING_AI_CHECK"   // after POST /submit
-  | "APPROVED_BY_AI"     // AI ok, awaiting admin
-  | "REVIEW_REQUIRED"    // AI unsure, awaiting admin
-  | "REJECTED_BY_AI"     // AI rejected (editable/deletable, but see BUG: cannot resubmit)
-  | "VALIDATED_BY_ADMIN" // defined but NEVER set by any code path
-  | "ACTIVE"             // admin validated
-  | "TERMINATED"         // defined but NEVER set
-  | "BLOCKED";           // admin rejected
-
-export type CampaignAiStatus = "APPROVED" | "REVIEW_REQUIRED" | "REJECTED";   // null until AI check
-export type CampaignAdminStatus = "PENDING" | "VALIDATED" | "REJECTED";       // null until admin decision ("PENDING" never set)
-
-// ---- AI report (AiReportResponse.aiStatus — LOWERCASE!)
-export type AiReportStatus = "approved" | "review_required" | "rejected";
-
-// ---- Supports
-export type SupportType = "ECRAN" | "PANNEAU_NUMERIQUE" | "POINT_WIFI" | "APPLICATION" | "SITE_WEB";
-export type TechnicalStatus = "ACTIF" | "INACTIF" | "MAINTENANCE" | "HORS_LIGNE";
-
-// ---- Reservations
-export type ReservationStatus = "TEMPORAIRE" | "CONFIRMEE" | "ANNULEE" | "EXPIREE"; // EXPIREE never set
-export type AvailabilityStatus = "DISPONIBLE" | "RESERVE" | "OCCUPE" | "MAINTENANCE" | "HORS_LIGNE";
-// (reservations are always created with availabilityStatus "RESERVE")
-
-// ---- Emergency
-export type UrgencyLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-
-// ---- Diffusion (DiffusionResponse.type — LOWERCASE!)
-export type DiffusionType = "publicite" | "urgence" | "defaut";
-
-// ---- Internal only (not exposed by any DTO; listed for completeness)
-export type MediaFileType = "IMAGE" | "VIDEO" | "BANNER";
-export type AiContentType = "TEXTE" | "IMAGE" | "VIDEO" | "MINIATURE";
-export type AiAdminDecision = "VALIDATED" | "REJECTED" | "PENDING";
-export type AiDecisionType = "AI" | "ADMIN";
-export type AiModerationSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-export type ClientValidationStatus = "PENDING" | "VALIDATED" | "REJECTED" | "SUSPENDED";
-export type PaymentStatus = "SIMULATED" | "PENDING" | "COMPLETED" | "CANCELLED" | "FAILED";
-export type DiffusionContentType = "PUBLICITE" | "URGENCE" | "DEFAUT";
-```
-
-Suggested French UI labels (the backend doesn't provide these):
-
-| value | label |
+| Item | Value |
 |---|---|
-| BROUILLON | Brouillon |
-| PENDING_AI_CHECK | En attente d'analyse IA |
-| APPROVED_BY_AI | Approuvée par l'IA |
-| REVIEW_REQUIRED | Revue manuelle requise |
-| REJECTED_BY_AI | Rejetée par l'IA |
-| VALIDATED_BY_ADMIN | Validée par l'admin |
-| ACTIVE | Active / En diffusion |
-| TERMINATED | Terminée |
-| BLOCKED | Refusée / Bloquée |
-| TEMPORAIRE / CONFIRMEE / ANNULEE / EXPIREE | Temporaire / Confirmée / Annulée / Expirée |
-| ECRAN / PANNEAU_NUMERIQUE / POINT_WIFI / APPLICATION / SITE_WEB | Écran / Panneau numérique / Point Wi-Fi / Application / Site web |
-| ACTIF / INACTIF / MAINTENANCE / HORS_LIGNE | Actif / Inactif / Maintenance / Hors ligne |
+| Port | `SERVER_PORT` (8080), no context path |
+| Health | `GET /actuator/health` (public) |
+| Swagger | `/swagger-ui.html`, OpenAPI `/v3/api-docs` (public) |
+| Multipart | 60 MB request limit (per-type limits in §5.3) |
+| Media | stored under `MEDIA_UPLOAD_DIR`, served publicly at `GET /uploads/**` (1-day cache, `Range` supported, 404 JSON when missing) |
+| Time zone | `TPUB_TIMEZONE` (Africa/Tunis) for "today", schedulers and diffusion datetimes |
+| Schedulers (`TPUB_SCHEDULER_ENABLED`) | campaign lifecycle (every minute), emergency auto-stop (every minute), reservation expiry (every 5 min), statistics snapshot (every 15 min) |
+| CORS | `CORS_ALLOWED_ORIGINS`, default `http://localhost:3000,http://localhost:4200`; exposes `Content-Disposition` (unused behind the bridge) |
+
+All new environment variables are optional and documented in `../.env.example`.
+
+### 1.2 Next bridge (`src/app/api/**`)
+
+```
+Browser ─► /api/session/login|register ─► Spring /api/auth/*   (never with Authorization; forwards user agent + client IP)
+        ─► /api/session/logout         ─► Spring POST /api/me/logout, then clears the cookies (even if Spring is down)
+        ─► /api/<path>                 ─► Spring /api/<path>   (+ Authorization: Bearer <tpub_token cookie>)
+        ─► /uploads/<path>             ─► Spring /uploads/<path> (public, streamed, Range + cache headers, no cookie)
+```
+
+- JSON bodies are forwarded unchanged; multipart and binary bodies are streamed byte for byte (boundary kept), 413 above 60 MB. Downloads (CSV) are streamed with their `Content-Disposition`.
+- A Spring 401 whose code ends the session (`UNAUTHENTICATED`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `SESSION_REVOKED`, `ACCOUNT_DISABLED`) clears the cookies and is returned as `SESSION_EXPIRED`; the shell then shows the reconnect dialog. A refused login (`BAD_CREDENTIALS`, `ACCOUNT_DISABLED` on `/session/login`) is **not** treated as an expired session.
+- Cookie lifetime = min(JWT `exp`, `expiresAt`).
+- Spring unreachable → 502 with a French message.
+
+### 1.3 Public routes (`SecurityConfig.PUBLIC_ENDPOINTS`)
+
+`/api/auth/**`, `GET /api/diffusion/next`, `POST /api/diffusion/interactions`, `/uploads/**`, `/actuator/health`, Swagger. An invalid token is ignored on public routes, and the `Authorization` header is skipped entirely on login/register. Everything else requires a valid token **and** an active session **and** an active account.
+
+### 1.4 Roles (enforced by `@PreAuthorize`, pinned by `RoleMatrixWebTest`)
+
+| Area | ANNONCEUR | ADMINISTRATEUR | SUPERVISEUR | OPERATEUR |
+|---|---|---|---|---|
+| Own campaigns: create, edit, delete, reopen, submit, duplicate, zones, media, reservations | ✔ (owner only) | – | – | – |
+| Read one campaign, its zones, media, reservations, estimate, statistics | owner | ✔ | ✔ | ✔ |
+| Campaign search `GET /api/campaigns` | – | ✔ | ✔ | – |
+| AI: check-content | owner (preview on BROUILLON, retry on PENDING_AI_CHECK) | ✔ (re-run) | – | – |
+| AI: report / issues / checks | owner | ✔ | ✔ | – |
+| AI: rules list, decisions, dashboard | – | ✔ | ✔ | – |
+| AI rules create/update/delete, validate / reject / priority | – | ✔ | – | – |
+| Zones & supports read, availability, estimates, recommendations | ✔ | ✔ | ✔ | ✔ |
+| Zones & supports write, support blocks write | – | ✔ | – | – |
+| Reservations: all (search) | – | ✔ | ✔ | ✔ |
+| Reservations: conflicts | – | ✔ | ✔ | – |
+| Reservation cancel | owner (TEMPORAIRE, draft campaign) | ✔ (TEMPORAIRE/CONFIRMEE) | – | – |
+| Emergencies list / create & deactivate | – / – | ✔ / ✔ | ✔ / – | ✔ / – |
+| Diffusion logs | – | ✔ | ✔ | ✔ |
+| Statistics dashboard, views, history | – (403) | ✔ | ✔ | ✔ |
+| Statistics mine | ✔ | – | – | – |
+| CSV export | `mine`, `campaign` (owner) | all types | all types | all types |
+| `/api/me/**` (profile, password, logo, sessions, logout, login history) | ✔ | ✔ | ✔ | ✔ |
+| Admin users, roles, audit — read | – | ✔ | ✔ | – |
+| Admin users write, client validation, revoke sessions | – | ✔ | – | – |
+
+Ownership is enforced server-side (`CampaignAccessGuard`): another advertiser's campaign answers **404 `CAMPAIGN_NOT_FOUND`**, never 403.
 
 ---
 
-## 4. Error responses (`GlobalExceptionHandler`)
+## 2. Serialization and paging conventions
 
-Error bodies use two shapes. Keys come from a `HashMap`, so their order isn't guaranteed.
+| Java | JSON | Notes |
+|---|---|---|
+| `Long`/`Integer`/`Short` | number | ids are numbers; `SessionResponse.id` is a UUID string |
+| `BigDecimal` | number | money (TND), coordinates, scores |
+| `LocalDate` | `"2026-10-01"` | |
+| `LocalTime` | `"18:00:00"` | requests accept `"18:00"` too (campaigns, reservations, emergencies, blocks, availability, estimates) |
+| `Instant` | `"2026-09-17T01:44:25.452Z"` | |
+| enum | exact UPPERCASE string | unknown value → 400 `INVALID_BODY` / `INVALID_PARAMETER` |
+| nulls | included as `null` | |
+
+`PageResponse<T> = { items: T[]; page: number; size: number; totalItems: number; totalPages: number }` on: `GET /api/campaigns`, `/api/reservations`, `/api/ai/decisions`, `/api/diffusion/logs`, `/api/admin/users`, `/api/admin/audit`. Other lists are plain arrays.
+
+---
+
+## 3. Enums
+
+All enums are in `src/lib/api/types.ts` with French labels in `src/lib/campaign-status.ts`. The main ones:
+
+| Enum | Values |
+|---|---|
+| `RoleCode` | `ADMINISTRATEUR`, `ANNONCEUR`, `OPERATEUR`, `SUPERVISEUR` |
+| `CampaignStatus` | `BROUILLON`, `PENDING_AI_CHECK`, `APPROVED_BY_AI`, `REVIEW_REQUIRED`, `REJECTED_BY_AI`, `VALIDATED_BY_ADMIN`, `ACTIVE`, `TERMINATED`, `BLOCKED` |
+| `CampaignResponse.aiStatus` / `adminStatus` | `APPROVED`, `REVIEW_REQUIRED`, `REJECTED` / `PENDING`, `VALIDATED`, `REJECTED` |
+| `terminationReason` | `PERIODE_TERMINEE`, `BUDGET_EPUISE` |
+| `AiSector` | `RESTAURATION`, `EVENEMENT`, `IMMOBILIER`, `SERVICE`, `COMMERCE`, `SANTE`, `FORMATION`, `TRANSPORT`, `AUTRE` |
+| `Severity` / `UrgencyLevel` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `AiIssue.source` | `TEXTE`, `IMAGE`, `VIDEO`, `OCR`, `REGLE`, `OPENAI`, `SECTEUR`, `DOUBLON` |
+| `ocrEngine` / `engine` | `TESSERACT`, `SIMULE`, `AUCUN` / `LOCAL`, `OPENAI`, `LOCAL_OPENAI` |
+| `SupportType` | `ECRAN`, `PANNEAU_NUMERIQUE`, `POINT_WIFI`, `APPLICATION`, `SITE_WEB` |
+| `TechnicalStatus` | `ACTIF`, `INACTIF`, `MAINTENANCE`, `HORS_LIGNE` |
+| `AvailabilityStatus` | `DISPONIBLE`, `RESERVE`, `OCCUPE`, `MAINTENANCE`, `HORS_LIGNE` |
+| `ReservationStatus` | `TEMPORAIRE`, `CONFIRMEE`, `ANNULEE`, `EXPIREE` |
+| `MediaFileType` | `IMAGE`, `VIDEO`, `BANNER` |
+| `EmergencyState` / `stopReason` | `PROGRAMME`, `EN_COURS`, `TERMINE`, `DESACTIVE` / `MANUEL`, `AUTO` |
+| `DiffusionContentType` / `InteractionType` | `PUBLICITE`, `URGENCE`, `DEFAUT` / `CLIC`, `INTERACTION` |
+| `ClientValidationStatus` | `PENDING`, `VALIDATED`, `REJECTED`, `SUSPENDED` |
+| Slot presets (UI + alternatives) | `MATIN` 07–12, `APRES_MIDI` 12–18, `SOIR` 18–23, `JOURNEE` 07–23 |
+
+---
+
+## 4. Errors
 
 ```ts
-export interface ApiError {
-  timestamp: string;   // ISO Instant, e.g. "2026-09-12T10:15:30.123Z"
-  status: number;      // HTTP status code
-  message: string;     // English message (see table)
-}
-
-export interface ApiValidationError extends ApiError {
-  status: 400;
-  message: "Validation failed";
-  errors: Record<string, string>; // fieldName -> default Bean Validation message (English)
-}
+interface ApiError { timestamp: string; status: number; code: string; message: string /* French */; path: string; errors?: Record<string, string> }
 ```
 
-Example validation error for `POST /api/auth/register` with an empty body:
+`errors` maps a field (validation), a completeness key (`SUBMIT_INCOMPLETE`) or a supportId (`BATCH_CONFLICT`) to a French message or a code. The frontend always translates by `code` first (`messages.ts`).
 
-```json
-{
-  "timestamp": "2026-09-12T10:15:30.123Z",
-  "status": 400,
-  "message": "Validation failed",
-  "errors": {
-    "email": "must not be blank",
-    "password": "must not be blank",
-    "nom": "must not be blank"
-  }
-}
-```
-
-Only **one message per field** is kept, and it's the last one written. Default messages are Hibernate Validator English text: `"must not be blank"`, `"must not be null"`, `"must be a well-formed email address"`, `"size must be between 8 and 100"`, `"must be greater than or equal to 0"`. **Translate them client-side**, or better, validate client-side first with the same rules (e.g. zod).
-
-| Trigger | Status | `message` |
-|---|---|---|
-| `ApiException` / `BadRequestException` (business rule) | 400 | specific text, e.g. `"Email already registered"`, `"Only draft campaigns can be submitted"` |
-| `ResourceNotFoundException` | 404 | `"Campaign not found: 12"`, `"Zone not found: 3"`, `"Support not found: 5"`, `"Emergency message not found: 7"` |
-| `MethodArgumentNotValidException` (`@Valid` failed) | 400 | `"Validation failed"` + `errors` |
-| `HttpMessageNotReadableException` (malformed JSON, wrong enum, bad date/time format) | 400 | `"Invalid request body — use HH:mm:ss for times (e.g. \"08:00:00\")"` |
-| `DataIntegrityViolationException` (DB CHECK/FK/UNIQUE/length) | 400 | `"Invalid data — check dates and times format"`. Also returned for non-date problems, e.g. deleting a zone that still has supports, or name > 200 chars |
-| `BadCredentialsException` (wrong email/password) | 401 | `"Invalid email or password"` |
-| `AccessDeniedException` (authenticated, wrong role) | 403 | `"Access denied"` |
-| `MethodArgumentTypeMismatchException` (mistyped path/query param) | 400 | `"Invalid value for parameter: <name>"` |
-| any other `Exception` | 500 | `"An unexpected error occurred"` |
-| No/invalid/expired token on protected route | 403 (sometimes 500) | **empty body** (security filter, not the handler) |
-
-Things that end up as **500 "An unexpected error occurred"** when you'd expect 4xx:
-- missing query params, e.g. `/api/diffusion/next` without `supportId` (mistyped query/path params such as `/api/campaigns/abc` or `?from=abc` now return 400 `"Invalid value for parameter: <name>"`)
-- unknown route (`NoResourceFoundException`) for an authenticated user
-- wrong HTTP method
-- login of a deactivated user (`DisabledException`)
-- a non-ANNONCEUR (e.g. the admin) hitting an ANNONCEUR-only service path that needs a client profile. That one is actually 400 `"Client profile not found for current user"`.
-
-Business error messages (all 400 unless noted):
-- `"Email already registered"`
-- `"Annonceur role not found"`
-- `"User not found"`
-- `"Client profile not found for current user"`
-- `"Campaign cannot be modified in status: <STATUS>"`
-- `"Only draft campaigns can be submitted"`
-- `"Campaign is not eligible for AI analysis"`
-- `"No AI report found for campaign: <id>"` (400, not 404)
-- `"Campaign must be AI-analyzed before admin decision"`
-- `"AI check required before admin decision"`
-- `"Support already reserved for the selected period"`
-- 404: `"Current user not found"`
-
-Suggested fetch wrapper: parse JSON only if `content-type` includes `application/json` and the body is non-empty. Otherwise synthesize `{status, message: "Session expirée ou accès refusé"}`.
+| Family | Codes |
+|---|---|
+| Generic | `VALIDATION_FAILED` 400, `INVALID_BODY` 400, `INVALID_PARAMETER` 400, `MISSING_PARAMETER` 400, `NOT_FOUND` 404, `METHOD_NOT_ALLOWED` 405, `NOT_ACCEPTABLE` 406, `DATA_INTEGRITY` 409, `PAYLOAD_TOO_LARGE` 413, `UNSUPPORTED_MEDIA_TYPE` 415, `INTERNAL_ERROR` 500 |
+| Auth / session | `UNAUTHENTICATED`, `TOKEN_INVALID`, `TOKEN_EXPIRED`, `SESSION_REVOKED`, `ACCOUNT_DISABLED`, `BAD_CREDENTIALS` (401); `ACCESS_DENIED` 403; `EMAIL_ALREADY_REGISTERED` 409 |
+| Me / admin users | `INVALID_CURRENT_PASSWORD`, `PASSWORD_REUSED`, `ROLE_NOT_ALLOWED`, `CANNOT_DEACTIVATE_SELF`, `LAST_ADMIN` (400); `SESSION_NOT_FOUND`, `USER_NOT_FOUND`, `CLIENT_NOT_FOUND` (404) |
+| Campaigns | `INVALID_PERIOD`, `INVALID_TIME_RANGE`, `START_DATE_IN_PAST`, `SUBMIT_INCOMPLETE` (errors keys `period`, `times`, `budget`, `zones`, `reservations`), `ZONE_LIMIT_EXCEEDED`, `INVALID_ZONE`, `REJECT_REASON_REQUIRED`, `AI_OVERRIDE_REQUIRED` (400); `CLIENT_NOT_ALLOWED` 403 (409 on validate); `CAMPAIGN_NOT_FOUND` 404; `CAMPAIGN_NOT_EDITABLE`, `CAMPAIGN_NOT_SUBMITTABLE`, `CAMPAIGN_NOT_REVIEWABLE`, `CAMPAIGN_PERIOD_OVER`, `NO_RESERVATION_TO_CONFIRM`, `PRIORITY_NOT_EDITABLE`, `CAMPAIGN_NOT_ELIGIBLE_FOR_AI` (409) |
+| AI | `AI_REPORT_NOT_FOUND`, `AI_RULE_NOT_FOUND` (404); `AI_RULE_NAME_TAKEN` 409; `INVALID_REGEX` 400 |
+| Media | `MEDIA_TYPE_UNSUPPORTED`, `MEDIA_CONTENT_MISMATCH` (415); `MEDIA_TOO_LARGE` 413; `MEDIA_LIMIT_REACHED` 400; `MEDIA_NOT_FOUND` 404 |
+| Network / reservations | `INVALID_RANGE`, `RESERVATION_OUTSIDE_CAMPAIGN_PERIOD`, `CAMPAIGN_ZONE_REQUIRED`, `SUPPORT_OUTSIDE_CAMPAIGN_ZONE`, `SUPPORT_ZONE_MISMATCH` (400); `CAMPAIGN_NOT_RESERVABLE`, `RESERVATION_DUPLICATE`, `SUPPORT_UNAVAILABLE`, `SUPPORT_ALREADY_RESERVED`, `BATCH_CONFLICT`, `RESERVATION_NOT_CANCELLABLE`, `ZONE_IN_USE` (409); `SUPPORT_NOT_FOUND`, `ZONE_NOT_FOUND`, `RESERVATION_NOT_FOUND`, `SUPPORT_BLOCK_NOT_FOUND` (404) |
+| Diffusion / emergencies / stats | `INTERACTION_NOT_ALLOWED`, `INTERACTION_EXPIRED`, `EMERGENCY_TARGET_REQUIRED`, `INVALID_EMERGENCY_WINDOW`, `EXPORT_TYPE_INVALID` (400); `DIFFUSION_LOG_NOT_FOUND`, `EMERGENCY_NOT_FOUND` (404) |
 
 ---
 
 ## 5. Endpoints
 
-Legend: **Auth** = required role(s). "Any authenticated" means only a valid JWT is needed. All JSON endpoints use `Content-Type: application/json`.
+Roles: see §1.4. "owner" = the ANNONCEUR who owns the campaign.
 
-### 5.1 Auth: `/api/auth` (public)
+### 5.1 Auth `/api/auth` (public)
 
-#### `POST /api/auth/register`
-Creates a `users` row with role **ANNONCEUR** (`is_active=true`) and a `clients` row (`company_name = societe`, `trust_level 0`, `validation_status PENDING`). Returns a token right away, so the user is logged in.
+| Endpoint | Notes |
+|---|---|
+| `POST /register` `{ email, password (8..100), nom, societe?, telephone?, adresse? }` | 201 `AuthResponse`; always creates an ANNONCEUR + client `PENDING`; e-mail lower-cased; opens a session and writes login history; 409 `EMAIL_ALREADY_REGISTERED` |
+| `POST /login` `{ email, password }` | 200 `AuthResponse`; 401 `BAD_CREDENTIALS` (also unknown e-mail) or `ACCOUNT_DISABLED` (only with the right password); every attempt journaled |
 
-```ts
-export interface RegisterRequest {
-  email: string;        // @NotBlank @Email ; DB unique, max 255
-  password: string;     // @NotBlank @Size(min=8, max=100)
-  nom: string;          // @NotBlank ; DB max 150
-  societe?: string;     // optional ; DB max 200
-  telephone?: string;   // optional ; DB max 30
-  adresse?: string;     // optional ; TEXT
-}
-```
-- **201** `AuthResponse`
-- 400 validation, or `"Email already registered"`
-- 400 `"Invalid data…"` if a DB length is exceeded
+### 5.2 Me `/api/me` (authenticated)
 
-#### `POST /api/auth/login`
-```ts
-export interface LoginRequest {
-  email: string;     // @NotBlank @Email
-  password: string;  // @NotBlank
-}
-```
-- **200** `AuthResponse`. Also updates `users.last_login_at`.
-- 401 `"Invalid email or password"`
-- 400 validation
-- 500 if the account is deactivated
-- Do not send an `Authorization` header (see §1.3).
+`GET` / `PUT { nom, societe?, telephone?, adresse? }` → `MeResponse` (includes `client { clientId, companyName, validationStatus, trustLevel }` for advertisers) · `POST /password { currentPassword, newPassword }` 204, revokes the other sessions · `POST /logo` multipart `file` (png/jpeg/webp ≤ 2 MB) / `DELETE /logo` → `MeResponse` · `GET /sessions` (active, `current` flag) · `DELETE /sessions/{id}` 204 · `POST /sessions/revoke-others` → `{ revoked }` · `POST /logout` 204 · `GET /login-history?limit=` (1..100, default 20).
 
----
+### 5.3 Campaigns `/api/campaigns`
 
-### 5.2 Campaigns: `/api/campaigns`
+| Endpoint | Notes |
+|---|---|
+| `POST` `CampaignRequest` | 201 `BROUILLON`; `INVALID_PERIOD`, `INVALID_TIME_RANGE`, `START_DATE_IN_PAST`; client `REJECTED`/`SUSPENDED` → 403 `CLIENT_NOT_ALLOWED` |
+| `GET` (staff search) | `q, client, clientId, zoneId, status, aiStatus, from, to, supportType, page, size, sort ∈ createdAt,name,startDate,budget,submittedAt` → `PageResponse<CampaignResponse>` |
+| `GET /mine` | `CampaignResponse[]`, filters `q, status, aiStatus, from, to, zoneId` |
+| `GET /{id}` | `CampaignResponse`: client info, budget / consumed / remaining / estimated cost, AI scores & sector, first media URL, zones with `supportsInside`, `reservationsCount`, `editable`/`submittable`/`deletable`, lifecycle timestamps, `rejectionReason`, `adminComment`, `terminationReason` |
+| `PUT /{id}` | editable only in `BROUILLON`; `REJECTED_BY_AI`/`BLOCKED` are reopened automatically; TEMPORAIRE reservations outside the new window become ANNULEE |
+| `DELETE /{id}` | `BROUILLON`, `REJECTED_BY_AI`, `BLOCKED`; media folder deleted |
+| `POST /{id}/reopen` | `REJECTED_BY_AI`/`BLOCKED` → `BROUILLON` (keeps « motif du dernier refus ») |
+| `POST /{id}/submit` | `BROUILLON` only; completeness → 400 `SUBMIT_INCOMPLETE`; then runs the AI in the same request and returns the campaign with `APPROVED_BY_AI`, `REVIEW_REQUIRED` or `REJECTED_BY_AI` |
+| `POST /{id}/duplicate` `{ includeMedia? }` | 201 new draft « Copie de … » with zones (+ media); dates kept only if still in the future; reservations never copied |
+| `GET /{id}/zones` / `PUT /{id}/zones` `{ zones: { latitude, longitude, radiusKm (0.1..50), label? }[1..5] }` | map circles (point + radius); each is attached to the enclosing (else nearest) active zone; returns `{ zones, cancelledReservationIds }` (TEMPORAIRE reservations outside every circle are cancelled) |
+| Media `POST /{id}/media` multipart `file`, `kind=BANNER`?, `durationSeconds`? | owner, draft only; jpeg/png/webp/gif ≤ 10 MB, mp4/webm ≤ 50 MB, max 5 files; magic bytes checked; width/height read; 201 `MediaFileResponse { url: "/uploads/campaigns/{id}/<uuid>.png", … }` |
+| `GET /{id}/media`, `DELETE /{id}/media/{mediaId}` | list by sort order; delete 204 (draft only) |
 
-```ts
-export interface CampaignRequest {
-  name: string;            // @NotBlank ; DB max 200
-  objective?: string | null;   // optional TEXT — ALSO the main text analysed by the AI
-  budget: number;          // @NotNull @PositiveOrZero ; NUMERIC(14,2), TND
-  startDate?: string | null;   // "YYYY-MM-DD" optional ; no @Future ; DB CHECK start_date <= end_date
-  endDate?: string | null;     // "YYYY-MM-DD" optional
-  startTime?: string | null;   // "HH:mm:ss" STRICT (@JsonFormat) optional
-  endTime?: string | null;     // "HH:mm:ss" STRICT optional
-}
+Admin decisions `/api/admin/campaigns/{id}` (ADMINISTRATEUR): `POST /validate { overrideAi?, comment?, priorityScore? }` (REVIEW_REQUIRED needs `overrideAi: true`; confirms TEMPORAIRE reservations, creates the payment simulation, result `VALIDATED_BY_ADMIN` before the start date or `ACTIVE`) · `POST /reject { reason (3..1000) }` → `BLOCKED`, reservations ANNULEE, returns `CampaignResponse` · `PUT /priority { priorityScore 0..10 }`. Every decision is written to `ai_decision_logs` and the audit trail.
 
-export interface CampaignResponse {
-  id: number;
-  clientId: number;            // clients.id (≠ AuthResponse.userId)
-  name: string;
-  objective: string | null;
-  budget: number;
-  consumedBudget: number;      // always 0 (nothing ever increments it)
-  status: CampaignStatus;
-  aiStatus: CampaignAiStatus | null;
-  adminStatus: CampaignAdminStatus | null;
-  startDate: string | null;
-  endDate: string | null;
-  startTime: string | null;    // "HH:mm:ss"
-  endTime: string | null;
-  estimatedViews: number;      // +1000 per reservation created
-  priorityScore: number;       // always 0 (no endpoint sets it)
-  createdAt: string;           // ISO instant
-  submittedAt: string | null;
-  validatedAt: string | null;
-}
-```
+Lifecycle scheduler: `VALIDATED_BY_ADMIN` → `ACTIVE` on the start date; `ACTIVE`/`VALIDATED_BY_ADMIN` → `TERMINATED` when the period is over (`PERIODE_TERMINEE`) or the budget is consumed (`BUDGET_EPUISE`).
 
-There are no `@Future` or date-order validations in the DTO. `startDate > endDate` fails at the DB with 400 `"Invalid data — check dates and times format"`. Validate client-side that `startDate >= today`, `endDate >= startDate` and `endTime > startTime`.
+### 5.4 AI `/api/ai`
 
-| Method & path | Auth | Body | Response | Codes / rules |
-|---|---|---|---|---|
-| `POST /api/campaigns` | ANNONCEUR | `CampaignRequest` | `CampaignResponse` | **201**. Status starts at `BROUILLON`. 400 validation. 400 `"Client profile not found for current user"` if the caller has no client row. |
-| `GET /api/campaigns` | ADMINISTRATEUR, SUPERVISEUR | none | `CampaignResponse[]` (all campaigns) | 200 |
-| `GET /api/campaigns/mine` | ANNONCEUR | none | `CampaignResponse[]` (campaigns of the caller's client) | 200. Unsorted: sort client-side by `createdAt`. |
-| `GET /api/campaigns/{id}` | ANNONCEUR, ADMINISTRATEUR, SUPERVISEUR | none | `CampaignResponse` | 200, 404. **No ownership check**: any annonceur can read any campaign by id. |
-| `PUT /api/campaigns/{id}` | ANNONCEUR | `CampaignRequest` (full replace; omitted optional fields become `null`) | `CampaignResponse` | 200. 400 `"Campaign cannot be modified in status: X"` unless status is `BROUILLON` or `REJECTED_BY_AI`. 404. No ownership check. Doesn't change status. |
-| `DELETE /api/campaigns/{id}` | ANNONCEUR | none | empty | **204**. Same editable rule (BROUILLON or REJECTED_BY_AI). DB cascades delete reservations, media and AI checks. No ownership check. |
-| `POST /api/campaigns/{id}/submit` | ANNONCEUR | none | `CampaignResponse` | 200. Requires `BROUILLON`, else 400 `"Only draft campaigns can be submitted"`. Sets `status=PENDING_AI_CHECK` and `submittedAt=now`. **Does NOT run the AI**: call `POST /api/ai/check-content/{id}` next. |
+| Endpoint | Notes |
+|---|---|
+| `POST /check-content/{campaignId}` | owner on `BROUILLON` → stored **preview** (status unchanged); owner on `PENDING_AI_CHECK` → retry; admin on `PENDING_AI_CHECK`/`APPROVED_BY_AI`/`REVIEW_REQUIRED` → re-run (clears the override); else 409 `CAMPAIGN_NOT_ELIGIBLE_FOR_AI`. Returns `AiReportResponse` |
+| `GET /report/{id}`, `/issues/{id}`, `/checks/{id}` | latest report (preview or not), its issues, all checks newest first; 404 `AI_REPORT_NOT_FOUND` when never analysed |
+| `GET/POST /rules`, `PUT/DELETE /rules/{id}` | moderation rules (`KEYWORD` phrases or `REGEX`, severity, optional sector); 8 rules seeded by V3 |
+| `GET /decisions` | paged AI and admin decisions (`campaignId, decisionType, decision, from, to`) |
+| `GET /dashboard` | averages, approval/review/rejection counts, validation & rejection rates, overrides, AI/admin disagreements, counts by sector, top 10 issues |
 
----
+`AiReportResponse`: `riskScore`, `qualityScore` (0..100), `issues[]` (label, severity, source), `detectedIssues[]`, `recommendation` + `recommendations[]`, `sector`, `contentType`, `extractedText` + `ocrEngine` (Tesseract when on PATH, else simulated from the file name), `mediaAnalyses[]` (dimensions, duration, per-media issues), `matchedRules[]`, `engine`, `preview`, `adminDecision`, `checkedAt`. Status: REJECTED on a CRITICAL rule or risk > 70; REVIEW_REQUIRED on risk ≥ 31, a HIGH rule or quality < 40; else APPROVED.
 
-### 5.3 AI moderation: `/api/ai`
+### 5.5 Zones, supports, availability, estimates
 
-```ts
-export interface AiReportResponse {
-  campaignId: number;
-  aiStatus: "approved" | "review_required" | "rejected"; // LOWERCASE
-  riskScore: number;       // 0..100
-  qualityScore: number;    // 0..100
-  detectedIssues: string[]; // French strings, e.g. ["texte ambigu", "budget insuffisant"]
-  recommendation: string | null; // French, e.g. "Contenu conforme pour diffusion"
-}
-```
+| Endpoint | Notes |
+|---|---|
+| `GET /api/zones`, `/zones/active`, `/zones/{id}`; `POST`, `PUT /{id}`, `DELETE /{id}` (admin) | delete with dependents → 409 `ZONE_IN_USE` |
+| `GET /api/zones/recommendations?startDate&endDate&startTime&endTime&supportType&limit` | best zones for a window: score 50 % views / 30 % availability / 20 % recent audience, French `reasons` |
+| `GET /api/supports?zoneId&supportType&technicalStatus`, `/supports/zone/{zoneId}`, `/supports/{id}`; `POST`, `PUT /{id}` (admin) | `visibilityScore` 0..100 weighs estimates; Porteur fields `porteurType`, `mastHeightM`, `headingDeg`, `address` |
+| `GET /api/supports/{id}/availability?startDate&endDate&startTime?&endTime?` | per-day slots: reservations (`kind: "RESERVATION"`) and blocks (`kind: "BLOCAGE"`) |
+| `GET /api/supports/{id}/blocks?from&to`; `POST` (admin, `MAINTENANCE`/`HORS_LIGNE`/`OCCUPE`, ≤ 92 days, one row per day); `DELETE /blocks/{blockId}` | unavailability calendar |
+| `GET /api/availability?startDate&endDate&startTime&endTime` + one target: `campaignId` **or** `lat&lng&radiusKm` **or** `zoneId`; optional `supportType`, `status` | per support: `status` (`DISPONIBLE`/`RESERVE`/`OCCUPE`/`MAINTENANCE`/`HORS_LIGNE`), `remainingCapacity`, `reservedByCampaign`, conflicts, estimated views & cost; `summary` (counts, `estimatedViewsAvailable`, `estimatedCostAvailable`); `alternatives` (top 3 other presets or +7..+28 days) when nothing is available |
+| `POST /api/estimates { supportIds, startDate, endDate, startTime, endTime }` | per-support and total views & cost |
+| `GET /api/estimates/campaign/{id}` | per reservation + totals, `budgetCoverage`, `budgetSufficient` |
 
-| Method & path | Auth | Body | Response | Codes / rules |
-|---|---|---|---|---|
-| `POST /api/ai/check-content/{campaignId}` | ANNONCEUR, ADMINISTRATEUR | none | `AiReportResponse` | 200. Campaign status must be `PENDING_AI_CHECK` **or `BROUILLON`**, else 400 `"Campaign is not eligible for AI analysis"`. 404 if the campaign is missing. **Synchronous**: it may take several seconds when OpenAI is on (show a loader). Updates the campaign and saves the check and an AI decision log. |
-| `GET /api/ai/report/{campaignId}` | ANNONCEUR, ADMINISTRATEUR, SUPERVISEUR | none | `AiReportResponse` (latest check) | 200. **400** (not 404) `"No AI report found for campaign: id"` if never analysed. |
+Estimates (internal simulation constants, shown only as « Estimation », never on marketing pages): `views = floor(baseViewsPerHour(type) × (0.5 + visibility/100) × hoursPerDay × days / capacity)`, `cost = views × CPM(type) / 1000`.
 
-What the AI analysis does:
-- **OpenAI path** runs when `OPENAI_ENABLED=true` and `OPENAI_API_KEY` is non-blank. It uses model `OPENAI_MODEL` (default `gpt-4o-mini`) and sends name, objective, budget, dates, estimated views and the media list. A risk score ≤30 gives APPROVED, 31–70 gives REVIEW_REQUIRED, >70 gives REJECTED. Unparseable output falls back to `REVIEW_REQUIRED`, 50/50, `["réponse IA invalide"]`.
-- **Local fallback** runs when OpenAI isn't configured or the call fails. The default is `APPROVED`, risk 20, quality 75, recommendation `"Contenu conforme pour diffusion"`.
-  - If `objective` contains `"gratuit"` or `"garanti"`: `REVIEW_REQUIRED`, risk 62, quality 74, issue `"texte ambigu"`, recommendation `"Vérification manuelle avant diffusion"`.
-  - If `budget <= 0`: `REVIEW_REQUIRED`, risk ≥55, issue `"budget insuffisant"`.
-  - **Demo tip:** put "gratuit" in the objective to trigger manual review, or use a normal text for auto-approval. The .env.example key `sk-your-openai-api-key-here` is non-blank, so the backend will try OpenAI, fail and fall back locally. That works, but it's slower.
-- Campaign mapping: `APPROVED` sets `status=APPROVED_BY_AI, aiStatus=APPROVED`. `REVIEW_REQUIRED` sets `status=REVIEW_REQUIRED, aiStatus=REVIEW_REQUIRED`. `REJECTED` sets `status=REJECTED_BY_AI, aiStatus=REJECTED`.
+### 5.6 Reservations `/api/reservations`
+
+| Endpoint | Notes |
+|---|---|
+| `POST { campaignId, supportId, startDate?, endDate?, startTime?, endTime? }` (defaults: campaign window) | owner, draft campaign; checks in order: `CAMPAIGN_NOT_RESERVABLE`, `CLIENT_NOT_ALLOWED`, window/`START_DATE_IN_PAST`, `RESERVATION_OUTSIDE_CAMPAIGN_PERIOD`, `CAMPAIGN_ZONE_REQUIRED`, `SUPPORT_OUTSIDE_CAMPAIGN_ZONE`, `RESERVATION_DUPLICATE`, `SUPPORT_UNAVAILABLE` / `SUPPORT_ALREADY_RESERVED`; 201 `TEMPORAIRE` with estimates |
+| `POST /batch { campaignId, supportIds[1..50], window? }` | all-or-nothing; 409 `BATCH_CONFLICT` with `errors = { "<supportId>": "<CODE>" }` |
+| `POST /{id}/cancel { reason? }` | owner: TEMPORAIRE of a `BROUILLON`/`REJECTED_BY_AI` campaign; admin: TEMPORAIRE or CONFIRMEE (audited); else 409 `RESERVATION_NOT_CANCELLABLE` |
+| `GET` (staff, paged) · `GET /mine` · `GET /campaign/{campaignId}` | `ReservationResponse` includes `cancellable` for the caller, cancel/expiry metadata |
+| `GET /conflicts?from&to&zoneId&supportId` | `CONFLIT` (more overlapping reservations than capacity) or `SATURE` (exactly at capacity ≥ 2), with the overlap window |
+
+Conflicts are computed on dates **and** time of day against the support capacity. TEMPORAIRE reservations expire (`EXPIREE`) when their period is over or after 72 h on an unsubmitted campaign.
+
+### 5.7 Diffusion `/api/diffusion`
+
+`GET /next?supportId&zone?&datetime?` (public, `datetime` local, default now) → `DiffusionResponse { type, diffusionLogId, supportId, campaignId, emergencyId, title, content, mediaUrl, mediaType, duration, zone, priority, urgencyLevel, datetime }`. Order:
+
+1. **Urgent message** active at that datetime whose circle contains the support (or whose zone is the support's zone): highest urgency, then priority. Delivered even when the support is not ACTIF.
+2. Support not ACTIF or blocked at that time → default content.
+3. **Campaign** with a CONFIRMEE reservation on the support covering date and time, status `ACTIVE`/`VALIDATED_BY_ADMIN`, admin-validated, AI `APPROVED` (or `REVIEW_REQUIRED` with admin override), support inside one of its circles, client allowed, budget left, and fewer than 30 plays in the last hour. Score = priority × 10 + 20 % of the quality score; among the top scores the least recently played wins (equitable rotation). The unit cost is added to `consumedBudget` and to the payment simulation.
+4. Otherwise default content (`TPUB_DIFFUSION_DEFAULT_*`).
+
+Every call writes a `diffusion_logs` row (with cost). `POST /interactions { diffusionLogId, type: "CLIC" | "INTERACTION" }` (public, idempotent, only on `publicite` logs less than 1 h old) → 204. `GET /logs` (staff, paged) with click/interaction counts.
+
+### 5.8 Emergencies `/api/emergency`
+
+`POST` (admin) `{ title, content, zoneId? | latitude+longitude+radiusKm, startDate, endDate, startTime?, endTime?, durationSeconds? (5..120, default 15), priority?, urgencyLevel? (default HIGH) }` → 201 `EmergencyResponse` with derived `state`, `affectedSupports`, `diffusionCount`, `createdByName` · `GET ?state=` (staff) · `POST /{id}/deactivate` (admin, `stopReason: "MANUEL"`). The auto-stop scheduler sets `stopReason: "AUTO"` at the end of the window.
+
+### 5.9 Statistics `/api/statistics`
+
+| Endpoint | Notes |
+|---|---|
+| `GET /dashboard` (staff) | campaigns by status, AI-flagged, clients, supports by status, zones, reservations by status, diffusions (ads / emergencies / default), views today, clicks, interactions, estimated cost & budget, simulated revenue, active emergencies |
+| `GET /views?from&to&groupBy=day|campaign|support|zone&campaignId&supportId&zoneId&contentType` (staff) | rows `{ key, label, views, clicks, interactions, cost }` + totals; days are zero-filled; max 366 days |
+| `GET /mine?from&to` (advertiser) | totals, status counts, daily series, by campaign / support / zone |
+| `GET /campaigns/{id}?from&to` (readable) | views, clicks, interactions, budget consumed, last diffusion, daily / by support / by zone |
+| `GET /history?from&to` (staff) | daily platform snapshots (updated every 15 min) |
+| `GET /export.csv?type=views|dashboard|mine|campaign&from&to&groupBy&campaignId` | UTF-8 with BOM, `;` separator, decimal comma, French headers, `attachment; filename="tpub-statistiques-<type>-<from>-<to>.csv"` |
+
+### 5.10 Admin users & audit (`/api/admin`)
+
+`GET /users?q&role&active&validationStatus` (paged `AdminUserResponse` with `activeSessions`, `campaignsCount`, `clientNotes`) · `GET /users/{id}` · `POST /users` (staff roles only) · `PUT /users/{id}` (role change between staff roles, never on yourself) · `POST /users/{id}/activate|deactivate` (`CANNOT_DEACTIVATE_SELF`, `LAST_ADMIN`; deactivation revokes sessions) · `GET /users/{id}/login-history`, `/sessions` · `POST /users/{id}/sessions/revoke` → `{ revoked }` · `POST /clients/{clientId}/validation { validationStatus, trustLevel?, notes? }` · `GET /roles` · `GET /audit?actorId&action&entityType&entityId&from&to` (paged).
+
+Audited actions: `CAMPAIGN_VALIDATED`, `CAMPAIGN_VALIDATED_OVERRIDE`, `CAMPAIGN_REJECTED`, `CAMPAIGN_PRIORITY_CHANGED`, `AI_CHECK_RERUN`, `AI_RULE_CREATED|UPDATED|DELETED`, `ZONE_CREATED|UPDATED|DELETED`, `SUPPORT_CREATED|UPDATED`, `SUPPORT_BLOCK_CREATED|DELETED`, `RESERVATION_CANCELLED`, `EMERGENCY_CREATED|DEACTIVATED`, `USER_CREATED|UPDATED|ACTIVATED|DEACTIVATED`, `CLIENT_VALIDATION_CHANGED`, `USER_SESSIONS_REVOKED`.
 
 ---
 
-### 5.4 Admin decision: `/api/admin/campaigns`
+## 6. Campaign lifecycle for an advertiser
 
-| Method & path | Auth | Params | Response | Codes / rules |
-|---|---|---|---|---|
-| `POST /api/admin/campaigns/{campaignId}/validate` | ADMINISTRATEUR | none | `CampaignResponse` | 200. Requires status `APPROVED_BY_AI` or `REVIEW_REQUIRED`, else 400 `"Campaign must be AI-analyzed before admin decision"`. Sets `adminStatus=VALIDATED`, `status=ACTIVE` (not VALIDATED_BY_ADMIN) and `validatedAt=now`. **All existing reservations of the campaign become `CONFIRMEE`.** 404 if missing. |
-| `POST /api/admin/campaigns/{campaignId}/reject?reason=...` | ADMINISTRATEUR | query `reason` (optional string, **query param, not a body**) | `MessageResponse` `{ message: "Campaign rejected successfully" }` | 200. Same status precondition. Sets `adminStatus=REJECTED` and `status=BLOCKED`. All reservations become `ANNULEE`. The reason is stored in `ai_decision_logs`, but **no endpoint returns it** to the annonceur. |
-
-```ts
-export interface MessageResponse { message: string; }
+```
+create (BROUILLON) → upload media → optional AI pre-analysis (preview)
+  → map circles (PUT zones) → availability → reserve Porteurs (TEMPORAIRE) → estimate
+  → submit: PENDING_AI_CHECK → AI → APPROVED_BY_AI | REVIEW_REQUIRED | REJECTED_BY_AI
+  → admin validate → VALIDATED_BY_ADMIN (future start) | ACTIVE, reservations CONFIRMEE
+  → diffusion on the reserved Porteurs, budget consumed, statistics
+  → TERMINATED (period over or budget used)
+REJECTED_BY_AI | BLOCKED → PUT / PUT zones / reopen → BROUILLON (correct and resubmit)
 ```
 
-There's no admin endpoint to list campaigns pending review. Use `GET /api/campaigns` and filter `status in ["APPROVED_BY_AI","REVIEW_REQUIRED"]`.
+| Timeline step (UI) | Statuses |
+|---|---|
+| Brouillon | `BROUILLON` |
+| Analyse IA | `PENDING_AI_CHECK` |
+| Validation TPUB | `APPROVED_BY_AI`, `REVIEW_REQUIRED` |
+| Programmée | `VALIDATED_BY_ADMIN` |
+| Diffusion | `ACTIVE` |
+| Terminée | `TERMINATED` (reason shown) |
+| À corriger / Bloquée | `REJECTED_BY_AI`, `BLOCKED` (reason shown) |
 
 ---
 
-### 5.5 Zones: `/api/zones`
+## 7. Remaining limits
 
-```ts
-export interface ZoneRequest {
-  name: string;          // @NotBlank ; DB max 150
-  latitude: number;      // @NotNull ; DB CHECK -90..90 ; NUMERIC(10,7)
-  longitude: number;     // @NotNull ; DB CHECK -180..180
-  radiusKm?: number | null;  // optional ; DB CHECK > 0 if set
-  isActive?: boolean | null; // optional ; create default true ; on update null = unchanged
-}
+Everything listed in the previous version of this section (no upload, no zone linking, no `/me`, no user management, no per-advertiser statistics, no cancel, no pagination, AI not run on submit, dead-end `REJECTED_BY_AI`, `REVIEW_REQUIRED` never diffused, statuses never set, no ownership checks, date-only conflicts, flat estimates, English messages, empty 403, 400 for a missing report, lenient/strict time formats, stale-token login failure, ignored zone and emergency windows, CORS default) is resolved in the backend. What is left:
 
-export interface ZoneResponse {
-  id: number;
-  name: string;
-  latitude: number;
-  longitude: number;
-  radiusKm: number | null;
-  isActive: boolean;
-}
-```
-
-| Method & path | Auth | Body | Response | Codes |
-|---|---|---|---|---|
-| `POST /api/zones` | ADMINISTRATEUR | `ZoneRequest` | `ZoneResponse` | **201**, 400 |
-| `GET /api/zones` | ANNONCEUR, ADMINISTRATEUR, SUPERVISEUR, OPERATEUR | none | `ZoneResponse[]` | 200 |
-| `GET /api/zones/active` | same four roles | none | `ZoneResponse[]` (isActive=true) | 200. **Use this in the annonceur booking UI.** |
-| `GET /api/zones/{id}` | same four roles | none | `ZoneResponse` | 200, 404 |
-| `PUT /api/zones/{id}` | ADMINISTRATEUR | `ZoneRequest` (name/lat/lng/radiusKm replaced; isActive only if non-null) | `ZoneResponse` | 200, 400, 404 |
-| `DELETE /api/zones/{id}` | ADMINISTRATEUR | none | empty | **204**, 404. 400 `"Invalid data…"` if supports or reservations reference the zone (FK). |
+1. **No password reset by e-mail.** `/mot-de-passe-oublie` directs the user to TPUB; a logged-in user changes their password in `/espace/profil`.
+2. **No refresh token.** Sessions last 24 h, then the user logs in again (the shell warns 10 min before).
+3. **No public network catalogue.** Zones and supports require a token; marketing pages use editorial content only.
+4. **No support deletion endpoint.** Retire a Porteur with `technicalStatus: "INACTIF"`.
+5. **Errors raised outside Spring MVC** (servlet `/error` dispatch) still use Spring Boot's default body (no `code`); `messages.ts` then shows its French default message for the HTTP status.
+6. **OCR is simulated** (text derived from the file name) unless Tesseract is installed on the backend's PATH.
+7. **No realtime push** (out of scope): the player polls `/diffusion/next` at the end of each item (at most every 5 s for urgent messages); back-office pages refresh on demand.
+8. Out of scope by decision: 2FA, polygon zones, dynamic pricing, learning from admin decisions.
 
 ---
 
-### 5.6 Supports (screens): `/api/supports`
+## 8. Demo data and scenario
 
-```ts
-export interface SupportRequest {
-  zoneId: number;                 // @NotNull ; must exist (404 "Zone not found")
-  name: string;                   // @NotBlank ; DB max 150
-  supportType: SupportType;       // @NotNull
-  latitude: number;               // @NotNull ; -90..90
-  longitude: number;              // @NotNull ; -180..180
-  technicalStatus?: TechnicalStatus | null; // optional ; default "ACTIF" ; on update null = unchanged
-  diffusionCapacity?: number | null;        // optional short ; default 1 ; DB CHECK > 0 ; on update null = unchanged
-  // Porteur fields (Flyway V2) — all optional ; on create omitted = null ; on update null = unchanged (cannot be cleared)
-  porteurType?: PorteurType | null; // @Pattern ^[ABCD]$ → 400 "must be one of A, B, C, D"
-  mastHeightM?: MastHeight | null;  // allowed 15|20|25|30 → 400 "must be one of 15, 20, 25, 30"
-  headingDeg?: number | null;       // @Min(0) @Max(359) ; main screen face direction, 0 = north, clockwise
-  address?: string | null;          // @Size(max=255) ; trimmed ; blank string clears it (exception to null = unchanged)
-}
-
-export type PorteurType = "A" | "B" | "C" | "D";
-export type MastHeight = 15 | 20 | 25 | 30;
-
-export interface SupportResponse {
-  id: number;
-  zoneId: number;
-  zoneName: string;
-  name: string;
-  supportType: SupportType;
-  latitude: number;
-  longitude: number;
-  technicalStatus: TechnicalStatus;
-  diffusionCapacity: number;
-  porteurType: PorteurType | null;  // null = not declared (UI infers « typologie estimée »)
-  mastHeightM: number | null;
-  headingDeg: number | null;
-  address: string | null;
-}
-
-export interface SupportAvailabilitySlot {   // no campaign / client / cost data
-  startDate: string;   // "YYYY-MM-DD"
-  endDate: string;
-  startTime: string;   // "HH:mm:ss"
-  endTime: string;
-  reservationStatus: "TEMPORAIRE" | "CONFIRMEE";
-}
-```
-
-| Method & path | Auth | Body | Response | Codes |
-|---|---|---|---|---|
-| `POST /api/supports` | ADMINISTRATEUR | `SupportRequest` | `SupportResponse` | **201**, 400, 404 (zone) |
-| `GET /api/supports` | ADMINISTRATEUR, SUPERVISEUR, OPERATEUR, ANNONCEUR | none | `SupportResponse[]` | 200 |
-| `GET /api/supports/zone/{zoneId}` | same four roles | none | `SupportResponse[]` | 200. Empty array if the zone is unknown (no 404). |
-| `GET /api/supports/{id}` | same four roles | none | `SupportResponse` | 200, 404 |
-| `PUT /api/supports/{id}` | ADMINISTRATEUR | `SupportRequest` | `SupportResponse` | 200, 400, 404 |
-| `GET /api/supports/{id}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` | same four roles | none | `SupportAvailabilitySlot[]` | 200 (empty array if free). `from` defaults to today, `to` to `from`+90 days. Returns the TEMPORAIRE/CONFIRMEE reservations on that support overlapping `[from, to]` (inclusive), sorted by startDate. 404 `"Support not found: id"`, 400 `"'to' must be on or after 'from'"`, 400 `"Invalid value for parameter: from"` for a malformed date. |
-
-There's **no DELETE for supports**. `visibilityScore` exists in the DB but isn't exposed. Availability mirrors the reservation conflict rule: overlap is by **date range only** (times ignored), so any day covered by a returned slot is unavailable for the whole day on that support.
-
-**Flyway `V2__porteur_fields.sql`** (additive, all nullable) adds to `diffusion_supports`: `porteur_type VARCHAR(1)` CHECK A–D, `mast_height_m SMALLINT` CHECK IN (15,20,25,30), `heading_deg SMALLINT` CHECK 0–359, `address VARCHAR(255)`. Existing rows keep nulls until an admin (or `scripts/seed-demo.mjs`) fills them.
-
----
-
-### 5.7 Reservations: `/api/reservations`
-
-```ts
-export interface ReservationRequest {
-  campaignId: number;  // @NotNull ; must exist (404)
-  zoneId: number;      // @NotNull ; must exist (404)
-  supportId: number;   // @NotNull ; must exist (404)
-  startDate: string;   // @NotNull "YYYY-MM-DD" ; DB CHECK start_date <= end_date
-  endDate: string;     // @NotNull
-  startTime: string;   // @NotNull "HH:mm:ss" (HH:mm tolerated) ; DB CHECK start_time < end_time
-  endTime: string;     // @NotNull
-}
-
-export interface ReservationResponse {
-  id: number;
-  campaignId: number;
-  zoneId: number;
-  supportId: number;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
-  availabilityStatus: AvailabilityStatus;  // always "RESERVE" on creation
-  reservationStatus: ReservationStatus;    // "TEMPORAIRE" on creation
-  estimatedViews: number;                  // always 1000
-  estimatedCost: number;                   // campaign.budget * 0.1 (TND)
-}
-```
-
-| Method & path | Auth | Body | Response | Codes / rules |
-|---|---|---|---|---|
-| `POST /api/reservations` | ANNONCEUR | `ReservationRequest` | `ReservationResponse` | **201**. 400 `"Support already reserved for the selected period"` if any TEMPORAIRE or CONFIRMEE reservation on the same support overlaps **by date range** (times are ignored for the conflict check). 400 `"Invalid data…"` if dates or times are inverted. 404 for unknown campaign, zone or support. Adds 1000 to `campaign.estimatedViews`. **No checks** for campaign ownership, campaign status, support belonging to zone, or support technical status. |
-| `GET /api/reservations` | ADMINISTRATEUR, SUPERVISEUR | none | `ReservationResponse[]` | 200 |
-| `GET /api/reservations/campaign/{campaignId}` | ANNONCEUR, ADMINISTRATEUR, SUPERVISEUR | none | `ReservationResponse[]` | 200 (empty array if none or unknown). No ownership check. |
-
-There's no endpoint to cancel or update a reservation and no support name in the response. Check availability before booking with `GET /api/supports/{id}/availability` (§5.6). Join client-side with `GET /api/supports` and `GET /api/zones`.
-
----
-
-### 5.8 Statistics: `/api/statistics`
-
-```ts
-export interface DashboardResponse {
-  totalCampaigns: number;        // count of ALL campaigns (platform-wide)
-  activeCampaigns: number;       // status ACTIVE
-  pendingCampaigns: number;      // PENDING_AI_CHECK + REVIEW_REQUIRED
-  aiPendingCampaigns: number;    // PENDING_AI_CHECK
-  aiRejectedCampaigns: number;   // REJECTED_BY_AI
-  availableSupports: number;     // supports with technicalStatus ACTIF
-  confirmedReservations: number; // reservationStatus CONFIRMEE
-  totalViews: number;            // COUNT(diffusion_logs) — includes "defaut" and "urgence" plays
-  estimatedBudget: number;       // SUM(campaign.budget) all campaigns
-  consumedBudget: number;        // SUM(consumed_budget) — always 0
-}
-```
-
-| Method & path | Auth | Response | Codes |
-|---|---|---|---|
-| `GET /api/statistics/dashboard` | ADMINISTRATEUR, SUPERVISEUR, ANNONCEUR, OPERATEUR | `DashboardResponse` | 200 |
-
-**BUG/GAP:** an ANNONCEUR gets **platform-wide** numbers, not their own. For the client space, compute per-advertiser KPIs client-side from `GET /api/campaigns/mine` plus `GET /api/reservations/campaign/{id}`: count by status, sum budget, sum `estimatedViews`, sum `estimatedCost`. There's no per-campaign diffusion or impression count endpoint. The `statistics` table exists but nothing writes to it or reads it.
-
----
-
-### 5.9 Emergency messages: `/api/emergency` (admin/ops, not for annonceurs)
-
-```ts
-export interface EmergencyRequest {
-  title: string;           // @NotBlank ; DB max 200
-  content: string;         // @NotBlank
-  zoneId: number;          // @NotNull ; 404 if unknown
-  startDate: string;       // @NotNull "YYYY-MM-DD" ; DB CHECK start <= end
-  endDate: string;         // @NotNull
-  startTime?: string | null;       // optional "HH:mm:ss" (stored, NOT used by diffusion)
-  endTime?: string | null;         // optional
-  durationSeconds?: number | null; // optional short ; diffusion default 15
-  priority?: number | null;        // optional short ; default 1 ; DB CHECK >= 1 ; LOWER = shown first
-  urgencyLevel?: UrgencyLevel | null; // optional ; default "HIGH"
-}
-
-export interface EmergencyResponse {
-  id: number;
-  title: string;
-  content: string;
-  zoneId: number;
-  startDate: string;
-  endDate: string;
-  startTime: string | null;
-  endTime: string | null;
-  priority: number;
-  urgencyLevel: UrgencyLevel;
-  isActive: boolean;
-  // NOTE: durationSeconds is NOT returned
-}
-```
-
-| Method & path | Auth | Body | Response | Codes |
-|---|---|---|---|---|
-| `POST /api/emergency` | ADMINISTRATEUR | `EmergencyRequest` | `EmergencyResponse` | **201**, 400, 404 |
-| `GET /api/emergency` | ADMINISTRATEUR, SUPERVISEUR, OPERATEUR | none | `EmergencyResponse[]` | 200 |
-| `POST /api/emergency/{id}/deactivate` | ADMINISTRATEUR | none | `EmergencyResponse` (isActive=false) | 200, 404 |
-
----
-
-### 5.10 Diffusion (player/device): `/api/diffusion` (PUBLIC)
-
-#### `GET /api/diffusion/next?supportId={id}&datetime={ISO}&zone={name}`
-| Query param | Type | Required | Notes |
-|---|---|---|---|
-| `supportId` | number | **yes** | 404 `"Support not found: id"` |
-| `datetime` | ISO local date-time `2026-09-12T14:30:00` | **yes** | no timezone suffix. Missing → 500 |
-| `zone` | string | no | **ignored** by the service |
-
-```ts
-export interface DiffusionResponse {
-  type: "publicite" | "urgence" | "defaut";
-  campaignId: number | null;  // null for urgence/defaut
-  title: string;              // campaign name | emergency title | "TPUB - Contenu par defaut"
-  mediaUrl: string | null;    // media_files.file_path of first media (always null today: no uploads) ; null for urgence/defaut
-  duration: number;           // seconds: urgence = durationSeconds ?? 15 ; publicite = 10 ; defaut = 10
-  zone: string;               // support's zone name
-  priority: number;           // emergency.priority | campaign.priorityScore (0) | 0
-}
-```
-
-Selection logic, in order:
-1. An active emergency in the support's zone with `startDate <= date <= endDate` wins. Priority ascending; the time of day is ignored. The emergency `content` is **not** returned, only `title`.
-2. Otherwise, the `CONFIRMEE` reservations on this support where `startDate<=date<=endDate` and `startTime <= time < endTime` are considered. Their campaign must have `aiStatus=APPROVED` **and** `adminStatus=VALIDATED` **and** status `ACTIVE`/`VALIDATED_BY_ADMIN`. The highest `priorityScore` wins.
-3. Otherwise the default content is returned.
-
-**Every call inserts a `diffusion_logs` row**, and that row count is what `totalViews` reports. Polling from the website will inflate stats. Only call this from a real or simulated "player" page, e.g. a `/player/[supportId]` demo screen.
-
----
-
-### 5.11 Endpoint index (quick reference)
-
-| # | Method | Path | Roles | Success |
-|---|---|---|---|---|
-| 1 | POST | /api/auth/register | public | 201 AuthResponse |
-| 2 | POST | /api/auth/login | public | 200 AuthResponse |
-| 3 | POST | /api/campaigns | ANNONCEUR | 201 CampaignResponse |
-| 4 | GET | /api/campaigns | ADMIN, SUPERVISEUR | 200 CampaignResponse[] |
-| 5 | GET | /api/campaigns/mine | ANNONCEUR | 200 CampaignResponse[] |
-| 6 | GET | /api/campaigns/{id} | ANNONCEUR, ADMIN, SUPERVISEUR | 200 CampaignResponse |
-| 7 | PUT | /api/campaigns/{id} | ANNONCEUR | 200 CampaignResponse |
-| 8 | DELETE | /api/campaigns/{id} | ANNONCEUR | 204 |
-| 9 | POST | /api/campaigns/{id}/submit | ANNONCEUR | 200 CampaignResponse |
-| 10 | POST | /api/ai/check-content/{campaignId} | ANNONCEUR, ADMIN | 200 AiReportResponse |
-| 11 | GET | /api/ai/report/{campaignId} | ANNONCEUR, ADMIN, SUPERVISEUR | 200 AiReportResponse |
-| 12 | POST | /api/admin/campaigns/{campaignId}/validate | ADMIN | 200 CampaignResponse |
-| 13 | POST | /api/admin/campaigns/{campaignId}/reject?reason= | ADMIN | 200 MessageResponse |
-| 14 | POST | /api/zones | ADMIN | 201 ZoneResponse |
-| 15 | GET | /api/zones | ANNONCEUR, ADMIN, SUPERVISEUR, OPERATEUR | 200 ZoneResponse[] |
-| 16 | GET | /api/zones/active | same | 200 ZoneResponse[] |
-| 17 | GET | /api/zones/{id} | same | 200 ZoneResponse |
-| 18 | PUT | /api/zones/{id} | ADMIN | 200 ZoneResponse |
-| 19 | DELETE | /api/zones/{id} | ADMIN | 204 |
-| 20 | POST | /api/supports | ADMIN | 201 SupportResponse |
-| 21 | GET | /api/supports | ADMIN, SUPERVISEUR, OPERATEUR, ANNONCEUR | 200 SupportResponse[] |
-| 22 | GET | /api/supports/zone/{zoneId} | same | 200 SupportResponse[] |
-| 23 | GET | /api/supports/{id} | same | 200 SupportResponse |
-| 24 | PUT | /api/supports/{id} | ADMIN | 200 SupportResponse |
-| 24b | GET | /api/supports/{id}/availability?from&to | ADMIN, SUPERVISEUR, OPERATEUR, ANNONCEUR | 200 SupportAvailabilitySlot[] |
-| 25 | POST | /api/reservations | ANNONCEUR | 201 ReservationResponse |
-| 26 | GET | /api/reservations | ADMIN, SUPERVISEUR | 200 ReservationResponse[] |
-| 27 | GET | /api/reservations/campaign/{campaignId} | ANNONCEUR, ADMIN, SUPERVISEUR | 200 ReservationResponse[] |
-| 28 | GET | /api/statistics/dashboard | ADMIN, SUPERVISEUR, ANNONCEUR, OPERATEUR | 200 DashboardResponse |
-| 29 | POST | /api/emergency | ADMIN | 201 EmergencyResponse |
-| 30 | GET | /api/emergency | ADMIN, SUPERVISEUR, OPERATEUR | 200 EmergencyResponse[] |
-| 31 | POST | /api/emergency/{id}/deactivate | ADMIN | 200 EmergencyResponse |
-| 32 | GET | /api/diffusion/next?supportId&datetime[&zone] | public | 200 DiffusionResponse |
-| 33 | GET | /actuator/health | public | 200 `{status:"UP"}` |
-
-**Multipart upload endpoints: NONE.** There's no `@RequestPart` or `MultipartFile` anywhere in the codebase. See §7.
-
----
-
-## 6. Campaign lifecycle for an ANNONCEUR
-
-```
-[register/login] → create (BROUILLON) → reserve supports (TEMPORAIRE) → submit (PENDING_AI_CHECK)
-   → AI check (APPROVED_BY_AI | REVIEW_REQUIRED | REJECTED_BY_AI)
-   → admin validate (ACTIVE, reservations CONFIRMEE)  |  admin reject (BLOCKED, reservations ANNULEE)
-   → diffusion on screens during reserved slots → dashboard/stats
-```
-
-| Step | Actor | Endpoint | State changes |
-|---|---|---|---|
-| 0. Account | Annonceur | `POST /api/auth/register` (or `/login`) | creates user (ANNONCEUR) + client (validationStatus PENDING, never enforced) |
-| 1. Create campaign | Annonceur | `POST /api/campaigns` | `status=BROUILLON`, aiStatus/adminStatus `null` |
-| 1b. Edit / delete draft | Annonceur | `PUT` / `DELETE /api/campaigns/{id}` | only while `BROUILLON` or `REJECTED_BY_AI` |
-| 2. Choose zones | Annonceur | `GET /api/zones/active` | **no linking endpoint**: the `campaign_zones` table is unused. Zone choice is only recorded through reservations (`zoneId`). |
-| 3. Choose supports | Annonceur | `GET /api/supports/zone/{zoneId}` (filter `technicalStatus==="ACTIF"` client-side) | none |
-| 4. Reserve slots | Annonceur | `POST /api/reservations` (one per support) | reservation `TEMPORAIRE`/`RESERVE`, `estimatedCost = budget×0.1`, `campaign.estimatedViews += 1000` |
-| 5. Upload media | Annonceur | **not possible (no endpoint)** | the AI then analyses text only (contentType TEXTE) and `mediaUrl` stays null |
-| 6. Submit | Annonceur | `POST /api/campaigns/{id}/submit` | `BROUILLON → PENDING_AI_CHECK`, `submittedAt=now` |
-| 7. AI check | Annonceur (the frontend fires it right after submit) or Admin | `POST /api/ai/check-content/{id}` then `GET /api/ai/report/{id}` | `status → APPROVED_BY_AI / REVIEW_REQUIRED / REJECTED_BY_AI`, `aiStatus → APPROVED / REVIEW_REQUIRED / REJECTED` |
-| 8. Admin decision | Admin | `POST /api/admin/campaigns/{id}/validate` or `/reject?reason=` | validate: `status=ACTIVE`, `adminStatus=VALIDATED`, `validatedAt`, reservations → `CONFIRMEE`. Reject: `status=BLOCKED`, `adminStatus=REJECTED`, reservations → `ANNULEE`. |
-| 9. Payment simulation | none | **no endpoint** (`payments_simulation` table unused) | show `estimatedCost` / `budget` as a simulated invoice client-side only |
-| 10. Diffusion | Screen/player | `GET /api/diffusion/next?supportId&datetime` | writes `diffusion_logs`. Campaign plays only if reservation CONFIRMEE, in date+time window, `aiStatus=APPROVED`, `adminStatus=VALIDATED`, status ACTIVE. |
-| 11. Statistics | Annonceur/Admin | `GET /api/statistics/dashboard` (global), plus client-side aggregation of `/mine` and reservations | read-only |
-
-**Required ordering for the frontend wizard:** create, then **reserve**, then submit, then AI check. Reservations have to exist **before** admin validation. Validation only confirms the reservations that already exist, and ones created afterwards stay `TEMPORAIRE` forever and never play. The backend allows reservations in any campaign status, so the wizard must enforce the order.
-
-Suggested client-side "étape" mapping for a progress stepper:
-- `BROUILLON` = Brouillon
-- `PENDING_AI_CHECK` = Analyse IA
-- `APPROVED_BY_AI`/`REVIEW_REQUIRED` = Validation admin
-- `ACTIVE` = Diffusion
-- `REJECTED_BY_AI`/`BLOCKED` = Refusée
-
----
-
-## 7. Gaps and bugs the frontend must work around
-
-### Missing endpoints
-1. **No media upload.** The `MediaFile` entity, `media_files` table, multipart config (100MB), `MEDIA_UPLOAD_DIR`, `MEDIA_BASE_URL=/uploads` and the Docker `tpub_uploads` volume all exist, but there's no controller and no static `/uploads` handler. The UI can show an upload dropzone as "à venir" or keep a local preview only. Nothing can be persisted. `DiffusionResponse.mediaUrl` is therefore always `null`.
-2. **No campaign↔zone linking** (`campaign_zones` unused). Derive a campaign's zones from its reservations' `zoneId`.
-3. **No payment simulation endpoints** (`payments_simulation` unused). `consumedBudget` is always 0.
-4. **No current-user/profile endpoint** (`/me`), no profile update, no password change or reset, no logout, no refresh token. Store `AuthResponse` at login.
-5. **No user management** (create OPERATEUR/SUPERVISEUR/ADMIN, deactivate users, validate clients). Only via DB.
-6. **No per-annonceur or per-campaign statistics.** The dashboard is global, even for ANNONCEUR. `statistics` table unused. No diffusion log listing.
-7. **No reservation cancel/update**, no support DELETE. Availability lookup exists since V2 (`GET /api/supports/{id}/availability`, computed from reservations; the `support_availability` table stays unused).
-8. **No public catalogue.** Zones and supports require a JWT, so marketing pages can't list the network anonymously.
-9. **No AI moderation rules API, no AI decision history API.** The admin reject reason is never returned to the advertiser.
-10. No pagination, search or filter params anywhere. `CampaignRepository.findByNameContainingIgnoreCase` exists but isn't exposed.
-
-### Bugs and inconsistencies
-11. **Case inconsistency:** `AiReportResponse.aiStatus` is lowercase (`"review_required"`) while `CampaignResponse.aiStatus` is uppercase (`"REVIEW_REQUIRED"`). `DiffusionResponse.type` is lowercase French (`"publicite"`). Normalize with `.toUpperCase()`.
-12. **`submit` does not run AI** despite its Swagger summary. Chain `POST /submit` then `POST /api/ai/check-content/{id}`. `check-content` also accepts `BROUILLON` directly, which skips `submittedAt`.
-13. **`REJECTED_BY_AI` is a dead end.** It can be edited or deleted, but `submit` requires `BROUILLON` and `check-content` requires `BROUILLON`/`PENDING_AI_CHECK`, and `PUT` doesn't reset the status. The UI should offer "Supprimer et recréer" (or "Dupliquer": POST a new campaign with the same fields).
-14. **`REVIEW_REQUIRED` campaigns validated by the admin never diffuse.** Diffusion requires `aiStatus === "APPROVED"`, but validation leaves `aiStatus = REVIEW_REQUIRED` while setting `status=ACTIVE`. Show a warning in the admin UI.
-15. `VALIDATED_BY_ADMIN`, `TERMINATED`, `EXPIREE` and admin `PENDING` are never set. `ACTIVE` is set right at validation, even if `startDate` is in the future. Display "Programmée" client-side when `ACTIVE && startDate > today`, and "Terminée" when `endDate < today`.
-16. **No ownership checks** on `GET/PUT/DELETE /api/campaigns/{id}`, `submit`, `check-content`, `report`, `reservations/campaign/{id}` and `POST /api/reservations`. Any annonceur can act on any campaign id. Only ever navigate from `/mine` results, and don't trust URL ids.
-17. Reservation conflict detection ignores time of day, so two campaigns can't share a support on overlapping dates even with disjoint hours. It also doesn't verify `support.zoneId === zoneId`, so send the support's own `zoneId`. `estimatedCost` is always 10 % of the campaign budget per reservation, and `estimatedViews` is always 1000.
-18. Validation messages are English and errors carry only one message per field. Unauthenticated calls return 403 with an empty body, not 401. Many bad-input cases return 500 (missing query params, wrong id type, unknown route, disabled account).
-19. `DataIntegrityViolationException` always says "check dates and times format", even for FK violations (e.g. deleting a zone that has supports) or overlong strings.
-20. `CampaignRequest` times are strict `HH:mm:ss`, while other DTOs are lenient.
-21. `AuthResponse.userId` is `users.id`, but `CampaignResponse.clientId` is `clients.id`. They can't be compared. Use `/mine` rather than filtering by id.
-22. An `Authorization` header with a stale token breaks `/api/auth/login` and `/register`. Don't send it there.
-23. `GET /api/diffusion/next` logs a view on every call, and `totalViews` counts default and emergency plays too. The `zone` param is ignored, and emergency time windows are ignored.
-24. The CORS default is Angular's `http://localhost:4200`, so it must be changed for Next.js (`:3000`).
-25. `GET /api/ai/report/{id}` returns 400 (not 404) when no report exists. Treat 400 as "pas encore analysée".
-26. The ADMINISTRATEUR has no `clients` row, so admin calls to ANNONCEUR-only endpoints fail with 403 (role). The admin can't create campaigns.
-27. `EmergencyResponse` omits `durationSeconds`. Emergency `content` is never sent to players (title only).
-
----
-
-## 8. Seed data for local demo
-
-### What actually exists after first boot
-- **Roles** (Flyway V1): ADMINISTRATEUR, ANNONCEUR, OPERATEUR, SUPERVISEUR (see §1.5).
-- **One admin user** (`DataInitializer`, created only if `admin@tpub.local` doesn't exist):
-
-| email | password | role | nom | societe |
-|---|---|---|---|---|
-| `admin@tpub.local` | `Admin@123` | ADMINISTRATEUR | Administrateur TPUB | Tukhnanutha |
-
-- **Nothing else is seeded.** No annonceur account, **no zones, no supports**, no campaigns, no emergency messages and no AI moderation rules.
-- pgAdmin: `http://localhost:5050` with `.env` `PGADMIN_DEFAULT_EMAIL`/`PASSWORD`. DB `tpub` / `tpub_user`.
-
-### Recommended demo bootstrap
-These example payloads are **not** in the backend. Run them against a live API, e.g. a `scripts/seed-demo.ts` in the frontend repo.
-
-1. `POST /api/auth/login` `{ "email":"admin@tpub.local", "password":"Admin@123" }` → admin token.
-2. `POST /api/zones` (admin), for example:
-   - `{ "name":"Tunis Centre", "latitude":36.8008, "longitude":10.1800, "radiusKm":3, "isActive":true }`
-   - `{ "name":"Les Berges du Lac", "latitude":36.8380, "longitude":10.2400, "radiusKm":2.5 }`
-   - `{ "name":"La Marsa", "latitude":36.8782, "longitude":10.3247, "radiusKm":2 }`
-   - `{ "name":"Sousse Centre", "latitude":35.8256, "longitude":10.6360, "radiusKm":3 }`
-   - `{ "name":"Sfax Centre", "latitude":34.7406, "longitude":10.7603, "radiusKm":3 }`
-3. `POST /api/supports` (admin), for example:
-   - `{ "zoneId":1, "name":"Écran LED Avenue Habib Bourguiba", "supportType":"ECRAN", "latitude":36.7998, "longitude":10.1817, "technicalStatus":"ACTIF", "diffusionCapacity":6 }`
-   - `{ "zoneId":2, "name":"Panneau numérique Lac 2", "supportType":"PANNEAU_NUMERIQUE", "latitude":36.8455, "longitude":10.2730 }`
-   - `{ "zoneId":4, "name":"Écran Port El Kantaoui", "supportType":"ECRAN", "latitude":35.8920, "longitude":10.5970, "technicalStatus":"MAINTENANCE" }`
-4. `POST /api/auth/register` `{ "email":"demo@annonceur.tn", "password":"Demo@1234", "nom":"Sami Ben Salah", "societe":"Café Démo SARL", "telephone":"+216 20 000 000", "adresse":"Tunis" }` → annonceur token.
-5. As the annonceur, create a campaign:
-   ```json
-   POST /api/campaigns
-   {
-     "name": "Lancement Café Démo",
-     "objective": "Notoriété de la nouvelle gamme",
-     "budget": 2500,
-     "startDate": "2026-10-01",
-     "endDate": "2026-10-31",
-     "startTime": "08:00:00",
-     "endTime": "22:00:00"
-   }
-   ```
-6. `POST /api/reservations` `{ "campaignId":1, "zoneId":1, "supportId":1, "startDate":"2026-10-01", "endDate":"2026-10-31", "startTime":"08:00:00", "endTime":"22:00:00" }`
-7. `POST /api/campaigns/1/submit`, then `POST /api/ai/check-content/1`. Local fallback gives `approved`, risk 20. Put "gratuit" in the objective to demo `review_required`.
-8. As the admin, `POST /api/admin/campaigns/1/validate`.
-9. Player demo: `GET /api/diffusion/next?supportId=1&datetime=2026-10-05T10:00:00` → `{ "type":"publicite", "campaignId":1, "title":"Lancement Café Démo", ... }`.
-10. Dashboard: `GET /api/statistics/dashboard`.
-
-### Useful environment for local frontend dev (`.env` at repo root)
-```
-SERVER_PORT=8080
-CORS_ALLOWED_ORIGINS=http://localhost:3000
-JWT_EXPIRATION_MS=86400000
-OPENAI_ENABLED=false        # instant, deterministic local AI fallback for demos
-```
+- Flyway seeds the four roles (V1, permissions described in V5) and the 8 moderation rules (V3); `DataInitializer` creates `admin@tpub.local` / `Admin@123`.
+- `node scripts/seed-demo.mjs` (idempotent) adds 5 zones, 10 Porteurs covering every technical status with visibility scores, a maintenance block, 2 extra moderation rules, `operateur@tpub.local` / `Operateur@123`, `superviseur@tpub.local` / `Superviseur@123`, the validated advertiser `demo@annonceur.tn` / `Demo@1234` and four campaigns created through the real flow (one ACTIVE and diffusing today, one APPROVED_BY_AI and one REVIEW_REQUIRED awaiting the admin, one draft).
+- `node scripts/demo-scenario.mjs` runs the 18 steps of cahier des charges §11 over HTTP (fresh advertiser, PNG upload, AI preview and report, admin reads it, point + radius, Soir slot, availability, batch reservation, estimates, submit + admin validation, `/diffusion/next` at a datetime inside the window, click and statistics, urgent message replacing the ad) and prints ✔ / ✘ per step. Both scripts read `TPUB_API_URL` (default `http://localhost:8080`).

@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
-import { parseSupportId } from "@/components/player/player-schedule";
+import { parseSimulatedDateTime, parseSupportId } from "@/components/player/player-schedule";
 import { PlayerScreen } from "@/components/player/player-screen";
 
 interface PageProps {
   params: Promise<{ supportId: string }>;
+  /** `?datetime=2026-09-20T18:30` simulates the local Tunis clock (demo of time windows). */
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -15,8 +17,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return { title: id ? `Écran n° ${id}` : "Écran de diffusion" };
 }
 
-export default async function Page({ params }: PageProps) {
+export default async function Page({ params, searchParams }: PageProps) {
   const { supportId } = await params;
+  const query = (await searchParams) ?? {};
+  const rawDatetime = Array.isArray(query.datetime) ? query.datetime[0] : query.datetime;
   const id = parseSupportId(supportId);
 
   if (id === null) {
@@ -39,5 +43,5 @@ export default async function Page({ params }: PageProps) {
     );
   }
 
-  return <PlayerScreen supportId={id} />;
+  return <PlayerScreen supportId={id} simulatedAt={parseSimulatedDateTime(rawDatetime)} />;
 }

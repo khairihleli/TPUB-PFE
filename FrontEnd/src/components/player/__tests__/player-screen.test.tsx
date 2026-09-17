@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
 
-const api = vi.hoisted(() => ({ next: vi.fn() }));
+const api = vi.hoisted(() => ({ next: vi.fn(), interaction: vi.fn() }));
 
-vi.mock("@/lib/api/endpoints", () => ({ diffusionApi: { next: api.next } }));
+vi.mock("@/lib/api/endpoints", () => ({
+  diffusionApi: { next: api.next, interaction: api.interaction },
+}));
 
 import { PlayerScreen } from "@/components/player/player-screen";
 
@@ -22,6 +24,8 @@ const urgent: Diffusion = {
 
 beforeEach(() => {
   api.next.mockReset();
+  api.interaction.mockReset();
+  api.interaction.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -132,5 +136,96 @@ describe("PlayerScreen", () => {
     expect(
       screen.getByRole("complementary", { name: "Informations du lecteur" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the image of a publicité and records one CLIC per diffusion", async () => {
+    api.next.mockResolvedValue({
+      type: "PUBLICITE",
+      diffusionLogId: 41,
+      campaignId: 4,
+      title: "Café Démo",
+      mediaUrl: "/uploads/campaigns/4/visuel.jpg",
+      mediaType: "IMAGE",
+      duration: 10,
+      zone: "Tunis Centre",
+      priority: 80,
+    } satisfies Diffusion);
+    render(<PlayerScreen supportId={5} />);
+
+    const img = await screen.findByRole("img", { name: "Café Démo" });
+    expect(img).toHaveAttribute("src", "/uploads/campaigns/4/visuel.jpg");
+    const tap = screen.getByRole("button", { name: "Je suis intéressé par « Café Démo »" });
+    fireEvent.click(tap);
+    fireEvent.click(tap);
+    expect(api.interaction).toHaveBeenCalledTimes(1);
+    expect(api.interaction).toHaveBeenCalledWith({ diffusionLogId: 41, type: "CLIC" });
+    expect(await screen.findByText("Intérêt enregistré, merci")).toBeInTheDocument();
+  });
+
+  it("falls back to the title card when the image cannot be loaded", async () => {
+    api.next.mockResolvedValue({
+      type: "PUBLICITE",
+      diffusionLogId: 42,
+      campaignId: 4,
+      title: "Café Démo",
+      mediaUrl: "/uploads/campaigns/4/manquant.jpg",
+      mediaType: "IMAGE",
+      duration: 10,
+      zone: "Tunis Centre",
+      priority: 80,
+    } satisfies Diffusion);
+    render(<PlayerScreen supportId={5} />);
+    fireEvent.error(await screen.findByRole("img", { name: "Café Démo" }));
+    expect(screen.queryByRole("img", { name: "Café Démo" })).toBeNull();
+    expect(screen.getByText("Campagne")).toBeInTheDocument();
+  });
+
+  it("plays a video muted and asks for the next content when it ends", async () => {
+    api.next.mockResolvedValue({
+      type: "PUBLICITE",
+      diffusionLogId: 50,
+      campaignId: 9,
+      title: "Spot vidéo",
+      mediaUrl: "/uploads/campaigns/9/spot.mp4",
+      mediaType: "VIDEO",
+      duration: 30,
+      zone: "Sousse",
+      priority: 60,
+    } satisfies Diffusion);
+    const { container } = render(<PlayerScreen supportId={8} />);
+    await screen.findByLabelText("Vidéo publicitaire : Spot vidéo");
+    const video = container.querySelector("video") as HTMLVideoElement;
+    expect(video.muted).toBe(true);
+    expect(video).toHaveAttribute("playsinline");
+    expect(api.next).toHaveBeenCalledTimes(1);
+    fireEvent.ended(video);
+    await waitFor(() => expect(api.next).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the title and the content of a priority message with the urgency colours", async () => {
+    api.next.mockResolvedValue({
+      ...urgent,
+      emergencyId: 3,
+      content: "Empruntez l'avenue Habib-Bourguiba.",
+      urgencyLevel: "MEDIUM",
+    } satisfies Diffusion);
+    const { container } = render(<PlayerScreen supportId={3} />);
+    expect(await screen.findByText("Empruntez l'avenue Habib-Bourguiba.")).toBeInTheDocument();
+    expect(screen.getByText("Message important")).toBeInTheDocument();
+    expect(container.querySelector("[data-urgency=MEDIUM]")).not.toBeNull();
+  });
+
+  it("sends the simulated date-time given by ?datetime", async () => {
+    api.next.mockResolvedValue({
+      ...urgent,
+      type: "DEFAUT",
+      title: "TPUB",
+      content: "Espace de diffusion TPUB",
+    });
+    render(<PlayerScreen supportId={2} simulatedAt="2026-12-24T20:00:00" />);
+    expect(await screen.findByText("Espace de diffusion TPUB")).toBeInTheDocument();
+    const [query] = api.next.mock.calls[0] as [{ datetime: string }];
+    expect(query.datetime.startsWith("2026-12-24T20:00:0")).toBe(true);
+    expect(screen.getByText("Heure simulée (?datetime)")).toBeInTheDocument();
   });
 });

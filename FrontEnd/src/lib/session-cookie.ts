@@ -67,9 +67,23 @@ export function nowSeconds(now: number = Date.now()): number {
   return Math.floor(now / 1000);
 }
 
-/** Session user derived from a Spring AuthResponse (token stays server-side). */
+/** ISO instant (`AuthResponse.expiresAt`) → seconds since epoch; null when absent/invalid. */
+export function isoToEpochSeconds(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+/**
+ * Session user derived from a Spring AuthResponse (token stays server-side). Expiry: the
+ * earliest of the JWT `exp` and the session `expiresAt` (v2), fallback now + 24 h.
+ */
 export function sessionUserFromAuth(auth: AuthResponse, now: number = Date.now()): SessionUser {
-  const exp = decodeJwtExp(auth.token) ?? nowSeconds(now) + DEFAULT_SESSION_SECONDS;
+  const candidates = [decodeJwtExp(auth.token), isoToEpochSeconds(auth.expiresAt)].filter(
+    (v): v is number => v !== null,
+  );
+  const exp =
+    candidates.length > 0 ? Math.min(...candidates) : nowSeconds(now) + DEFAULT_SESSION_SECONDS;
   return { email: auth.email, nom: auth.nom, role: auth.role, userId: auth.userId, exp };
 }
 

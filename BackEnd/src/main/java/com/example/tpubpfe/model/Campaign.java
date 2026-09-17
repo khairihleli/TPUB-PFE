@@ -1,8 +1,5 @@
 package com.example.tpubpfe.model;
 
-import com.example.tpubpfe.model.CampaignAdminStatus;
-import com.example.tpubpfe.model.CampaignAiStatus;
-import com.example.tpubpfe.model.CampaignStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -52,7 +49,7 @@ public class Campaign {
     @Builder.Default
     private BigDecimal budget = BigDecimal.ZERO;
 
-    @Column(name = "consumed_budget", nullable = false, precision = 14, scale = 2)
+    @Column(name = "consumed_budget", nullable = false, precision = 16, scale = 4)
     @Builder.Default
     private BigDecimal consumedBudget = BigDecimal.ZERO;
 
@@ -68,6 +65,20 @@ public class Campaign {
     @Enumerated(EnumType.STRING)
     @Column(name = "admin_status", length = 30)
     private CampaignAdminStatus adminStatus;
+
+    /** True when an administrator validated a REVIEW_REQUIRED campaign (logged override of the AI opinion). */
+    @Column(name = "ai_override", nullable = false)
+    @Builder.Default
+    private Boolean aiOverride = false;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
+    @Column(name = "admin_comment", columnDefinition = "TEXT")
+    private String adminComment;
+
+    @Column(name = "duplicated_from_id")
+    private Long duplicatedFromId;
 
     @Column(name = "start_date")
     private LocalDate startDate;
@@ -102,4 +113,14 @@ public class Campaign {
 
     @Column(name = "validated_at")
     private Instant validatedAt;
+
+    @Column(name = "activated_at")
+    private Instant activatedAt;
+
+    @Column(name = "terminated_at")
+    private Instant terminatedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "termination_reason", length = 30)
+    private TerminationReason terminationReason;
 }

@@ -13,7 +13,12 @@ import {
 import Image from "next/image";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
-import { formatCountdown, type PlayerErrorInfo } from "@/components/player/player-schedule";
+import {
+  adMediaKind,
+  formatCountdown,
+  type PlayerErrorInfo,
+} from "@/components/player/player-schedule";
+import { urgencyTheme } from "@/components/player/urgency-theme";
 import { GROUP, SITE } from "@/content/site";
 import type { Diffusion } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
@@ -70,12 +75,96 @@ export function AdSlide({
   cycle,
   durationMs,
   animate,
+  onMediaEnded,
+  onActivate,
+  clicked = false,
 }: {
   diffusion: Diffusion;
   cycle: number;
   durationMs: number;
   animate: boolean;
+  /** A video finished: the player asks for the next content right away. */
+  onMediaEnded?: () => void;
+  /** Tap / click on the publicité (counts one CLIC per diffusion). */
+  onActivate?: () => void;
+  /** The CLIC of the current diffusion was recorded. */
+  clicked?: boolean;
 }) {
+  const kind = adMediaKind(diffusion);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const mediaUrl = diffusion.mediaUrl ?? "";
+  const showMedia = kind !== "none" && failedUrl !== mediaUrl;
+  const activation = onActivate ? (
+    <>
+      <button
+        type="button"
+        onClick={onActivate}
+        aria-label={`Je suis intéressé par « ${diffusion.title} »`}
+        className="absolute inset-0 z-[1] cursor-pointer focus-visible:outline-4 focus-visible:-outline-offset-8 focus-visible:outline-brand-blue-text"
+      />
+      {clicked ? (
+        <p
+          role="status"
+          className="absolute bottom-6 left-1/2 z-[2] -translate-x-1/2 rounded-full border border-white/25 bg-black/65 px-4 py-2 font-label text-sm font-semibold text-white backdrop-blur-sm"
+        >
+          Intérêt enregistré, merci
+        </p>
+      ) : null}
+    </>
+  ) : null;
+
+  if (showMedia) {
+    return (
+      <Fade animate={animate}>
+        <div aria-hidden="true" className="absolute inset-0 bg-black" />
+        <SafeArea className="overflow-hidden bg-black">
+          {kind === "video" ? (
+            <video
+              // A new diffusion of the same spot restarts the video.
+              key={diffusion.diffusionLogId ?? cycle}
+              src={mediaUrl}
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              aria-label={`Vidéo publicitaire : ${diffusion.title}`}
+              onEnded={() => onMediaEnded?.()}
+              onError={() => setFailedUrl(mediaUrl)}
+              className="absolute inset-0 size-full object-contain"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- same-origin /uploads media of any size
+            <img
+              src={mediaUrl}
+              alt={diffusion.title}
+              draggable={false}
+              onError={() => setFailedUrl(mediaUrl)}
+              className="absolute inset-0 size-full object-contain"
+            />
+          )}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-[2cqw] bg-[linear-gradient(0deg,color-mix(in_srgb,var(--color-black)_70%,transparent),transparent)] px-[3cqw] pt-[5cqw] pb-[2.2cqw] portrait:px-[6cqw] portrait:pb-[5cqw]">
+            <span className="inline-flex min-w-0 items-center gap-[1cqw] portrait:gap-[2.5cqw]">
+              <span className="shrink-0 rounded-full border border-white/25 bg-black/35 px-[1.2cqw] py-[0.45cqw] font-label text-[1cqw] font-semibold tracking-[0.2em] text-white/90 uppercase portrait:px-[3cqw] portrait:py-[1.2cqw] portrait:text-[2.8cqw]">
+                Publicité
+              </span>
+              <span className="truncate font-display text-[1.8cqw] font-semibold text-white portrait:text-[4.6cqw]">
+                {diffusion.title}
+              </span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-[0.6cqw] text-[1.3cqw] text-white/80 portrait:text-[3.6cqw]">
+              <MapPin aria-hidden="true" className="size-[1.5cqw] portrait:size-[4cqw]" />
+              {diffusion.zone}
+            </span>
+          </div>
+        </SafeArea>
+        {activation}
+        {kind === "image" ? (
+          <ProgressBar cycle={cycle} durationMs={durationMs} animate={animate} />
+        ) : null}
+      </Fade>
+    );
+  }
+
   const long = diffusion.title.length > 48;
   return (
     <Fade animate={animate}>
@@ -160,19 +249,34 @@ export function AdSlide({
         </div>
       </SafeArea>
 
-      {/* Time left for this spot */}
-      <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
-        <div
-          key={`p-${cycle}`}
-          className="h-full origin-left bg-grad-brand"
-          style={
-            animate
-              ? { animation: `progress-fill ${durationMs}ms linear both` }
-              : { transform: "scaleX(1)" }
-          }
-        />
-      </div>
+      {activation}
+      <ProgressBar cycle={cycle} durationMs={durationMs} animate={animate} />
     </Fade>
+  );
+}
+
+/** Time left for this spot. */
+function ProgressBar({
+  cycle,
+  durationMs,
+  animate,
+}: {
+  cycle: number;
+  durationMs: number;
+  animate: boolean;
+}) {
+  return (
+    <div aria-hidden="true" className="absolute inset-x-0 bottom-0 z-[2] h-1 bg-white/10">
+      <div
+        key={`p-${cycle}`}
+        className="h-full origin-left bg-grad-brand"
+        style={
+          animate
+            ? { animation: `progress-fill ${durationMs}ms linear both` }
+            : { transform: "scaleX(1)" }
+        }
+      />
+    </div>
   );
 }
 
@@ -180,10 +284,22 @@ export function AdSlide({
 // Urgence (priority public-interest message)
 // ---------------------------------------------------------------------------
 export function UrgentSlide({ diffusion, animate }: { diffusion: Diffusion; animate: boolean }) {
+  const theme = urgencyTheme(diffusion.urgencyLevel);
+  const content = diffusion.content?.trim() ?? "";
+  const longTitle = diffusion.title.length > 60 || content.length > 0;
   return (
     <Fade animate={animate}>
-      <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-brand-red-600">
-        <div className="absolute inset-0 bg-[radial-gradient(70%_80%_at_30%_35%,var(--color-brand-red),transparent_70%)]" />
+      <div
+        aria-hidden="true"
+        data-urgency={diffusion.urgencyLevel ?? "HIGH"}
+        className={cx("absolute inset-0 overflow-hidden", theme.ground)}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(70% 80% at 30% 35%, ${theme.glow}, transparent 70%)`,
+          }}
+        />
         <div className="absolute inset-x-0 top-0 h-3 bg-[repeating-linear-gradient(135deg,var(--color-white)_0_14px,transparent_14px_28px)] opacity-25" />
         <div className="absolute inset-x-0 bottom-0 h-3 bg-[repeating-linear-gradient(135deg,var(--color-white)_0_14px,transparent_14px_28px)] opacity-25" />
       </div>
@@ -193,52 +309,75 @@ export function UrgentSlide({ diffusion, animate }: { diffusion: Diffusion; anim
         <div
           aria-hidden="true"
           className={cx(
-            "absolute inset-[2cqw] rounded-[1.4cqw] border-[0.45cqw] border-white portrait:inset-[4cqw] portrait:rounded-[3cqw] portrait:border-[1cqw]",
+            "absolute inset-[2cqw] rounded-[1.4cqw] border-[0.45cqw] portrait:inset-[4cqw] portrait:rounded-[3cqw] portrait:border-[1cqw]",
+            theme.frame,
             animate ? "animate-pulse motion-reduce:animate-none" : "",
           )}
         />
         <div
           className={cx(
-            "absolute inset-0 flex flex-col justify-between p-[6cqw] portrait:p-[11cqw]",
+            "absolute inset-0 flex flex-col justify-between gap-[2cqw] p-[6cqw] portrait:p-[11cqw]",
             OVERLAY_CLEARANCE,
+            theme.ink,
           )}
         >
           <div className="flex items-center gap-[1.4cqw] portrait:gap-[3.5cqw]">
             <span
               aria-hidden="true"
-              className="inline-flex size-[5cqw] shrink-0 items-center justify-center rounded-full bg-white text-brand-red-600 portrait:size-[12cqw]"
+              className={cx(
+                "inline-flex size-[5cqw] shrink-0 items-center justify-center rounded-full portrait:size-[12cqw]",
+                theme.disc,
+              )}
             >
               <Siren className="size-[2.8cqw] portrait:size-[6.6cqw]" />
             </span>
             <div className="min-w-0">
-              <p className="font-label text-[1.9cqw] leading-none font-bold tracking-[0.18em] text-white uppercase portrait:text-[4.4cqw] portrait:leading-tight portrait:tracking-[0.12em]">
-                Message prioritaire
+              <p className="font-label text-[1.9cqw] leading-none font-bold tracking-[0.18em] uppercase portrait:text-[4.4cqw] portrait:leading-tight portrait:tracking-[0.12em]">
+                {theme.kicker}
               </p>
-              <p className="mt-[0.6cqw] text-[1.3cqw] font-medium text-white/90 portrait:mt-[1.2cqw] portrait:text-[3.4cqw]">
+              <p className="mt-[0.6cqw] text-[1.3cqw] font-medium opacity-90 portrait:mt-[1.2cqw] portrait:text-[3.4cqw]">
                 Information d&apos;intérêt général
               </p>
             </div>
           </div>
 
           {/* max-w keeps the headline clear of the info panel (top right) on landscape screens. */}
-          <p
-            key={diffusion.title}
+          <div key={`${diffusion.emergencyId ?? "u"}-${diffusion.title}`} className="min-h-0">
+            <p
+              className={cx(
+                "enter max-w-[76%] font-display leading-[1.03] font-extrabold tracking-[-0.02em] text-balance break-words portrait:max-w-full",
+                longTitle
+                  ? "text-[5.2cqw] portrait:text-[9.5cqw]"
+                  : "text-[7cqw] portrait:text-[12cqw]",
+              )}
+            >
+              {diffusion.title}
+            </p>
+            {content ? (
+              <p
+                className={cx(
+                  "enter enter-1 mt-[1.6cqw] line-clamp-5 max-w-[80%] font-sans leading-snug font-medium whitespace-pre-line portrait:mt-[4cqw] portrait:max-w-full",
+                  content.length > 220
+                    ? "text-[1.9cqw] portrait:text-[4.4cqw]"
+                    : "text-[2.6cqw] portrait:text-[5.6cqw]",
+                )}
+              >
+                {content}
+              </p>
+            ) : null}
+          </div>
+
+          <div
             className={cx(
-              "enter max-w-[76%] font-display leading-[1.03] font-extrabold tracking-[-0.02em] text-balance break-words text-white portrait:max-w-full",
-              diffusion.title.length > 60
-                ? "text-[5.2cqw] portrait:text-[9.5cqw]"
-                : "text-[7cqw] portrait:text-[12cqw]",
+              "flex flex-wrap items-end justify-between gap-[2cqw] border-t-[0.15cqw] pt-[1.6cqw] portrait:flex-col portrait:items-start portrait:gap-[2.5cqw] portrait:border-t-[0.4cqw] portrait:pt-[4cqw]",
+              theme.frame,
             )}
           >
-            {diffusion.title}
-          </p>
-
-          <div className="flex flex-wrap items-end justify-between gap-[2cqw] border-t-[0.15cqw] border-white/40 pt-[1.6cqw] portrait:flex-col portrait:items-start portrait:gap-[2.5cqw] portrait:border-t-[0.4cqw] portrait:pt-[4cqw]">
-            <p className="inline-flex items-center gap-[0.8cqw] text-[1.7cqw] font-semibold text-white portrait:gap-[2cqw] portrait:text-[4.6cqw]">
+            <p className="inline-flex items-center gap-[0.8cqw] text-[1.7cqw] font-semibold portrait:gap-[2cqw] portrait:text-[4.6cqw]">
               <MapPin aria-hidden="true" className="size-[2cqw] portrait:size-[5.2cqw]" />
               {diffusion.zone}
             </p>
-            <p className="font-label text-[1.3cqw] font-semibold tracking-[0.08em] text-white/90 portrait:text-[3.3cqw]">
+            <p className="font-label text-[1.3cqw] font-semibold tracking-[0.08em] opacity-90 portrait:text-[3.3cqw]">
               Diffusion prioritaire sur les écrans de la zone
             </p>
           </div>
@@ -257,6 +396,14 @@ const BRAND_LINES = [
   "Contenus contrôlés avant diffusion.",
 ] as const;
 
+/** Backend default content first, then the brand lines (no duplicates). */
+export function defaultLines(content?: string | null): string[] {
+  const first = content?.trim();
+  return first && !(BRAND_LINES as readonly string[]).includes(first)
+    ? [first, ...BRAND_LINES]
+    : [...BRAND_LINES];
+}
+
 function useRotatingIndex(length: number, everyMs: number, active: boolean): number {
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -271,13 +418,20 @@ export function DefaultSlide({
   zone,
   animate,
   notice,
+  title,
+  content,
 }: {
   zone?: string | null;
   animate: boolean;
   /** Small strip at the bottom (e.g. offline fallback). */
   notice?: ReactNode;
+  /** Default content sent by the backend (`tpub.diffusion.default-title`). */
+  title?: string | null;
+  /** `tpub.diffusion.default-content`: shown first in the rotating lines. */
+  content?: string | null;
 }) {
-  const line = useRotatingIndex(BRAND_LINES.length, 3400, animate);
+  const lines = defaultLines(content);
+  const line = useRotatingIndex(lines.length, 3400, animate);
   return (
     <Fade animate={animate}>
       <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-bg">
@@ -330,11 +484,11 @@ export function DefaultSlide({
               animate && "enter",
             )}
           >
-            {BRAND_LINES[line]}
+            {lines[line] ?? lines[0]}
           </p>
         </div>
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-[2cqw] p-[3.5cqw] text-[1.15cqw] text-muted portrait:flex-col portrait:items-center portrait:gap-[2cqw] portrait:p-[7cqw] portrait:text-[3.2cqw]">
-          <span>{GROUP.mention}</span>
+          <span>{title?.trim() ? title : GROUP.mention}</span>
           {zone ? (
             <span className="inline-flex items-center gap-[0.6cqw] portrait:gap-[1.6cqw]">
               <MapPin aria-hidden="true" className="size-[1.3cqw] portrait:size-[3.6cqw]" />

@@ -5,7 +5,12 @@ import {
   contentDelayMs,
   DEFAULT_DURATION_S,
   formatCountdown,
+  adMediaKind,
   isNewUrgence,
+  parseSimulatedDateTime,
+  pollDelayMs,
+  shouldSendClick,
+  simulatedDateTime,
   MAX_DURATION_S,
   MIN_DURATION_S,
   parseSupportId,
@@ -120,7 +125,9 @@ describe("classifyPlayerError / planAfterError", () => {
   });
 
   it("resets the attempts after a success", () => {
-    expect(planAfterSuccess(urgent)).toEqual({ ok: true, delayMs: 15_000, attempt: 0 });
+    expect(planAfterSuccess(ad)).toEqual({ ok: true, delayMs: 10_000, attempt: 0 });
+    // A priority message is re-checked every min(duration, 5) s.
+    expect(planAfterSuccess(urgent)).toEqual({ ok: true, delayMs: 5_000, attempt: 0 });
   });
 });
 
@@ -164,5 +171,56 @@ describe("helpers", () => {
     expect(formatCountdown(7)).toBe("0:07");
     expect(formatCountdown(75)).toBe("1:15");
     expect(formatCountdown(null)).toBe("—");
+  });
+});
+
+describe("v2 player helpers", () => {
+  it("polls a priority message every min(duration, 5) s and other contents at their duration", () => {
+    expect(pollDelayMs({ type: "URGENCE", duration: 30 })).toBe(5_000);
+    expect(pollDelayMs({ type: "URGENCE", duration: 5 })).toBe(5_000);
+    expect(pollDelayMs({ type: "PUBLICITE", duration: 30 })).toBe(30_000);
+    expect(pollDelayMs({ type: "DEFAUT", duration: 10 })).toBe(10_000);
+  });
+
+  it("chooses the media rendering from mediaType, then from the extension", () => {
+    expect(adMediaKind({ mediaUrl: null, mediaType: "IMAGE" })).toBe("none");
+    expect(adMediaKind({ mediaUrl: "  ", mediaType: "VIDEO" })).toBe("none");
+    expect(adMediaKind({ mediaUrl: "/uploads/campaigns/1/a.jpg", mediaType: "IMAGE" })).toBe(
+      "image",
+    );
+    expect(adMediaKind({ mediaUrl: "/uploads/campaigns/1/a.png", mediaType: "BANNER" })).toBe(
+      "image",
+    );
+    expect(adMediaKind({ mediaUrl: "/uploads/campaigns/1/a.mp4", mediaType: "VIDEO" })).toBe(
+      "video",
+    );
+    expect(adMediaKind({ mediaUrl: "/uploads/campaigns/1/a.webm", mediaType: null })).toBe("video");
+    expect(adMediaKind({ mediaUrl: "/uploads/campaigns/1/a.webp" })).toBe("image");
+  });
+
+  it("sends one CLIC per publicité diffusion", () => {
+    const sent = new Set<number>([7]);
+    expect(shouldSendClick({ type: "PUBLICITE", diffusionLogId: 8 }, sent)).toBe(true);
+    expect(shouldSendClick({ type: "PUBLICITE", diffusionLogId: 7 }, sent)).toBe(false);
+    expect(shouldSendClick({ type: "PUBLICITE" }, sent)).toBe(false);
+    expect(shouldSendClick({ type: "URGENCE", diffusionLogId: 9 }, sent)).toBe(false);
+    expect(shouldSendClick(null, sent)).toBe(false);
+  });
+
+  it("parses the ?datetime simulation and advances it with the real clock", () => {
+    expect(parseSimulatedDateTime("2026-09-20T18:30")).toBe("2026-09-20T18:30:00");
+    expect(parseSimulatedDateTime("2026-09-20T18:30:15")).toBe("2026-09-20T18:30:15");
+    expect(parseSimulatedDateTime("2026-02-30T10:00")).toBeNull();
+    expect(parseSimulatedDateTime("2026-09-20 18:30")).toBeNull();
+    expect(parseSimulatedDateTime("")).toBeNull();
+    expect(parseSimulatedDateTime(undefined)).toBeNull();
+    expect(simulatedDateTime("2026-09-20T23:59:50", 12_400)).toBe("2026-09-21T00:00:02");
+    expect(simulatedDateTime("2026-09-20T10:00:00", -5)).toBe("2026-09-20T10:00:00");
+  });
+
+  it("keys media slides by their media too", () => {
+    expect(slideKey({ ...ad, mediaUrl: "/uploads/x.jpg" })).toBe(
+      "PUBLICITE:4:Lancement Café Démo:/uploads/x.jpg",
+    );
   });
 });

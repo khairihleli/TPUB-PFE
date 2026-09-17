@@ -2,26 +2,45 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
-import type { CampaignResponse, ReservationResponse, RoleCode } from "@/lib/api/types";
+import type {
+  CampaignResponse,
+  CampaignSearchFilters,
+  PageResponse,
+  RoleCode,
+} from "@/lib/api/types";
 import { clearResourceCache } from "@/lib/resource-cache";
 
 const api = vi.hoisted(() => ({
-  all: vi.fn(),
+  search: vi.fn(),
+  get: vi.fn(),
   report: vi.fn(),
+  checkContent: vi.fn(),
+  decisions: vi.fn(),
   byCampaign: vi.fn(),
+  estimate: vi.fn(),
+  media: vi.fn(),
   supports: vi.fn(),
   zones: vi.fn(),
+  dashboard: vi.fn(),
   validate: vi.fn(),
   reject: vi.fn(),
+  setPriority: vi.fn(),
 }));
 
 vi.mock("@/lib/api/endpoints", () => ({
-  campaignsApi: { all: api.all, get: vi.fn() },
-  aiApi: { report: api.report, checkContent: vi.fn() },
+  campaignsApi: { search: api.search, get: api.get },
+  aiApi: { report: api.report, checkContent: api.checkContent, decisions: api.decisions },
   reservationsApi: { byCampaign: api.byCampaign },
+  estimatesApi: { campaign: api.estimate },
+  mediaApi: { list: api.media },
   supportsApi: { all: api.supports },
   zonesApi: { all: api.zones },
-  adminApi: { validate: api.validate, reject: api.reject },
+  statisticsApi: { dashboard: api.dashboard },
+  adminApi: { validate: api.validate, reject: api.reject, setPriority: api.setPriority },
+}));
+
+vi.mock("@/components/map", () => ({
+  NetworkMap: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
 }));
 
 /** Reactive in-memory router: push/replace/back update the query string and re-render. */
@@ -105,6 +124,8 @@ function campaign(over: Partial<CampaignResponse>): CampaignResponse {
   return {
     id: 2,
     clientId: 14,
+    clientCompanyName: "Café Démo",
+    clientValidationStatus: "PENDING",
     name: "Promo gratuite",
     objective: "Tout est gratuit",
     budget: 1500,
@@ -118,6 +139,8 @@ function campaign(over: Partial<CampaignResponse>): CampaignResponse {
     endTime: "22:00:00",
     estimatedViews: 1000,
     priorityScore: 0,
+    reservationsCount: 1,
+    zones: [],
     createdAt: "2026-09-02T07:00:00Z",
     submittedAt: "2026-09-02T08:00:00Z",
     validatedAt: null,
@@ -125,25 +148,8 @@ function campaign(over: Partial<CampaignResponse>): CampaignResponse {
   };
 }
 
-function reservation(
-  campaignId: number,
-  over: Partial<ReservationResponse> = {},
-): ReservationResponse {
-  return {
-    id: campaignId * 10,
-    campaignId,
-    zoneId: 1,
-    supportId: 7,
-    startDate: "2026-10-01",
-    endDate: "2026-10-31",
-    startTime: "08:00:00",
-    endTime: "22:00:00",
-    availabilityStatus: "RESERVE",
-    reservationStatus: "TEMPORAIRE",
-    estimatedViews: 1000,
-    estimatedCost: 150,
-    ...over,
-  };
+function page<T>(items: T[]): PageResponse<T> {
+  return { items, page: 0, size: 20, totalItems: items.length, totalPages: 1 };
 }
 
 const review = campaign({});
@@ -161,6 +167,7 @@ const approvedB = campaign({
   aiStatus: "APPROVED",
   submittedAt: "2026-09-03T08:00:00Z",
 });
+let catalogue: CampaignResponse[] = [];
 
 beforeEach(() => {
   clearResourceCache();
@@ -170,85 +177,212 @@ beforeEach(() => {
   nav.router.back.mockClear();
   nav.reset("");
   session.role = "ADMINISTRATEUR";
-  api.all.mockResolvedValue([review]);
+  catalogue = [review];
+  api.search.mockImplementation((f: CampaignSearchFilters) =>
+    Promise.resolve(
+      page(catalogue.filter((c) => !f.status || (f.status as string[]).includes(c.status))),
+    ),
+  );
   api.report.mockResolvedValue({
     campaignId: 2,
     aiStatus: "REVIEW_REQUIRED",
     riskScore: 62,
     qualityScore: 74,
     detectedIssues: ["texte ambigu"],
+    issues: [
+      { label: "promesse « gratuit » non justifiée", severity: "MEDIUM", source: "REGLE" },
+      { label: "texte dans l'image : GRATUIT", severity: "MEDIUM", source: "OCR" },
+    ],
+    matchedRules: [{ ruleId: 1, ruleName: "promesse-gratuit-garanti", severity: "MEDIUM" }],
+    extractedText: "GRATUIT",
+    ocrEngine: "SIMULE",
+    recommendations: ["Justifiez l'offre gratuite"],
     recommendation: "Vérification manuelle avant diffusion",
+    sector: "COMMERCE",
+    mediaAnalyses: [],
   });
+  api.decisions.mockResolvedValue(page([]));
   api.byCampaign.mockResolvedValue([]);
+  api.estimate.mockResolvedValue(null);
+  api.media.mockResolvedValue([
+    {
+      id: 1,
+      campaignId: 2,
+      fileName: "gratuit.jpg",
+      fileType: "IMAGE",
+      mimeType: "image/jpeg",
+      fileSizeBytes: 50_000,
+      durationSeconds: null,
+      widthPx: 1280,
+      heightPx: 720,
+      url: "/uploads/campaigns/2/a.jpg",
+      checksum: "x",
+      sortOrder: 0,
+      createdAt: "2026-09-01T00:00:00Z",
+    },
+  ]);
   api.supports.mockResolvedValue([]);
-  api.zones.mockResolvedValue([]);
+  api.zones.mockResolvedValue([
+    { id: 3, name: "Lac", latitude: 36.8, longitude: 10.2, radiusKm: 3, isActive: true },
+  ]);
+  api.dashboard.mockResolvedValue({
+    totalCampaigns: 9,
+    activeCampaigns: 1,
+    pendingCampaigns: 3,
+    aiPendingCampaigns: 0,
+    aiRejectedCampaigns: 0,
+    availableSupports: 1,
+    confirmedReservations: 1,
+    totalViews: 0,
+    estimatedBudget: 0,
+    consumedBudget: 0,
+    approvedByAiCampaigns: 2,
+    reviewRequiredCampaigns: 1,
+  });
 });
 
 function params(): URLSearchParams {
   return new URLSearchParams(nav.search);
 }
 
-describe("ModerationView — decisions", () => {
-  it("validates a REVIEW_REQUIRED campaign only after the inline acknowledgement", async () => {
-    api.validate.mockResolvedValue({ ...review, status: "ACTIVE", adminStatus: "VALIDATED" });
+async function openFirstReview(name: RegExp | string = /Examiner la campagne/) {
+  fireEvent.click((await screen.findAllByRole("button", { name }))[0]!);
+}
+
+describe("ModerationView — AI report and decisions", () => {
+  it("shows the full AI report, media and requires the logged override for REVIEW_REQUIRED", async () => {
+    api.validate.mockResolvedValue({
+      ...review,
+      status: "ACTIVE",
+      adminStatus: "VALIDATED",
+      aiOverride: true,
+    });
     render(<ModerationView />);
 
-    fireEvent.click(
-      (await screen.findAllByRole("button", { name: "Examiner la campagne Promo gratuite" }))[0]!,
-    );
+    await openFirstReview();
     const dialog = await screen.findByRole("dialog", { name: "Promo gratuite" });
-    expect(within(dialog).getAllByText("Annonceur n° 14").length).toBeGreaterThan(0);
-    expect(within(dialog).getByText("CAMP-00002")).toBeInTheDocument();
-    expect(await within(dialog).findByText("texte ambigu")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("Café Démo").length).toBeGreaterThan(0);
+    expect(within(dialog).getByText(/Annonceur : en attente de validation/)).toBeInTheDocument();
     expect(
-      within(dialog).getByText("Validée, cette campagne ne sera pas diffusée"),
+      await within(dialog).findByText("promesse « gratuit » non justifiée"),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText("Score de risque")).toBeInTheDocument();
-    expect(within(dialog).queryByText(/Score de risque \/100/)).toBeNull();
+    expect(within(dialog).getAllByText("Texte dans l'image").length).toBeGreaterThan(0);
+    expect(within(dialog).getByText("OCR simulé")).toBeInTheDocument();
+    expect(within(dialog).getByText("promesse-gratuit-garanti")).toBeInTheDocument();
+    expect(within(dialog).getByText("Justifiez l'offre gratuite")).toBeInTheDocument();
+    expect(within(dialog).getByText("Secteur : Commerce")).toBeInTheDocument();
+    expect(await within(dialog).findByRole("img", { name: "Visuel gratuit.jpg" })).toHaveAttribute(
+      "src",
+      "/uploads/campaigns/2/a.jpg",
+    );
 
-    const validateButton = within(dialog).getByRole("button", { name: "Valider" });
-    expect(validateButton).toHaveAttribute("aria-disabled", "true");
-    fireEvent.click(validateButton);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Valider…" }));
+    const confirm = within(dialog).getByRole("button", { name: "Valider par dérogation" });
+    expect(within(dialog).getByText("L'IA demande une revue manuelle")).toBeInTheDocument();
+    expect(confirm).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(confirm);
     expect(api.validate).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: /J'ai compris/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Valider" }));
-    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(2));
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: /Je valide malgré l'avis de l'IA/ }),
+    );
+    fireEvent.change(within(dialog).getByLabelText(/Commentaire/), {
+      target: { value: "Offre vérifiée" },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/Priorité \(0–10\)/), {
+      target: { value: "8" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Valider par dérogation" }));
+    await waitFor(() =>
+      expect(api.validate).toHaveBeenCalledWith(2, {
+        overrideAi: true,
+        comment: "Offre vérifiée",
+        priorityScore: 8,
+      }),
+    );
     expect(api.validate).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses with a preset reason inline, then copies the advertiser message", async () => {
-    api.reject.mockResolvedValue({ message: "Campaign rejected successfully" });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  it("refuses with a reason of at least 3 characters", async () => {
+    api.reject.mockResolvedValue({
+      ...review,
+      status: "BLOCKED",
+      adminStatus: "REJECTED",
+      rejectionReason: "Offre trompeuse",
+    });
     render(<ModerationView />);
-    fireEvent.click((await screen.findAllByRole("button", { name: /Examiner la campagne/ }))[0]!);
+    await openFirstReview();
     const dialog = await screen.findByRole("dialog", { name: "Promo gratuite" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refuser" }));
 
-    // No nested confirmation dialog.
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     const button = within(dialog).getByRole("button", { name: "Refuser la campagne" });
     expect(button).toHaveAttribute("aria-disabled", "true");
+    fireEvent.change(within(dialog).getByLabelText(/Motif du refus/), { target: { value: "ok" } });
+    expect(within(dialog).getAllByText("Au moins 3 caractères.").length).toBeGreaterThan(0);
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Allégation « gratuit » non justifiée" }),
     );
-    expect(within(dialog).getByLabelText(/Motif du refus/)).toHaveValue(
-      "Allégation « gratuit » non justifiée",
-    );
     fireEvent.click(within(dialog).getByRole("button", { name: "Refuser la campagne" }));
     await waitFor(() =>
-      expect(api.reject).toHaveBeenCalledWith(2, "Allégation « gratuit » non justifiée"),
+      expect(api.reject).toHaveBeenCalledWith(2, "ok ; Allégation « gratuit » non justifiée"),
     );
+    expect(await within(dialog).findByText("Campagne refusée")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/Le motif s'affiche dans l'espace de l'annonceur/),
+    ).toBeInTheDocument();
+  });
 
+  it("offers « Bloquer la diffusion » and the priority editor on an active campaign", async () => {
+    const live = campaign({
+      id: 9,
+      name: "En diffusion",
+      status: "ACTIVE",
+      aiStatus: "APPROVED",
+      adminStatus: "VALIDATED",
+      priorityScore: 4,
+    });
+    catalogue = [live];
+    api.setPriority.mockResolvedValue({ ...live, priorityScore: 9 });
+    api.reject.mockResolvedValue({ ...live, status: "BLOCKED" });
+    nav.reset("onglet=toutes&examen=9");
+    render(<ModerationView />);
+    const dialog = await screen.findByRole("dialog", { name: "En diffusion" });
+    expect(within(dialog).queryByRole("button", { name: "Valider…" })).toBeNull();
+
+    fireEvent.change(within(dialog).getByLabelText(/Priorité de diffusion/), {
+      target: { value: "9" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enregistrer la priorité" }));
+    await waitFor(() => expect(api.setPriority).toHaveBeenCalledWith(9, 9));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bloquer la diffusion" }));
+    expect(within(dialog).getByText(/retire immédiatement des écrans/)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/Motif du blocage/), {
+      target: { value: "Plainte fondée" },
+    });
     fireEvent.click(
-      await within(dialog).findByRole("button", { name: "Copier le message pour l'annonceur" }),
+      within(dialog).getAllByRole("button", { name: "Bloquer la diffusion" }).at(-1)!,
     );
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    const message = String(writeText.mock.calls[0]?.[0]);
-    expect(message).toContain("Motif : Allégation « gratuit » non justifiée");
-    expect(message).toContain("CAMP-00002");
-    expect(message).toContain("Dupliquer et corriger");
+    await waitFor(() => expect(api.reject).toHaveBeenCalledWith(9, "Plainte fondée"));
+  });
+
+  it("re-runs the AI analysis as administrator", async () => {
+    api.checkContent.mockResolvedValue({
+      campaignId: 2,
+      aiStatus: "APPROVED",
+      riskScore: 10,
+      qualityScore: 90,
+      detectedIssues: [],
+      recommendation: "Contenu conforme pour diffusion",
+    });
+    api.get.mockResolvedValue({ ...review, status: "APPROVED_BY_AI", aiStatus: "APPROVED" });
+    render(<ModerationView />);
+    await openFirstReview();
+    const dialog = await screen.findByRole("dialog", { name: "Promo gratuite" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Relancer l'analyse IA" }));
+    await waitFor(() => expect(api.checkContent).toHaveBeenCalledWith(2));
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(2));
   });
 
   it("is read-only for a superviseur", async () => {
@@ -256,9 +390,10 @@ describe("ModerationView — decisions", () => {
     render(<ModerationView />);
     expect(await screen.findByText(/Superviseur · lecture seule/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Valider la sélection/ })).toBeNull();
-    fireEvent.click((await screen.findAllByRole("button", { name: /Consulter la campagne/ }))[0]!);
+    await openFirstReview(/Consulter la campagne/);
     const dialog = await screen.findByRole("dialog", { name: "Promo gratuite" });
-    expect(within(dialog).queryByRole("button", { name: "Valider" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Valider…" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Relancer l'analyse IA" })).toBeNull();
     expect(within(dialog).getByText("Décision réservée aux administrateurs.")).toBeInTheDocument();
   });
 
@@ -268,63 +403,89 @@ describe("ModerationView — decisions", () => {
     expect(
       screen.getByText("File réservée aux administrateurs et superviseurs"),
     ).toBeInTheDocument();
-    expect(api.all).not.toHaveBeenCalled();
+    expect(api.search).not.toHaveBeenCalled();
   });
 
   it("shows a retryable error state when the service is down", async () => {
-    api.all.mockRejectedValue(new ApiError(502, "Le service TPUB est momentanément indisponible."));
+    api.search.mockRejectedValue(
+      new ApiError(502, "Le service TPUB est momentanément indisponible."),
+    );
     render(<ModerationView />);
     expect(await screen.findByText("Service momentanément indisponible")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
   });
 });
 
-describe("ModerationView — URL state", () => {
-  it("opens the review from ?examen= and removes the param on close (deep link → replace)", async () => {
-    nav.reset("examen=2");
+describe("ModerationView — search, filters and URL state", () => {
+  it("sends the tab, search, client, zone, AI status and period to the server", async () => {
+    nav.reset("onglet=toutes&statut=BLOCKED&tri=budget");
     render(<ModerationView />);
-    const dialog = await screen.findByRole("dialog", { name: "Promo gratuite" });
+    expect(await screen.findByRole("tab", { name: /Toutes/, selected: true })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(api.search).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: ["BLOCKED"], sort: "budget,desc", page: 0, size: 20 }),
+      ),
+    );
+    expect(screen.getByText("Trié par : budget le plus élevé")).toBeInTheDocument();
+    // Counters come from the dashboard.
+    expect(await screen.findByRole("tab", { name: /À traiter/ })).toHaveTextContent("3");
+
+    fireEvent.change(screen.getAllByLabelText("Rechercher une campagne")[0]!, {
+      target: { value: "soldes" },
+    });
+    await waitFor(() => expect(params().get("q")).toBe("soldes"));
+    fireEvent.change(screen.getAllByLabelText("Annonceur")[0]!, { target: { value: "café" } });
+    await waitFor(() => expect(params().get("client")).toBe("café"));
+    fireEvent.change(screen.getAllByLabelText("Avis IA")[0]!, {
+      target: { value: "REVIEW_REQUIRED" },
+    });
+    fireEvent.change(await screen.findByDisplayValue("Toutes les zones"), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getAllByLabelText("Diffusion du")[0]!, {
+      target: { value: "2026-10-01" },
+    });
+    await waitFor(() =>
+      expect(api.search).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          q: "soldes",
+          client: "café",
+          aiStatus: ["REVIEW_REQUIRED"],
+          zoneId: 3,
+          from: "2026-10-01",
+          to: "2026-10-01",
+          status: ["BLOCKED"],
+        }),
+      ),
+    );
+    expect(nav.router.push).not.toHaveBeenCalled();
+  });
+
+  it("opens the review from ?examen= outside the page and removes the param on close", async () => {
+    api.get.mockResolvedValue(campaign({ id: 44, name: "Hors page", status: "TERMINATED" }));
+    nav.reset("examen=44");
+    render(<ModerationView />);
+    const dialog = await screen.findByRole("dialog", { name: "Hors page" });
+    expect(api.get).toHaveBeenCalledWith(44, expect.anything());
     fireEvent.click(within(dialog).getAllByRole("button", { name: "Fermer" })[0]!);
     await waitFor(() => expect(params().get("examen")).toBeNull());
     expect(nav.router.back).not.toHaveBeenCalled();
-    expect(nav.router.replace).toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("pushes ?examen= when opening from the table and goes back on close", async () => {
     render(<ModerationView />);
-    fireEvent.click((await screen.findAllByRole("button", { name: /Examiner la campagne/ }))[0]!);
+    await openFirstReview();
     expect(nav.router.push).toHaveBeenCalledWith("/admin/moderation?examen=2", { scroll: false });
     const dialog = await screen.findByRole("dialog", { name: "Promo gratuite" });
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(nav.router.back).toHaveBeenCalledTimes(1));
     expect(params().get("examen")).toBeNull();
   });
-
-  it("maps the legacy tab, keeps the search in ?q= (replace) and shows the sort caption", async () => {
-    nav.reset("onglet=analyse&tri=debut");
-    api.all.mockResolvedValue([
-      review,
-      campaign({ id: 3, name: "Analyse Sousse", status: "PENDING_AI_CHECK" }),
-    ]);
-    render(<ModerationView />);
-    expect(
-      await screen.findByRole("tab", { name: /Analyse IA en attente/, selected: true }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Trié par : début le plus proche")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Rechercher une campagne"), {
-      target: { value: "sousse" },
-    });
-    await waitFor(() => expect(params().get("q")).toBe("sousse"));
-    expect(nav.router.push).not.toHaveBeenCalled();
-    expect(params().get("onglet")).toBe("analyse");
-  });
 });
 
 describe("ModerationView — keyboard triage", () => {
-  it("V validates once and advances to the next campaign; R focuses the reason", async () => {
-    api.all.mockResolvedValue([approvedA, approvedB]);
+  it("V opens the validation, confirming advances to the next campaign; R focuses the reason", async () => {
+    catalogue = [approvedA, approvedB];
     api.report.mockResolvedValue(null);
     api.validate.mockImplementation((id: number) =>
       Promise.resolve({
@@ -339,7 +500,8 @@ describe("ModerationView — keyboard triage", () => {
     expect(within(first).getByText(/Campagne 1 sur 2/)).toBeInTheDocument();
 
     fireEvent.keyDown(first, { key: "v" });
-    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(5));
+    fireEvent.click(await within(first).findByRole("button", { name: "Confirmer la validation" }));
+    await waitFor(() => expect(api.validate).toHaveBeenCalledWith(5, { comment: null }));
     await waitFor(() => expect(params().get("examen")).toBe("6"));
     const second = await screen.findByRole("dialog", { name: "Rentrée Marsa" });
     expect(api.validate).toHaveBeenCalledTimes(1);
@@ -352,28 +514,31 @@ describe("ModerationView — keyboard triage", () => {
 });
 
 describe("ModerationView — bulk validation", () => {
-  it("only selects APPROVED_BY_AI campaigns with an active créneau and summarises partial failures", async () => {
-    api.all.mockResolvedValue([approvedA, review, approvedB]);
-    api.byCampaign.mockImplementation((id: number) => Promise.resolve([reservation(id)]));
+  it("only selects APPROVED_BY_AI campaigns with a reservation and summarises partial failures", async () => {
+    catalogue = [
+      approvedA,
+      review,
+      approvedB,
+      campaign({
+        id: 7,
+        name: "Sans créneau",
+        status: "APPROVED_BY_AI",
+        aiStatus: "APPROVED",
+        reservationsCount: 0,
+      }),
+    ];
     api.validate.mockImplementation((id: number) =>
       id === 5
         ? Promise.resolve({ ...approvedA, status: "ACTIVE", adminStatus: "VALIDATED" })
-        : Promise.reject(new ApiError(409, "Conflit de réservation.")),
+        : Promise.reject(new ApiError(409, "Aucune réservation à confirmer.")),
     );
     render(<ModerationView />);
 
-    const reviewBox = await screen.findByRole("checkbox", {
-      name: /Sélectionner « Promo gratuite »/,
-    });
-    expect(reviewBox).toBeDisabled();
-    await waitFor(() =>
-      expect(screen.getByRole("checkbox", { name: /Sélectionner « Soldes Lac »/ })).toBeEnabled(),
-    );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("checkbox", { name: /Sélectionner « Rentrée Marsa »/ }),
-      ).toBeEnabled(),
-    );
+    expect(
+      await screen.findByRole("checkbox", { name: /Sélectionner « Promo gratuite »/ }),
+    ).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Sélectionner « Sans créneau »/ })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Sélectionner « Soldes Lac »/ })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Tout sélectionner" }));
     fireEvent.click(screen.getByRole("button", { name: /Valider la sélection \(2\)/ }));
 
@@ -387,7 +552,7 @@ describe("ModerationView — bulk validation", () => {
 
     await waitFor(() => expect(screen.getByText("1 validée · 1 échec : #6")).toBeInTheDocument());
     expect(api.validate.mock.calls.map((c: unknown[]) => c[0] as number)).toEqual([5, 6]);
-    expect(screen.getByText(/#6 — Conflit de réservation/)).toBeInTheDocument();
-    expect(api.validate).not.toHaveBeenCalledWith(2);
+    expect(screen.getByText(/#6 — Aucune réservation à confirmer/)).toBeInTheDocument();
+    expect(api.validate).not.toHaveBeenCalledWith(2, expect.anything());
   });
 });

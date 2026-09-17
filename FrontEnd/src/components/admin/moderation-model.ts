@@ -1,11 +1,29 @@
-/** Moderation queue model (pure): tabs, search, ordering, reservation joins, bulk validation. */
+/**
+ * Moderation model (pure), contract §2.1 / §5 F3:
+ * - tabs mapped to `GET /api/campaigns` status filters, search filters kept in the URL;
+ * - decision rules (validate with override for REVIEW_REQUIRED, reject/block with a 3..1000 reason);
+ * - review navigation, bulk validation and small display helpers.
+ */
 import type {
+  CampaignAiStatus,
   CampaignResponse,
+  CampaignSearchFilters,
   CampaignStatus,
+  DashboardResponse,
   ReservationResponse,
   SupportResponse,
+  SupportType,
   ZoneResponse,
 } from "@/lib/api/types";
+import { CAMPAIGN_STATUSES, SUPPORT_TYPES } from "@/lib/api/types";
+import {
+  canAdminReject,
+  canAdminRerunAi,
+  canAdminValidate,
+  canEditPriority,
+  rejectBlocksDiffusion,
+  validationNeedsOverride,
+} from "@/lib/campaign-status";
 
 export const MODERATION_TABS = [
   {
@@ -69,7 +87,23 @@ export function matchesTab(status: CampaignStatus, tab: ModerationTab): boolean 
   return (def.statuses as readonly CampaignStatus[]).includes(status);
 }
 
-/** Case/accent-insensitive search on name, objective and id (« #12 » or « 12 »). */
+/** Tab counters from the dashboard counters (no extra list call). */
+export function tabCountsFromDashboard(
+  d: Pick<
+    DashboardResponse,
+    "totalCampaigns" | "aiPendingCampaigns" | "approvedByAiCampaigns" | "reviewRequiredCampaigns"
+  >,
+): Record<ModerationTab, number> {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return {
+    "a-traiter": num(d.approvedByAiCampaigns) + num(d.reviewRequiredCampaigns),
+    revue: num(d.reviewRequiredCampaigns),
+    ia: num(d.aiPendingCampaigns),
+    toutes: num(d.totalCampaigns),
+  };
+}
+
+/** Case/accent-insensitive text (search boxes). */
 export function normalizeText(s: string): string {
   return s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 }
@@ -89,104 +123,190 @@ export function queueTime(c: Pick<CampaignResponse, "submittedAt" | "createdAt">
 }
 
 // ---------------------------------------------------------------------------
-// Sort (`?tri=attente` default, `?tri=debut`, `-` prefix = descending)
+// Search filters (URL ⇄ GET /api/campaigns)
 // ---------------------------------------------------------------------------
-export const MODERATION_SORT_KEYS = ["attente", "debut"] as const;
-export type ModerationSortKey = (typeof MODERATION_SORT_KEYS)[number];
-
-export interface ModerationSort {
-  key: string;
-  dir: "asc" | "desc";
-}
-
-/** Oldest submission first: first in, first decided. */
-export const DEFAULT_MODERATION_SORT: ModerationSort = { key: "attente", dir: "asc" };
-
-/** The two orders offered in the sort select. */
 export const MODERATION_SORT_OPTIONS = [
-  { value: "attente", label: "Attente la plus longue" },
-  { value: "debut", label: "Début le plus proche" },
+  { value: "attente", label: "Attente la plus longue", api: "submittedAt,asc" },
+  { value: "recentes", label: "Soumission la plus récente", api: "submittedAt,desc" },
+  { value: "debut", label: "Début le plus proche", api: "startDate,asc" },
+  { value: "creation", label: "Création la plus récente", api: "createdAt,desc" },
+  { value: "budget", label: "Budget le plus élevé", api: "budget,desc" },
+  { value: "nom", label: "Nom (A → Z)", api: "name,asc" },
 ] as const;
 
+export type ModerationSortKey = (typeof MODERATION_SORT_OPTIONS)[number]["value"];
+export const MODERATION_SORT_KEYS: readonly ModerationSortKey[] = MODERATION_SORT_OPTIONS.map(
+  (o) => o.value,
+);
+export const DEFAULT_MODERATION_SORT: ModerationSortKey = "attente";
+
+export function moderationSortApi(key: ModerationSortKey): string {
+  return MODERATION_SORT_OPTIONS.find((o) => o.value === key)?.api ?? "submittedAt,asc";
+}
+
 /** « Trié par : … » caption. */
-export function moderationSortCaption(sort: ModerationSort): string {
-  if (sort.key === "debut")
-    return sort.dir === "asc" ? "début le plus proche" : "début le plus lointain";
-  return sort.dir === "asc" ? "attente la plus longue" : "soumission la plus récente";
+export function moderationSortCaption(key: ModerationSortKey): string {
+  return (MODERATION_SORT_OPTIONS.find((o) => o.value === key)?.label ?? "").toLowerCase();
 }
 
-function compareText(a: string | null, b: string | null): number {
-  if (a === b) return 0;
-  if (a === null) return 1;
-  if (b === null) return -1;
-  return a < b ? -1 : 1;
+export const AI_STATUS_FILTERS: readonly CampaignAiStatus[] = [
+  "APPROVED",
+  "REVIEW_REQUIRED",
+  "REJECTED",
+];
+
+export const MODERATION_PAGE_SIZE = 20;
+
+export interface ModerationFilterState {
+  tab: ModerationTab;
+  q: string;
+  client: string;
+  zoneId: number | null;
+  /** Only on « Toutes »: the tab statuses win otherwise. */
+  status: CampaignStatus | null;
+  aiStatus: CampaignAiStatus | null;
+  from: string;
+  to: string;
+  supportType: SupportType | null;
+  sort: ModerationSortKey;
+  page: number;
 }
 
-/** Stable order; missing start dates always last; ties by id. */
-export function sortQueue<T extends CampaignResponse>(
-  rows: readonly T[],
-  sort: ModerationSort = DEFAULT_MODERATION_SORT,
-): T[] {
-  const dir = sort.dir === "desc" ? -1 : 1;
-  return [...rows].sort((a, b) => {
-    if (sort.key === "debut") {
-      if (!a.startDate || !b.startDate) {
-        const missing = compareText(a.startDate, b.startDate);
-        if (missing !== 0) return missing;
-      } else {
-        const cmp = compareText(a.startDate, b.startDate);
-        if (cmp !== 0) return cmp * dir;
-      }
-      return compareText(queueTime(a), queueTime(b)) || a.id - b.id;
-    }
-    const cmp = compareText(queueTime(a), queueTime(b));
-    return cmp !== 0 ? cmp * dir : (a.id - b.id) * dir;
-  });
+export function isCampaignStatus(v: string | null | undefined): v is CampaignStatus {
+  return typeof v === "string" && (CAMPAIGN_STATUSES as readonly string[]).includes(v);
 }
 
-/**
- * Tab + search + sort. `keepId` keeps the campaign under review in place after a decision
- * moved it out of the tab (the review dialog still navigates from its position).
- */
-export function filterCampaigns<T extends CampaignResponse>(
-  campaigns: readonly T[],
-  tab: ModerationTab,
-  query: string,
-  sort: ModerationSort = DEFAULT_MODERATION_SORT,
-  keepId: number | null = null,
-): T[] {
-  const rows = campaigns.filter(
-    (c) => (matchesTab(c.status, tab) && matchesQuery(c, query)) || c.id === keepId,
-  );
-  return sortQueue(rows, sort);
+export function isAiStatusFilter(v: string | null | undefined): v is CampaignAiStatus {
+  return typeof v === "string" && (AI_STATUS_FILTERS as readonly string[]).includes(v);
 }
 
-export function countByTab(
-  campaigns: readonly Pick<CampaignResponse, "status">[],
-): Record<ModerationTab, number> {
-  const out = { "a-traiter": 0, revue: 0, ia: 0, toutes: 0 } as Record<ModerationTab, number>;
-  for (const c of campaigns) {
-    for (const t of MODERATION_TABS) if (matchesTab(c.status, t.value)) out[t.value] += 1;
-  }
-  return out;
+export function isSupportType(v: string | null | undefined): v is SupportType {
+  return typeof v === "string" && (SUPPORT_TYPES as readonly string[]).includes(v);
 }
 
-/** An admin decision is only accepted for these statuses (contract §5.4). */
+/** URL state → the exact query sent to `campaignsApi.search`. */
+export function moderationSearchFilters(state: ModerationFilterState): CampaignSearchFilters {
+  const def = moderationTabDef(state.tab);
+  const statuses: readonly CampaignStatus[] | undefined = def.statuses
+    ? def.statuses
+    : state.status
+      ? [state.status]
+      : undefined;
+  const from = state.from || undefined;
+  const to = state.to || undefined;
+  return {
+    q: state.q.trim() || undefined,
+    client: state.client.trim() || undefined,
+    zoneId: state.zoneId ?? undefined,
+    status: statuses,
+    aiStatus: state.aiStatus ? [state.aiStatus] : undefined,
+    // A single bound becomes a one-sided range.
+    from: from ?? (to ? to : undefined),
+    to: to ?? (from ? from : undefined),
+    supportType: state.supportType ? [state.supportType] : undefined,
+    sort: moderationSortApi(state.sort),
+    page: Math.max(0, state.page),
+    size: MODERATION_PAGE_SIZE,
+  };
+}
+
+/** Filters that narrow the tab (search excluded), for « Filtres (n) » and reset. */
+export function activeFilterCount(state: ModerationFilterState): number {
+  return [
+    state.client.trim(),
+    state.zoneId,
+    state.tab === "toutes" ? state.status : null,
+    state.aiStatus,
+    state.from || state.to,
+    state.supportType,
+  ].filter(Boolean).length;
+}
+
+/** Stable key of a search (resource cache key). */
+export function moderationSearchKey(filters: CampaignSearchFilters): string {
+  return JSON.stringify(filters);
+}
+
+// ---------------------------------------------------------------------------
+// Decisions (contract §2.1 admin decisions)
+// ---------------------------------------------------------------------------
+export const REJECT_REASON_MIN = 3;
+export const REJECT_REASON_MAX = 1000;
+export const COMMENT_MAX = 1000;
+export const PRIORITY_MIN = 0;
+export const PRIORITY_MAX = 10;
+
+/** An admin validation is only accepted for APPROVED_BY_AI and REVIEW_REQUIRED. */
 export function canDecide(status: CampaignStatus): boolean {
-  return status === "APPROVED_BY_AI" || status === "REVIEW_REQUIRED";
+  return canAdminValidate(status);
 }
 
-/** The admin may run the AI check for a stuck PENDING_AI_CHECK campaign (contract §5.3). */
+/** The admin may (re-)run the AI analysis on PENDING_AI_CHECK / APPROVED_BY_AI / REVIEW_REQUIRED. */
 export function canRunAiCheck(status: CampaignStatus): boolean {
-  return status === "PENDING_AI_CHECK";
+  return canAdminRerunAi(status);
 }
 
-/**
- * Contract §7.14: diffusion requires aiStatus === "APPROVED". Validating a campaign whose
- * AI verdict is not APPROVED sets it ACTIVE, but it will never reach a screen.
- */
-export function validationWillNotAir(c: Pick<CampaignResponse, "status" | "aiStatus">): boolean {
-  return canDecide(c.status) && c.aiStatus !== "APPROVED";
+export { canAdminReject, canEditPriority, rejectBlocksDiffusion, validationNeedsOverride };
+
+/** Reason check: 3..1000 characters after trimming. Null when valid. */
+export function rejectReasonError(reason: string): string | null {
+  const t = reason.trim();
+  if (t.length === 0) return "Indiquez le motif du refus.";
+  if (t.length < REJECT_REASON_MIN) return `Au moins ${REJECT_REASON_MIN} caractères.`;
+  if (t.length > REJECT_REASON_MAX) return `${REJECT_REASON_MAX} caractères maximum.`;
+  return null;
+}
+
+/** "7" → 7 · "" → null · out of 0..10 or not an integer → NaN (invalid). */
+export function parsePriority(raw: string): number | null {
+  const v = raw.trim();
+  if (v === "") return null;
+  if (!/^\d{1,2}$/.test(v)) return Number.NaN;
+  const n = Number(v);
+  return n >= PRIORITY_MIN && n <= PRIORITY_MAX ? n : Number.NaN;
+}
+
+export interface ValidationDraft {
+  comment: string;
+  priority: string;
+  override: boolean;
+}
+
+export type ValidationCheck =
+  | {
+      ok: true;
+      body: { overrideAi?: boolean; comment?: string | null; priorityScore?: number | null };
+    }
+  | { ok: false; field: "override" | "priority" | "comment"; message: string };
+
+/** Body of POST /admin/campaigns/{id}/validate, or the first blocking problem. */
+export function validationBody(
+  campaign: Pick<CampaignResponse, "status">,
+  draft: ValidationDraft,
+): ValidationCheck {
+  if (validationNeedsOverride(campaign.status) && !draft.override) {
+    return {
+      ok: false,
+      field: "override",
+      message: "Cochez la dérogation : l'IA a demandé une revue manuelle.",
+    };
+  }
+  const priority = parsePriority(draft.priority);
+  if (priority !== null && Number.isNaN(priority)) {
+    return { ok: false, field: "priority", message: "Priorité entière de 0 à 10." };
+  }
+  const comment = draft.comment.trim();
+  if (comment.length > COMMENT_MAX) {
+    return { ok: false, field: "comment", message: `${COMMENT_MAX} caractères maximum.` };
+  }
+  return {
+    ok: true,
+    body: {
+      ...(validationNeedsOverride(campaign.status) ? { overrideAi: true } : {}),
+      comment: comment || null,
+      ...(priority !== null ? { priorityScore: priority } : {}),
+    },
+  };
 }
 
 /** Whole days elapsed since submission (or creation), never negative. */
@@ -210,9 +330,22 @@ export function campaignReference(id: number): string {
   return `CAMP-${String(id).padStart(5, "0")}`;
 }
 
-/** « Annonceur n° 12 » (the admin payload has no advertiser name yet, contract §7.5). */
+/** « Annonceur n° 12 » when the payload has no name (pre-v2 backend). */
 export function advertiserLabel(clientId: number | null | undefined): string {
   return typeof clientId === "number" ? `Annonceur n° ${clientId}` : "Annonceur inconnu";
+}
+
+/** Company name, then contact name, then « Annonceur n° 12 ». */
+export function advertiserName(
+  c: Pick<CampaignResponse, "clientId"> & {
+    clientCompanyName?: string | null;
+    clientName?: string | null;
+  },
+): string {
+  const company = c.clientCompanyName?.trim();
+  if (company) return company;
+  const name = c.clientName?.trim();
+  return name ? name : advertiserLabel(c.clientId);
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +421,7 @@ export function reviewNeighbours(
 }
 
 // ---------------------------------------------------------------------------
-// Refusal: reason presets and advertiser message template (not sent automatically)
+// Refusal: reason presets (the reason is shown to the advertiser in their space)
 // ---------------------------------------------------------------------------
 export const REJECT_REASON_PRESETS = [
   "Allégation « gratuit » non justifiée",
@@ -298,16 +431,16 @@ export const REJECT_REASON_PRESETS = [
 ] as const;
 
 /** Appends a preset to the reason (no duplicate, separated by « ; »). */
-export function applyReasonPreset(reason: string, preset: string, max = 500): string {
+export function applyReasonPreset(reason: string, preset: string, max = REJECT_REASON_MAX): string {
   const current = reason.trim();
   if (current.toLowerCase().includes(preset.toLowerCase())) return reason;
   const next = current ? `${current.replace(/[.;,]\s*$/, "")} ; ${preset}` : preset;
   return next.slice(0, max);
 }
 
-/** French message the moderator pastes into their e-mail to the advertiser. */
+/** Optional e-mail the moderator may send in addition to the in-app « Motif du refus ». */
 export function refusalMessage(
-  campaign: Pick<CampaignResponse, "id" | "name" | "clientId">,
+  campaign: Pick<CampaignResponse, "id" | "name">,
   reason: string,
 ): string {
   return [
@@ -317,7 +450,7 @@ export function refusalMessage(
     "",
     `Motif : ${reason.trim()}`,
     "",
-    "Prochaine étape : dans votre espace TPUB, ouvrez la campagne et choisissez « Dupliquer et corriger ». Corrigez le point signalé sur la copie, réservez vos Porteurs puis soumettez-la de nouveau à la modération.",
+    "Prochaine étape : dans votre espace TPUB, ouvrez la campagne et choisissez « Corriger ». Elle repasse en brouillon : corrigez le point signalé, vérifiez vos Porteurs puis soumettez-la de nouveau.",
     "",
     "Les créneaux réservés pour cette campagne ont été libérés.",
     "",
@@ -329,40 +462,22 @@ export function refusalMessage(
 // ---------------------------------------------------------------------------
 // Bulk validation (« Valider la sélection »)
 // ---------------------------------------------------------------------------
-export const ACTIVE_RESERVATION_STATUSES = ["TEMPORAIRE", "CONFIRMEE"] as const;
-
-export function hasActiveSlot(
-  reservations: readonly Pick<ReservationResponse, "reservationStatus">[] | null | undefined,
-): boolean {
-  return (reservations ?? []).some((r) =>
-    (ACTIVE_RESERVATION_STATUSES as readonly string[]).includes(r.reservationStatus),
-  );
-}
-
-export type BulkEligibility = "eligible" | "not-approved" | "no-slot" | "loading" | "unknown";
+export type BulkEligibility = "eligible" | "not-approved" | "no-slot";
 
 /**
- * Only APPROVED_BY_AI campaigns with at least one active créneau can be validated in bulk:
- * REVIEW_REQUIRED needs a human look (and would never air, §7.14).
+ * Only APPROVED_BY_AI campaigns holding at least one reservation can be validated in bulk:
+ * REVIEW_REQUIRED needs a human look and an explicit override.
  */
 export function bulkEligibility(
-  c: Pick<CampaignResponse, "status" | "aiStatus">,
-  reservations:
-    | { state: "loading" | "error" }
-    | { state: "ready"; list: readonly Pick<ReservationResponse, "reservationStatus">[] }
-    | undefined,
+  c: Pick<CampaignResponse, "status" | "aiStatus"> & { reservationsCount?: number },
 ): BulkEligibility {
   if (c.status !== "APPROVED_BY_AI" || c.aiStatus !== "APPROVED") return "not-approved";
-  if (!reservations) return "loading";
-  if (reservations.state !== "ready") return reservations.state === "error" ? "unknown" : "loading";
-  return hasActiveSlot(reservations.list) ? "eligible" : "no-slot";
+  return (c.reservationsCount ?? 0) > 0 ? "eligible" : "no-slot";
 }
 
 export const BULK_INELIGIBLE_REASON: Record<Exclude<BulkEligibility, "eligible">, string> = {
   "not-approved": "Validation groupée réservée aux avis IA favorables : examinez cette campagne.",
-  "no-slot": "Aucun créneau actif : examinez cette campagne avant de la valider.",
-  loading: "Vérification des créneaux en cours…",
-  unknown: "Créneaux non vérifiés : examinez cette campagne.",
+  "no-slot": "Aucun créneau réservé : examinez cette campagne avant de la valider.",
 };
 
 export interface BulkResult {
@@ -402,7 +517,7 @@ export function bulkSummary(results: readonly Pick<BulkResult, "id" | "ok">[]): 
 }
 
 // ---------------------------------------------------------------------------
-// Reservations joined with names (no names in ReservationResponse, contract §5.7)
+// Reservations (v2 responses carry names; older payloads are joined locally)
 // ---------------------------------------------------------------------------
 export interface ReservationRow extends ReservationResponse {
   supportName: string;
@@ -411,8 +526,8 @@ export interface ReservationRow extends ReservationResponse {
 
 export function joinReservations(
   reservations: readonly ReservationResponse[],
-  supports: readonly SupportResponse[],
-  zones: readonly ZoneResponse[],
+  supports: readonly SupportResponse[] = [],
+  zones: readonly ZoneResponse[] = [],
 ): ReservationRow[] {
   const supportById = new Map(supports.map((s) => [s.id, s]));
   const zoneById = new Map(zones.map((z) => [z.id, z]));
@@ -420,17 +535,23 @@ export function joinReservations(
     const s = supportById.get(r.supportId);
     return {
       ...r,
-      supportName: s?.name ?? `Porteur n° ${r.supportId}`,
-      zoneName: zoneById.get(r.zoneId)?.name ?? s?.zoneName ?? `Zone n° ${r.zoneId}`,
+      supportName: r.supportName ?? s?.name ?? `Porteur n° ${r.supportId}`,
+      zoneName: r.zoneName ?? zoneById.get(r.zoneId)?.name ?? s?.zoneName ?? `Zone n° ${r.zoneId}`,
     };
   });
 }
 
+export const ACTIVE_RESERVATION_STATUSES = ["TEMPORAIRE", "CONFIRMEE"] as const;
+
 export function sumEstimatedCost(
-  reservations: readonly Pick<ReservationResponse, "estimatedCost">[],
+  reservations: readonly Pick<ReservationResponse, "estimatedCost" | "reservationStatus">[],
 ): number {
   return reservations.reduce(
-    (acc, r) => acc + (Number.isFinite(r.estimatedCost) ? r.estimatedCost : 0),
+    (acc, r) =>
+      (ACTIVE_RESERVATION_STATUSES as readonly string[]).includes(r.reservationStatus) &&
+      Number.isFinite(r.estimatedCost)
+        ? acc + r.estimatedCost
+        : acc,
     0,
   );
 }

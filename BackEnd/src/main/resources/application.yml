@@ -40,8 +40,8 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: 60MB
+      max-request-size: 60MB
 
 server:
   port: ${SERVER_PORT:8080}
@@ -75,14 +75,48 @@ tpub:
   media:
     upload-dir: ${MEDIA_UPLOAD_DIR:./uploads}
     base-url: ${MEDIA_BASE_URL:/uploads}
+    max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
+    max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:52428800}
+    max-files-per-campaign: ${MEDIA_MAX_FILES_PER_CAMPAIGN:5}
   ai:
     service-url: ${AI_SERVICE_URL:http://localhost:5000}
     timeout-ms: ${AI_SERVICE_TIMEOUT_MS:30000}
     openai-enabled: ${OPENAI_ENABLED:true}
     openai-api-key: ${OPENAI_API_KEY:}
     openai-model: ${OPENAI_MODEL:gpt-4o-mini}
+    ocr:
+      mode: ${TPUB_OCR_MODE:auto}
+      command: ${TPUB_OCR_COMMAND:tesseract}
+      languages: ${TPUB_OCR_LANGUAGES:fra+eng}
+  timezone: ${TPUB_TIMEZONE:Africa/Tunis}
+  scheduler:
+    enabled: ${TPUB_SCHEDULER_ENABLED:true}
+  reservation:
+    temporary-ttl-hours: ${TPUB_RESERVATION_TTL_HOURS:72}
+  diffusion:
+    max-per-hour: ${TPUB_DIFFUSION_MAX_PER_HOUR:30}
+    default-duration-seconds: ${TPUB_DIFFUSION_DEFAULT_DURATION:10}
+    default-title: "${TPUB_DIFFUSION_DEFAULT_TITLE:TPUB — Tukhnanutha}"
+    default-content: "${TPUB_DIFFUSION_DEFAULT_CONTENT:Espace de diffusion TPUB}"
+    default-media-url: ${TPUB_DIFFUSION_DEFAULT_MEDIA_URL:}
+  # Internal simulation constants (estimation only, never shown on marketing pages)
+  pricing:
+    base-views-per-hour:
+      ECRAN: 120
+      PANNEAU_NUMERIQUE: 90
+      POINT_WIFI: 40
+      APPLICATION: 200
+      SITE_WEB: 250
+    cpm-tnd:
+      ECRAN: 8.000
+      PANNEAU_NUMERIQUE: 6.000
+      POINT_WIFI: 3.000
+      APPLICATION: 4.000
+      SITE_WEB: 3.500
   cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
+  security:
+    session-touch-seconds: ${TPUB_SESSION_TOUCH_SECONDS:60}
 
 springdoc:
   api-docs:

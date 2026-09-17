@@ -1,13 +1,11 @@
-import { NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
 
-import { clearSessionCookies } from "@/lib/session";
+import { logoutSession } from "@/lib/session-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** POST /api/session/logout → clears the session cookies (the backend has no logout). */
-export function POST(): NextResponse {
-  const res = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
-  clearSessionCookies(res);
-  return res;
+/** POST /api/session/logout → revokes the backend session (best-effort), clears the cookies. */
+export function POST(req: Request): Promise<NextResponse> {
+  return logoutSession(req);
 }

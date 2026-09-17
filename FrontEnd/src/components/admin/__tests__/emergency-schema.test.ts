@@ -1,227 +1,188 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createPerZone,
-  EMERGENCY_FIELDS,
-  emergencyImpact,
-  emergencyRequests,
-  isEmergencyFormDirty,
-  type EmergencyFormValues,
-  emergencyPhase,
+  activeSupportsInCircle,
+  activeSupportsInZone,
   emergencySchema,
+  emergencyStateOf,
+  emergencyTargetLabel,
   emptyEmergencyForm,
+  isEmergencyFormDirty,
+  normalizeEmergencyDraft,
   sortEmergencies,
 } from "@/components/admin/emergency-schema";
-import { firstIssues } from "@/components/admin/form-utils";
-import type { EmergencyResponse } from "@/lib/api/types";
+import type { EmergencyResponse, SupportResponse } from "@/lib/api/types";
 
-const TODAY = "2026-09-13";
+/** 11:00 in Tunis (UTC+1). */
+const NOW = new Date("2026-09-17T10:00:00Z");
 
-const base: EmergencyResponse = {
-  id: 1,
-  title: "A",
-  content: "…",
-  zoneId: 1,
-  startDate: "2026-09-10",
-  endDate: "2026-09-20",
-  startTime: null,
-  endTime: null,
-  priority: 2,
-  urgencyLevel: "HIGH",
-  isActive: true,
-};
-
-function valid(overrides: Partial<EmergencyFormValues> = {}): EmergencyFormValues {
+function form(over: Partial<ReturnType<typeof emptyEmergencyForm>> = {}) {
   return {
-    ...emptyEmergencyForm(TODAY),
-    title: "  Voie fermée, déviation conseillée  ",
-    content: "Travaux sur la voie principale jusqu'à 18 h.",
-    zoneIds: ["3"],
-    endDate: "2026-09-15",
-    ...overrides,
+    ...emptyEmergencyForm(NOW),
+    title: "Route fermée",
+    content: "Déviation par l'avenue de la Liberté",
+    ...over,
   };
 }
 
-function errorsOf(values: EmergencyFormValues) {
-  const r = emergencySchema(TODAY).safeParse(values);
-  return r.success ? {} : firstIssues(r.error, EMERGENCY_FIELDS);
+function message(over: Partial<EmergencyResponse> = {}): EmergencyResponse {
+  return {
+    id: 1,
+    title: "Alerte",
+    content: "Contenu",
+    zoneId: 1,
+    zoneName: "Tunis Centre",
+    latitude: null,
+    longitude: null,
+    radiusKm: null,
+    startDate: "2026-09-17",
+    endDate: "2026-09-17",
+    startTime: "08:00:00",
+    endTime: "20:00:00",
+    durationSeconds: 15,
+    priority: 1,
+    urgencyLevel: "HIGH",
+    isActive: true,
+    ...over,
+  };
 }
 
-describe("emergencySchema", () => {
-  it("defaults to a HIGH « Normale » message starting today, no zone", () => {
-    expect(emptyEmergencyForm(TODAY)).toMatchObject({
-      startDate: TODAY,
-      endDate: TODAY,
-      priority: "2",
+describe("emergency form", () => {
+  it("starts at the next quarter hour today, ends at 23:59, HIGH, 15 s, priority 1", () => {
+    expect(emptyEmergencyForm(NOW)).toMatchObject({
+      startDate: "2026-09-17",
+      startTime: "11:15",
+      endDate: "2026-09-17",
+      endTime: "23:59",
+      durationSeconds: "15",
+      priority: "1",
       urgencyLevel: "HIGH",
-      zoneIds: [],
+      radiusKm: "2",
     });
-    expect(isEmergencyFormDirty(emptyEmergencyForm(TODAY), TODAY)).toBe(false);
-    expect(isEmergencyFormDirty({ ...emptyEmergencyForm(TODAY), title: "x" }, TODAY)).toBe(true);
+    expect(isEmergencyFormDirty(emptyEmergencyForm(NOW))).toBe(false);
+    expect(isEmergencyFormDirty(form())).toBe(true);
   });
 
-  it("outputs the EmergencyRequest body (trimmed, typed, optional fields null)", () => {
-    const r = emergencySchema(TODAY).safeParse(valid());
-    expect(r.success).toBe(true);
-    if (!r.success) return;
-    expect(emergencyRequests(r.data)).toEqual([
-      {
-        title: "Voie fermée, déviation conseillée",
-        content: "Travaux sur la voie principale jusqu'à 18 h.",
-        zoneId: 3,
-        startDate: TODAY,
-        endDate: "2026-09-15",
-        startTime: null,
-        endTime: null,
-        durationSeconds: null,
-        priority: 2,
-        urgencyLevel: "HIGH",
-      },
-    ]);
-  });
-
-  it("sends times as HH:mm:ss and numbers as integers", () => {
-    const r = emergencySchema(TODAY).safeParse(
-      valid({
-        startTime: "08:00",
-        endTime: "20:30",
-        durationSeconds: "20",
-        priority: "2",
-        urgencyLevel: "CRITICAL",
-      }),
+  it("outputs a circle target with seconds and integers", () => {
+    const parsed = emergencySchema(NOW).safeParse(
+      form({ latitude: "36,8", longitude: "10.18", radiusKm: "1.5", zoneId: "" }),
     );
-    expect(r.success).toBe(true);
-    if (!r.success) return;
-    expect(r.data.body).toMatchObject({
-      startTime: "08:00:00",
-      endTime: "20:30:00",
-      durationSeconds: 20,
-      priority: 2,
-      urgencyLevel: "CRITICAL",
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual({
+      title: "Route fermée",
+      content: "Déviation par l'avenue de la Liberté",
+      startDate: "2026-09-17",
+      endDate: "2026-09-17",
+      startTime: "11:15:00",
+      endTime: "23:59:00",
+      durationSeconds: 15,
+      priority: 1,
+      urgencyLevel: "HIGH",
+      latitude: 36.8,
+      longitude: 10.18,
+      radiusKm: 1.5,
+      zoneId: null,
     });
   });
 
-  it("requires title and at least one zone; content defaults to the title", () => {
-    expect(errorsOf(valid({ title: "   ", content: "", zoneIds: [] }))).toEqual({
-      title: "Ce champ est requis.",
-      zoneIds: "Choisissez au moins une zone.",
-    });
-    const r = emergencySchema(TODAY).safeParse(valid({ content: "  " }));
-    expect(r.success && r.data.body.content).toBe("Voie fermée, déviation conseillée");
+  it("accepts a zone-only target", () => {
+    const parsed = emergencySchema(NOW).safeParse(form({ zoneId: "3" }));
+    expect(parsed.success && parsed.data).toMatchObject({ zoneId: 3 });
+    expect(parsed.success && "latitude" in parsed.data).toBe(false);
   });
 
-  it("builds one request per selected zone (duplicates removed)", () => {
-    const r = emergencySchema(TODAY).safeParse(valid({ zoneIds: ["3", "5", "3"] }));
-    expect(r.success).toBe(true);
-    if (!r.success) return;
-    expect(emergencyRequests(r.data).map((b) => b.zoneId)).toEqual([3, 5]);
-  });
-
-  it("posts zone by zone and keeps going after a failure", async () => {
-    const r = emergencySchema(TODAY).safeParse(valid({ zoneIds: ["1", "2", "3"] }));
-    if (!r.success) throw new Error("invalid");
-    const calls: number[] = [];
-    const out = await createPerZone(emergencyRequests(r.data), (body) => {
-      calls.push(body.zoneId);
-      return body.zoneId === 2
-        ? Promise.reject(new Error("boom"))
-        : Promise.resolve({ ...base, id: body.zoneId * 10, zoneId: body.zoneId });
-    });
-    expect(calls).toEqual([1, 2, 3]);
-    expect(out.map((x) => x.ok)).toEqual([true, false, true]);
-  });
-
-  it("describes the impact from active Porteurs", () => {
-    const zones = [
-      { id: 1, name: "Tunis Centre" },
-      { id: 2, name: "La Marsa" },
-    ];
-    const supports = [
-      { id: 7, zoneId: 1, technicalStatus: "ACTIF" as const },
-      { id: 8, zoneId: 1, technicalStatus: "MAINTENANCE" as const },
-      { id: 9, zoneId: 2, technicalStatus: "ACTIF" as const },
-    ];
-    expect(emergencyImpact(["1", "2"], zones, supports, TODAY, TODAY)).toMatchObject({
-      porteurs: 2,
-      sampleSupportId: 7,
-      sentence: "Visible sur 2 Porteurs actifs à La Marsa et Tunis Centre, dès aujourd'hui.",
-    });
-    expect(emergencyImpact([2], zones, supports, "2026-09-20", TODAY).sentence).toMatch(
-      /^Visible sur 1 Porteur actif à La Marsa, à partir du /,
+  it("requires a target (zone or point) and a complete, bounded circle", () => {
+    const none = emergencySchema(NOW).safeParse(form());
+    expect(none.error?.issues.map((i) => i.path[0])).toContain("latitude");
+    const badRadius = emergencySchema(NOW).safeParse(
+      form({ latitude: "36.8", longitude: "10.1", radiusKm: "80" }),
     );
-    expect(emergencyImpact([], zones, supports, TODAY, TODAY).sentence).toBe("");
+    expect(badRadius.error?.issues[0]?.path).toEqual(["radiusKm"]);
+    const halfCircle = emergencySchema(NOW).safeParse(form({ latitude: "36.8", zoneId: "1" }));
+    expect(halfCircle.error?.issues.map((i) => i.path[0])).toContain("longitude");
   });
 
-  it("enforces DB lengths", () => {
-    expect(errorsOf(valid({ title: "x".repeat(201) })).title).toBe("200 caractères maximum.");
+  it("rejects a window that ends before it starts or is already over", () => {
+    const inverted = emergencySchema(NOW).safeParse(
+      form({ zoneId: "1", startTime: "14:00", endTime: "13:00" }),
+    );
+    expect(inverted.error?.issues[0]?.message).toBe("La fin doit être postérieure au début.");
+    const past = emergencySchema(NOW).safeParse(
+      form({ zoneId: "1", startTime: "08:00", endTime: "10:30" }),
+    );
+    expect(past.error?.issues[0]?.message).toBe("La fin de diffusion est déjà passée.");
+    // Multi-day window: the end time may be earlier than the start time.
+    const overnight = emergencySchema(NOW).safeParse(
+      form({ zoneId: "1", startTime: "22:00", endDate: "2026-09-18", endTime: "06:00" }),
+    );
+    expect(overnight.success).toBe(true);
   });
 
-  it("rejects an end date before the start date (DB CHECK start <= end)", () => {
-    expect(errorsOf(valid({ startDate: "2026-09-20", endDate: "2026-09-18" })).endDate).toBe(
-      "La date de fin doit être postérieure ou égale à la date de début.",
+  it("bounds duration (5–120 s), priority (≥ 1) and requires the content", () => {
+    const issues = emergencySchema(NOW).safeParse(
+      form({ zoneId: "1", durationSeconds: "300", priority: "0", content: " " }),
+    ).error?.issues;
+    expect(issues?.map((i) => i.path[0])).toEqual(
+      expect.arrayContaining(["durationSeconds", "priority", "content"]),
     );
   });
 
-  it("rejects a message that would already be over", () => {
-    expect(errorsOf(valid({ startDate: "2026-09-01", endDate: "2026-09-12" })).endDate).toBe(
-      "La date de fin est déjà passée.",
+  it("keeps only known string fields from an old draft", () => {
+    const restored = normalizeEmergencyDraft(
+      { title: "Brouillon", zoneIds: ["1"], priority: 3 },
+      NOW,
     );
-    // A one-day message today is fine.
-    expect(errorsOf(valid({ startDate: TODAY, endDate: TODAY }))).toEqual({});
+    expect(restored.title).toBe("Brouillon");
+    expect(restored.priority).toBe("1");
+    expect("zoneIds" in restored).toBe(false);
   });
+});
 
-  it("requires both times or none, in order", () => {
-    expect(errorsOf(valid({ startTime: "08:00" })).endTime).toBe(
-      "Renseignez les deux heures, ou aucune.",
-    );
-    expect(errorsOf(valid({ endTime: "08:00" })).startTime).toBe(
-      "Renseignez les deux heures, ou aucune.",
-    );
-    expect(errorsOf(valid({ startTime: "18:00", endTime: "09:00" })).endTime).toBe(
-      "L'heure de fin doit être après l'heure de début.",
-    );
-    expect(errorsOf(valid({ startTime: "25:00", endTime: "26:00" })).startTime).toBe(
-      "Heure invalide.",
-    );
-  });
+describe("emergency impact", () => {
+  const supports = [
+    { zoneId: 1, latitude: 36.8, longitude: 10.18, technicalStatus: "ACTIF" },
+    { zoneId: 1, latitude: 36.801, longitude: 10.181, technicalStatus: "MAINTENANCE" },
+    { zoneId: 2, latitude: 36.9, longitude: 10.3, technicalStatus: "ACTIF" },
+  ] as SupportResponse[];
 
-  it("bounds priority (>= 1, SMALLINT) and duration", () => {
-    expect(errorsOf(valid({ priority: "0" })).priority).toBeDefined();
-    expect(errorsOf(valid({ priority: "1.5" })).priority).toBeDefined();
-    expect(errorsOf(valid({ priority: "40000" })).priority).toBeDefined();
-    expect(errorsOf(valid({ durationSeconds: "2" })).durationSeconds).toBe(
-      "Entre 5 et 300 secondes.",
-    );
-    expect(errorsOf(valid({ durationSeconds: "301" })).durationSeconds).toBeDefined();
-    // Empty priority falls back to the backend default.
-    const r = emergencySchema(TODAY).safeParse(valid({ priority: "" }));
-    expect(r.success && r.data.body.priority).toBe(1);
-  });
-
-  it("only accepts known urgency levels", () => {
-    expect(errorsOf(valid({ urgencyLevel: "EXTREME" })).urgencyLevel).toBe(
-      "Choisissez un niveau d'urgence.",
-    );
+  it("counts ACTIF Porteurs inside the circle or the zone", () => {
+    expect(activeSupportsInCircle(supports, 36.8, 10.18, 1)).toBe(1);
+    expect(activeSupportsInCircle(supports, 36.8, 10.18, 30)).toBe(2);
+    expect(activeSupportsInCircle(supports, null, 10.18, 1)).toBe(0);
+    expect(activeSupportsInZone(supports, 1)).toBe(1);
+    expect(activeSupportsInZone(supports, null)).toBe(0);
   });
 });
 
 describe("emergency list model", () => {
-  it("derives the phase from isActive and the dates", () => {
-    expect(emergencyPhase(base, TODAY)).toBe("current");
-    expect(emergencyPhase({ ...base, startDate: TODAY, endDate: TODAY }, TODAY)).toBe("current");
-    expect(emergencyPhase({ ...base, startDate: "2026-09-14" }, TODAY)).toBe("scheduled");
-    expect(emergencyPhase({ ...base, endDate: "2026-09-12" }, TODAY)).toBe("expired");
-    expect(emergencyPhase({ ...base, isActive: false }, TODAY)).toBe("inactive");
+  it("uses the backend state, or derives it from the datetime window", () => {
+    expect(emergencyStateOf(message({ state: "TERMINE" }), NOW)).toBe("TERMINE");
+    expect(emergencyStateOf(message(), NOW)).toBe("EN_COURS");
+    expect(emergencyStateOf(message({ startTime: "12:00:00" }), NOW)).toBe("PROGRAMME");
+    expect(emergencyStateOf(message({ endTime: "10:59:00" }), NOW)).toBe("TERMINE");
+    expect(emergencyStateOf(message({ isActive: false }), NOW)).toBe("DESACTIVE");
+    expect(emergencyStateOf(message({ isActive: false, stopReason: "AUTO" }), NOW)).toBe("TERMINE");
   });
 
-  it("lists current messages first, lower priority number first", () => {
-    const items: EmergencyResponse[] = [
-      { ...base, id: 1, isActive: false },
-      { ...base, id: 2, priority: 5 },
-      { ...base, id: 3, startDate: "2026-09-30", endDate: "2026-10-01" },
-      { ...base, id: 4, priority: 1 },
-      { ...base, id: 5, endDate: "2026-09-01", startDate: "2026-08-01" },
-    ];
-    expect(sortEmergencies(items, TODAY).map((m) => m.id)).toEqual([4, 2, 3, 5, 1]);
+  it("lists on-air messages first, critical before high, then priority", () => {
+    const sorted = sortEmergencies(
+      [
+        message({ id: 1, state: "TERMINE", urgencyLevel: "CRITICAL" }),
+        message({ id: 2, state: "EN_COURS", urgencyLevel: "HIGH", priority: 2 }),
+        message({ id: 3, state: "EN_COURS", urgencyLevel: "CRITICAL", priority: 5 }),
+        message({ id: 4, state: "PROGRAMME" }),
+        message({ id: 5, state: "EN_COURS", urgencyLevel: "HIGH", priority: 1 }),
+      ],
+      NOW,
+    );
+    expect(sorted.map((m) => m.id)).toEqual([3, 5, 2, 4, 1]);
+  });
+
+  it("labels the target", () => {
+    const name = (id: number) => `Zone ${id}`;
+    expect(emergencyTargetLabel(message(), name)).toBe("Zone Tunis Centre");
+    expect(
+      emergencyTargetLabel(message({ latitude: 36.8, longitude: 10.1, radiusKm: 2.5 }), name),
+    ).toBe("Cercle de 2,5 km · Tunis Centre");
   });
 });

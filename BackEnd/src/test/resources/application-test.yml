@@ -7,5 +7,21 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+    properties:
+      hibernate:
+        # H2 must use its own dialect: the PostgreSQL dialect double-encodes JSON columns on H2.
+        dialect: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: false
+
+tpub:
+  scheduler:
+    enabled: false
+  ai:
+    openai-enabled: false
+    ocr:
+      mode: simulated
+  # Lane B: keep test uploads out of the source tree
+  media:
+    upload-dir: target/test-uploads
+    base-url: /uploads

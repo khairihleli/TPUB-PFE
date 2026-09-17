@@ -1,11 +1,10 @@
 /**
- * Back-office overview: GET /statistics/dashboard (platform-wide) and, for roles allowed to list
- * campaigns, the campaigns list itself, so the hero « À décider par TPUB » and the cards read the
- * same data. Labels are deliberately literal (brief §6): « lignes du journal » are rows of the
- * diffusion log, budgets are the amounts typed by advertisers, consumedBudget is never
- * incremented by the backend.
+ * Back-office overview (pure): every figure of GET /statistics/dashboard v2 (contract §2.9, CdC §6)
+ * grouped by theme, plus « À décider » and « À surveiller ». Labels stay literal (brief §6):
+ * « affichages » are PUBLICITE rows of the diffusion journal, budgets are amounts typed by the
+ * advertisers, revenue is simulated.
  */
-import { emergencyPhase } from "@/components/admin/emergency-schema";
+import { emergencyStateOf } from "@/components/admin/emergency-schema";
 import { checkNetworkCoherence } from "@/components/admin/network-coherence";
 import type {
   CampaignResponse,
@@ -21,13 +20,38 @@ export type OverviewAccent = "orange" | "blue" | "red" | "success" | "warning" |
 export type OverviewKey =
   | "totalCampaigns"
   | "activeCampaigns"
+  | "validatedCampaigns"
+  | "pendingCampaigns"
+  | "draftCampaigns"
+  | "terminatedCampaigns"
+  | "blockedCampaigns"
   | "aiPendingCampaigns"
+  | "approvedByAiCampaigns"
+  | "reviewRequiredCampaigns"
   | "aiRejectedCampaigns"
+  | "aiFlaggedCampaigns"
   | "availableSupports"
+  | "totalSupports"
+  | "outOfServiceSupports"
+  | "activeZones"
+  | "totalClients"
+  | "pendingClients"
   | "confirmedReservations"
+  | "temporaryReservations"
+  | "cancelledReservations"
+  | "expiredReservations"
   | "totalViews"
+  | "viewsToday"
+  | "totalClicks"
+  | "totalInteractions"
+  | "emergencyViews"
+  | "defaultViews"
+  | "totalDiffusions"
+  | "activeEmergencies"
   | "estimatedBudget"
-  | "consumedBudget";
+  | "consumedBudget"
+  | "estimatedCost"
+  | "simulatedRevenue";
 
 export interface OverviewItem {
   key: OverviewKey;
@@ -40,10 +64,15 @@ export interface OverviewItem {
   source: string;
   /** Zero values are rendered dimmed (neutral), never in an attention colour. */
   dimmed: boolean;
+  /** Drill-down link. */
+  href?: string;
 }
 
+export type OverviewGroupId =
+  "campagnes" | "ia" | "reseau" | "reservations" | "diffusion" | "budgets";
+
 export interface OverviewGroup {
-  id: "campagnes" | "reseau" | "journal";
+  id: OverviewGroupId;
   title: string;
   description: string;
   items: OverviewItem[];
@@ -51,54 +80,6 @@ export interface OverviewGroup {
 
 function n(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
-}
-
-/** « À décider par TPUB »: APPROVED_BY_AI + REVIEW_REQUIRED (same filter as the nav badge). */
-export interface DecisionQueueSummary {
-  total: number;
-  approved: number;
-  review: number;
-  /** « 1 avis IA favorable · 1 revue manuelle » */
-  breakdown: string;
-}
-
-export function summarizeDecisionQueue(
-  campaigns: readonly Pick<CampaignResponse, "status">[],
-): DecisionQueueSummary {
-  const approved = campaigns.filter((c) => c.status === "APPROVED_BY_AI").length;
-  const review = campaigns.filter((c) => c.status === "REVIEW_REQUIRED").length;
-  return {
-    total: approved + review,
-    approved,
-    review,
-    breakdown: `${approved} avis IA favorable${approved > 1 ? "s" : ""} · ${review} revue${review > 1 ? "s" : ""} manuelle${review > 1 ? "s" : ""}`,
-  };
-}
-
-/** Campaign counts from the list when available, otherwise from the dashboard. */
-export function campaignCounts(
-  d: DashboardResponse | null | undefined,
-  campaigns: readonly Pick<CampaignResponse, "status">[] | null | undefined,
-): Pick<
-  DashboardResponse,
-  "totalCampaigns" | "activeCampaigns" | "aiPendingCampaigns" | "aiRejectedCampaigns"
-> {
-  if (campaigns) {
-    const count = (...statuses: string[]) =>
-      campaigns.filter((c) => statuses.includes(c.status)).length;
-    return {
-      totalCampaigns: campaigns.length,
-      activeCampaigns: count("ACTIVE", "VALIDATED_BY_ADMIN"),
-      aiPendingCampaigns: count("PENDING_AI_CHECK"),
-      aiRejectedCampaigns: count("REJECTED_BY_AI"),
-    };
-  }
-  return {
-    totalCampaigns: n(d?.totalCampaigns),
-    activeCampaigns: n(d?.activeCampaigns),
-    aiPendingCampaigns: n(d?.aiPendingCampaigns),
-    aiRejectedCampaigns: n(d?.aiRejectedCampaigns),
-  };
 }
 
 function item(
@@ -109,100 +90,291 @@ function item(
   return { key, value, ...rest, dimmed: value === 0 };
 }
 
-export function buildOverviewGroups(
-  d: DashboardResponse,
-  campaigns: readonly Pick<CampaignResponse, "status">[] | null = null,
-): OverviewGroup[] {
-  const c = campaignCounts(d, campaigns);
-  const fromList = campaigns !== null;
+// ---------------------------------------------------------------------------
+// « À décider par TPUB »
+// ---------------------------------------------------------------------------
+export interface DecisionQueueSummary {
+  total: number;
+  approved: number;
+  review: number;
+  /** « 1 avis IA favorable · 1 revue manuelle » */
+  breakdown: string;
+}
+
+function breakdownOf(approved: number, review: number): string {
+  return `${approved} avis IA favorable${approved > 1 ? "s" : ""} · ${review} revue${review > 1 ? "s" : ""} manuelle${review > 1 ? "s" : ""}`;
+}
+
+/** From a campaign list (APPROVED_BY_AI + REVIEW_REQUIRED, same filter as the nav badge). */
+export function summarizeDecisionQueue(
+  campaigns: readonly Pick<CampaignResponse, "status">[],
+): DecisionQueueSummary {
+  const approved = campaigns.filter((c) => c.status === "APPROVED_BY_AI").length;
+  const review = campaigns.filter((c) => c.status === "REVIEW_REQUIRED").length;
+  return { total: approved + review, approved, review, breakdown: breakdownOf(approved, review) };
+}
+
+/** From the dashboard counters (v2): no campaign list needed. */
+export function decisionQueueFromDashboard(d: DashboardResponse): DecisionQueueSummary {
+  const approved = n(d.approvedByAiCampaigns);
+  const review = n(d.reviewRequiredCampaigns);
+  return { total: approved + review, approved, review, breakdown: breakdownOf(approved, review) };
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+export function buildOverviewGroups(d: DashboardResponse): OverviewGroup[] {
+  const byStatus = d.supportsByStatus;
+  const outOfService = n(byStatus?.MAINTENANCE) + n(byStatus?.HORS_LIGNE) + n(byStatus?.INACTIF);
+  const moderation = routes.admin.moderation;
   return [
     {
       id: "campagnes",
       title: "Campagnes",
       description: "Toutes les campagnes de la plateforme, tous annonceurs confondus.",
       items: [
-        item("totalCampaigns", c.totalCampaigns, {
-          label: "Campagnes enregistrées",
+        item("totalCampaigns", n(d.totalCampaigns), {
+          label: "Campagnes totales",
           format: "number",
-          hint: "Brouillons compris",
+          hint: `${n(d.draftCampaigns)} brouillon${n(d.draftCampaigns) > 1 ? "s" : ""} compris`,
           accent: "orange",
           source: "Nombre total de campagnes, quel que soit leur statut.",
+          href: moderation({ onglet: "toutes" }),
         }),
-        item("activeCampaigns", c.activeCampaigns, {
-          label: "Validées (programmées ou en diffusion)",
+        item("activeCampaigns", n(d.activeCampaigns), {
+          label: "Campagnes actives",
           format: "number",
-          hint: "Validées par TPUB, période commencée ou à venir",
+          hint: "En diffusion sur leur période",
           accent: "success",
-          source: fromList
-            ? "Campagnes validées par un administrateur, que leur période ait commencé ou non."
-            : "Campagnes passées au statut actif à la validation, y compris si la période n'a pas commencé.",
+          source: "Campagnes validées dont la période de diffusion est en cours.",
         }),
-        item("aiPendingCampaigns", c.aiPendingCampaigns, {
-          label: "Analyse IA en attente",
+        item("validatedCampaigns", n(d.validatedCampaigns), {
+          label: "Programmées",
+          format: "number",
+          hint: "Validées, diffusion à venir",
+          accent: "blue",
+          source: "Campagnes validées par un administrateur dont la période n'a pas commencé.",
+        }),
+        item("pendingCampaigns", n(d.pendingCampaigns), {
+          label: "En attente",
+          format: "number",
+          hint: "Analyse IA ou décision TPUB",
+          accent: "warning",
+          source:
+            "Campagnes soumises : analyse IA en cours, avis favorable ou revue manuelle en attente de décision.",
+          href: moderation({ onglet: "a-traiter" }),
+        }),
+        item("terminatedCampaigns", n(d.terminatedCampaigns), {
+          label: "Terminées",
+          format: "number",
+          hint: "Période achevée ou budget épuisé",
+          accent: "neutral",
+          source: "Campagnes arrivées au terme de leur période ou de leur budget.",
+        }),
+        item("blockedCampaigns", n(d.blockedCampaigns), {
+          label: "Refusées par TPUB",
+          format: "number",
+          hint: "Bloquées par un administrateur",
+          accent: "red",
+          source: "Campagnes refusées ou dont la diffusion a été bloquée.",
+        }),
+      ],
+    },
+    {
+      id: "ia",
+      title: "Analyse IA",
+      description: "Résultats de la filtration automatique, avant la décision humaine.",
+      items: [
+        item("aiPendingCampaigns", n(d.aiPendingCampaigns), {
+          label: "En attente d'analyse IA",
           format: "number",
           hint: "Soumises, pas encore analysées",
           accent: "blue",
-          source: "Campagnes soumises dont l'analyse IA n'a pas encore été exécutée.",
+          source: "Campagnes au statut « analyse IA en cours ».",
+          href: moderation({ onglet: "ia" }),
         }),
-        item("aiRejectedCampaigns", c.aiRejectedCampaigns, {
-          label: "À corriger après analyse IA",
+        item("approvedByAiCampaigns", n(d.approvedByAiCampaigns), {
+          label: "Avis IA favorable",
           format: "number",
-          hint: "Renvoyées à l'annonceur",
+          hint: "À valider par TPUB",
+          accent: "success",
+          source: "Campagnes jugées conformes par l'IA, en attente de validation humaine.",
+          href: moderation({ onglet: "a-traiter" }),
+        }),
+        item("reviewRequiredCampaigns", n(d.reviewRequiredCampaigns), {
+          label: "Revue manuelle",
+          format: "number",
+          hint: "Signalées par l'IA",
+          accent: "warning",
+          source: "Campagnes pour lesquelles l'IA demande un examen humain.",
+          href: moderation({ onglet: "revue" }),
+        }),
+        item("aiRejectedCampaigns", n(d.aiRejectedCampaigns), {
+          label: "Refusées par l'IA",
+          format: "number",
+          hint: "Renvoyées à l'annonceur pour correction",
           accent: "red",
-          source: "Campagnes rejetées par l'analyse IA, à dupliquer et corriger par l'annonceur.",
+          source: "Campagnes rejetées par l'analyse IA, à corriger par l'annonceur.",
+        }),
+        item("aiFlaggedCampaigns", n(d.aiFlaggedCampaigns), {
+          label: "Refusées ou signalées par l'IA",
+          format: "number",
+          hint: "Revue manuelle + refus IA",
+          accent: "warning",
+          source: "Campagnes dont le dernier avis IA est « revue manuelle » ou « à corriger ».",
         }),
       ],
     },
     {
       id: "reseau",
-      title: "Réseau & réservations",
-      description: "État déclaré des Porteurs et des créneaux confirmés.",
+      title: "Réseau & annonceurs",
+      description: "État technique déclaré des Porteurs, zones et comptes annonceurs.",
       items: [
         item("availableSupports", n(d.availableSupports), {
-          label: "Porteurs actifs",
+          label: "Porteurs disponibles",
           format: "number",
-          hint: "État technique saisi dans le back-office",
+          hint: `Sur ${n(d.totalSupports)} Porteur${n(d.totalSupports) > 1 ? "s" : ""}`,
           accent: "blue",
           source:
             "Porteurs dont l'état technique est « Actif ». Il s'agit de l'état saisi, pas d'une supervision en temps réel.",
+          href: routes.admin.network({ onglet: "ecrans" }),
         }),
-        item("confirmedReservations", n(d.confirmedReservations), {
-          label: "Créneaux confirmés",
+        item("outOfServiceSupports", outOfService, {
+          label: "Porteurs hors service",
           format: "number",
-          hint: "Confirmés à la validation des campagnes",
-          accent: "success",
-          source: "Créneaux passés au statut « Confirmé » lors de la validation d'une campagne.",
+          hint: `${n(byStatus?.MAINTENANCE)} maintenance · ${n(byStatus?.HORS_LIGNE)} hors ligne · ${n(byStatus?.INACTIF)} inactif${n(byStatus?.INACTIF) > 1 ? "s" : ""}`,
+          accent: outOfService > 0 ? "warning" : "neutral",
+          source: "Porteurs en maintenance, hors ligne ou inactifs (état technique saisi).",
+        }),
+        item("activeZones", n(d.activeZones), {
+          label: "Zones actives",
+          format: "number",
+          hint: `Sur ${n(d.totalZones)} zone${n(d.totalZones) > 1 ? "s" : ""}`,
+          accent: "orange",
+          source: "Zones géographiques ouvertes à la réservation.",
+          href: routes.admin.network({ onglet: "zones" }),
+        }),
+        item("totalClients", n(d.totalClients), {
+          label: "Annonceurs",
+          format: "number",
+          hint: `${n(d.pendingClients)} en attente de validation`,
+          accent: "blue",
+          source: "Comptes annonceurs inscrits sur la plateforme.",
+          href: routes.admin.users(),
         }),
       ],
     },
     {
-      id: "journal",
-      title: "Journal de diffusion & budgets",
-      description: "Activité enregistrée par les lecteurs et montants déclarés.",
+      id: "reservations",
+      title: "Réservations",
+      description: "Créneaux réservés sur les Porteurs.",
+      items: [
+        item("confirmedReservations", n(d.confirmedReservations), {
+          label: "Réservations confirmées",
+          format: "number",
+          hint: "Confirmées à la validation des campagnes",
+          accent: "success",
+          source: "Créneaux passés au statut « Confirmée » lors de la validation d'une campagne.",
+          href: routes.admin.reservations(),
+        }),
+        item("temporaryReservations", n(d.temporaryReservations), {
+          label: "Réservations temporaires",
+          format: "number",
+          hint: "En attente de décision TPUB",
+          accent: "warning",
+          source: "Créneaux retenus par des campagnes pas encore validées.",
+        }),
+        item("cancelledReservations", n(d.cancelledReservations), {
+          label: "Annulées",
+          format: "number",
+          hint: "Par l'annonceur ou TPUB",
+          accent: "neutral",
+          source: "Réservations annulées (refus, modification de zone, annulation manuelle).",
+        }),
+        item("expiredReservations", n(d.expiredReservations), {
+          label: "Expirées",
+          format: "number",
+          hint: "Temporaires non confirmées à temps",
+          accent: "neutral",
+          source: "Réservations temporaires arrivées à expiration sans validation.",
+        }),
+      ],
+    },
+    {
+      id: "diffusion",
+      title: "Diffusion",
+      description: "Activité enregistrée par les lecteurs d'écran (journal de diffusion).",
       items: [
         item("totalViews", n(d.totalViews), {
-          label: "Lignes du journal de diffusion",
+          label: "Affichages publicitaires",
           format: "number",
-          hint: "Chaque appel d'un lecteur, contenus par défaut et messages prioritaires compris",
-          accent: "neutral",
-          source:
-            "Nombre d'enregistrements du journal de diffusion. Il prouve une activité des lecteurs, pas une audience : ce n'est pas un nombre de vues.",
-        }),
-        item("estimatedBudget", n(d.estimatedBudget), {
-          label: "Budget déclaré",
-          format: "tnd",
-          hint: "Somme des budgets saisis par les annonceurs",
+          hint: `${n(d.viewsToday)} aujourd'hui`,
           accent: "orange",
           source:
-            "Total des budgets indiqués dans les campagnes (tous statuts). Ce n'est ni un chiffre d'affaires ni un montant facturé.",
+            "Lignes « publicité » du journal de diffusion : chaque passage d'une campagne sur un écran. Il ne s'agit pas d'une mesure d'audience.",
+          href: routes.admin.journal({ onglet: "diffusions" }),
+        }),
+        item("totalClicks", n(d.totalClicks), {
+          label: "Clics",
+          format: "number",
+          hint: `${n(d.totalInteractions)} interaction${n(d.totalInteractions) > 1 ? "s" : ""}`,
+          accent: "blue",
+          source: "Clics et interactions enregistrés sur les publicités affichées.",
+        }),
+        item("emergencyViews", n(d.emergencyViews), {
+          label: "Passages de messages prioritaires",
+          format: "number",
+          hint: `${n(d.activeEmergencies)} message${n(d.activeEmergencies) > 1 ? "s" : ""} actif${n(d.activeEmergencies) > 1 ? "s" : ""}`,
+          accent: "red",
+          source: "Lignes « message prioritaire » du journal de diffusion.",
+          href: routes.admin.emergencies(),
+        }),
+        item("totalDiffusions", n(d.totalDiffusions), {
+          label: "Lignes du journal",
+          format: "number",
+          hint: `${n(d.defaultViews)} contenu${n(d.defaultViews) > 1 ? "s" : ""} par défaut`,
+          accent: "neutral",
+          source:
+            "Chaque appel d'un lecteur ajoute une ligne : publicités, messages prioritaires et contenu par défaut.",
+        }),
+      ],
+    },
+    {
+      id: "budgets",
+      title: "Budgets & revenus simulés",
+      description: "Montants déclarés, estimés et consommés. Aucun paiement réel n'est traité.",
+      items: [
+        item("estimatedBudget", n(d.estimatedBudget), {
+          label: "Budget estimé",
+          format: "tnd",
+          hint: "Budgets des campagnes soumises",
+          accent: "orange",
+          source:
+            "Somme des budgets saisis par les annonceurs pour les campagnes sorties du brouillon.",
         }),
         item("consumedBudget", n(d.consumedBudget), {
           label: "Budget consommé",
           format: "tnd",
-          hint: "Suivi de consommation pas encore alimenté",
+          hint: "Débité à chaque affichage publicitaire",
+          accent: "success",
+          source: "Somme des coûts unitaires des affichages publicitaires déjà diffusés.",
+        }),
+        item("estimatedCost", n(d.estimatedCost), {
+          label: "Coût estimé des réservations",
+          format: "tnd",
+          hint: "Temporaires et confirmées",
+          accent: "blue",
+          source:
+            "Estimation indicative du coût des créneaux réservés (barème interne de simulation).",
+        }),
+        item("simulatedRevenue", n(d.simulatedRevenue), {
+          label: "Revenus simulés",
+          format: "tnd",
+          hint: "Paiements simulés, aucun encaissement",
           accent: "neutral",
           source:
-            "Le suivi de consommation n'est pas encore branché : cette valeur reste à zéro tant que la facturation n'est pas activée.",
+            "Total des paiements simulés enregistrés : ce n'est ni un chiffre d'affaires ni un montant facturé.",
         }),
       ],
     },
@@ -277,11 +449,14 @@ export function porteursWatch(
 }
 
 export function emergenciesWatch(
-  messages: readonly Pick<EmergencyResponse, "isActive" | "startDate" | "endDate">[],
-  today: string,
+  messages: readonly Pick<
+    EmergencyResponse,
+    "isActive" | "startDate" | "endDate" | "startTime" | "endTime" | "state"
+  >[],
+  now: Date = new Date(),
 ): WatchItem {
-  const current = messages.filter((m) => emergencyPhase(m, today) === "current").length;
-  const scheduled = messages.filter((m) => emergencyPhase(m, today) === "scheduled").length;
+  const current = messages.filter((m) => emergencyStateOf(m, now) === "EN_COURS").length;
+  const scheduled = messages.filter((m) => emergencyStateOf(m, now) === "PROGRAMME").length;
   const count = current + scheduled;
   return {
     key: "urgences",
@@ -296,4 +471,54 @@ export function emergenciesWatch(
     href: routes.admin.emergencies(),
     linkLabel: "Messages prioritaires",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Budgets (estimated vs consumed) and the live priority messages strip
+// ---------------------------------------------------------------------------
+export interface BudgetConsumption {
+  estimated: number;
+  consumed: number;
+  /** consumed / estimated in 0..1, null without an estimated budget. */
+  ratio: number | null;
+  /** « 12 % du budget estimé consommé ». */
+  label: string;
+}
+
+export function budgetConsumption(
+  d: Pick<DashboardResponse, "estimatedBudget" | "consumedBudget">,
+): BudgetConsumption {
+  const estimated = n(d.estimatedBudget);
+  const consumed = n(d.consumedBudget);
+  if (estimated <= 0) {
+    return {
+      estimated,
+      consumed,
+      ratio: null,
+      label: consumed > 0 ? "Budget consommé sans budget estimé" : "Aucun budget engagé",
+    };
+  }
+  const ratio = Math.min(1, Math.max(0, consumed / estimated));
+  const pct = new Intl.NumberFormat("fr-TN", { maximumFractionDigits: 1 }).format(
+    (consumed / estimated) * 100,
+  );
+  return { estimated, consumed, ratio, label: `${pct} % du budget estimé consommé` };
+}
+
+/** Messages that can still reach a screen (en cours first, then programmés), at most `limit`. */
+export function liveEmergencies<T extends EmergencyResponse>(
+  messages: readonly T[],
+  now: Date = new Date(),
+  limit = 3,
+): T[] {
+  const order = { EN_COURS: 0, PROGRAMME: 1 } as const;
+  return messages
+    .map((m) => ({ m, state: emergencyStateOf(m, now) }))
+    .filter(
+      (x): x is { m: T; state: "EN_COURS" | "PROGRAMME" } =>
+        x.state === "EN_COURS" || x.state === "PROGRAMME",
+    )
+    .sort((a, b) => order[a.state] - order[b.state] || b.m.id - a.m.id)
+    .slice(0, limit)
+    .map((x) => x.m);
 }

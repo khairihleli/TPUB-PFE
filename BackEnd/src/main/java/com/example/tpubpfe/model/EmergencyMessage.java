@@ -19,6 +19,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -44,6 +45,15 @@ public class EmergencyMessage {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "zone_id", nullable = false)
     private Zone zone;
+
+    @Column(precision = 10, scale = 7)
+    private BigDecimal latitude;
+
+    @Column(precision = 10, scale = 7)
+    private BigDecimal longitude;
+
+    @Column(name = "radius_km", precision = 8, scale = 3)
+    private BigDecimal radiusKm;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -72,6 +82,13 @@ public class EmergencyMessage {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private Boolean isActive = true;
+
+    @Column(name = "stopped_at")
+    private Instant stoppedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stop_reason", length = 20)
+    private EmergencyStopReason stopReason;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by_user_id", nullable = false)

@@ -66,7 +66,10 @@ describe("status semantics (UX-PLAN §4.8)", () => {
       pulse: true,
       label: "En diffusion",
     });
-    expect(CAMPAIGN_STATUS.BLOCKED).toMatchObject({ tone: "danger", label: "Refusée" });
+    expect(CAMPAIGN_STATUS.BLOCKED).toMatchObject({ tone: "danger", label: "Bloquée" });
+    expect(CAMPAIGN_STATUS_ANNONCEUR.BLOCKED).toMatchObject({ tone: "danger", label: "Refusée" });
+    expect(CAMPAIGN_STATUS.VALIDATED_BY_ADMIN.label).toBe("Programmée");
+    expect(CAMPAIGN_STATUS.TERMINATED.label).toBe("Terminée");
   });
 
   it("labels both AI outcomes « En examen TPUB » for advertisers, precisely for staff", () => {
@@ -82,7 +85,7 @@ describe("status semantics (UX-PLAN §4.8)", () => {
     expect(campaignStatusFor("REVIEW_REQUIRED", "staff").label).toBe("Revue manuelle");
     expect(campaignStatusFor("VALIDATED_BY_ADMIN", "annonceur").label).toBe("Programmée");
     expect(campaignStatusFor("REJECTED_BY_AI", "annonceur").hint).toBe(
-      "Dupliquez la campagne pour la corriger",
+      "Modifiez-la puis soumettez-la à nouveau",
     );
   });
 
@@ -210,13 +213,13 @@ describe("stepper index", () => {
 });
 
 describe("action rules", () => {
-  it("isEditable only for BROUILLON and REJECTED_BY_AI", () => {
-    expect(ALL.filter(isEditable)).toEqual(["BROUILLON", "REJECTED_BY_AI"]);
+  it("isEditable for BROUILLON and the reopenable REJECTED_BY_AI / BLOCKED", () => {
+    expect(ALL.filter(isEditable)).toEqual(["BROUILLON", "REJECTED_BY_AI", "BLOCKED"]);
   });
   it("canSubmit only for BROUILLON", () => {
     expect(ALL.filter(canSubmit)).toEqual(["BROUILLON"]);
   });
-  it("isDeadEnd only for REJECTED_BY_AI", () => {
+  it("keeps the legacy isDeadEnd for REJECTED_BY_AI (duplicate still offered)", () => {
     expect(ALL.filter(isDeadEnd)).toEqual(["REJECTED_BY_AI"]);
   });
   it("isAwaitingAdmin for AI-approved and review-required", () => {

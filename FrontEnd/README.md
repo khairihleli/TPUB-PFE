@@ -9,10 +9,13 @@ L'application réunit trois usages :
   humain, tarifs sur devis) et convertir les annonceurs. TPUB est en phase de conception : le
   site n'annonce ni nombre d'écrans, ni clients, ni audiences, ni prix (voir
   `docs/tpub-brief.md`, liste « à ne pas affirmer »).
-- **Espace annonceur** (`/espace`) : créer une campagne, réserver des écrans, la soumettre à la
-  modération IA puis à la validation TPUB, et suivre son avancement.
-- **Back-office** (`/admin`) pour l'équipe TPUB : vue d'ensemble, modération (valider / refuser),
-  zones et écrans, messages prioritaires. Sans validation administrateur, rien n'est diffusé.
+- **Espace annonceur** (`/espace`) : créer une campagne (visuels, zone sur la carte, créneaux),
+  réserver des Porteurs, la soumettre à l'analyse IA puis à la validation TPUB, suivre son
+  avancement, ses statistiques, ses réservations et son profil (sessions, mot de passe, logo).
+- **Back-office** (`/admin`) pour l'équipe TPUB : vue d'ensemble, modération (rapport IA,
+  valider / refuser / bloquer), réservations et conflits, réseau (zones, Porteurs,
+  indisponibilités), messages prioritaires, statistiques, utilisateurs, journal (audit, décisions
+  IA, diffusions) et règles IA. Sans validation administrateur, rien n'est diffusé.
 
 S'y ajoute un **lecteur de démonstration** (`/ecran/[supportId]`) qui simule un écran du réseau.
 
@@ -98,18 +101,21 @@ Navigateur ──► /api/session/*  ──► Spring /api/auth/*   (login, regi
 - `src/app/api/[...path]/route.ts` relaie GET/POST/PUT/PATCH/DELETE vers
   `${TPUB_API_URL}/api/<chemin>` avec la query string, le corps et le signal d'annulation. Il
   refuse `/api/auth/*` (404), traduit un backend injoignable en **502** avec un message français,
-  et transforme le 403 à corps vide renvoyé par Spring pour un jeton expiré en **401 « Session
-  expirée »** (cookies effacés).
-- `src/app/api/session/` : `POST login`, `POST register`, `POST logout`, `GET` (utilisateur
-  courant). En cas de succès, deux cookies **httpOnly** sont posés : `tpub_token` (le JWT, durée
+  relaie les corps multipart / binaires octet par octet (413 au-delà de 60 Mo) et les
+  téléchargements CSV, et transforme un 401 de fin de session (`TOKEN_EXPIRED`,
+  `SESSION_REVOKED`, `ACCOUNT_DISABLED`…) en **401 « Session expirée »** (cookies effacés).
+- `src/app/uploads/[...path]/route.ts` relaie les médias publics `/uploads/**` (flux, `Range`,
+  cache), sans cookie ni jeton.
+- `src/app/api/session/` : `POST login`, `POST register`, `POST logout` (révoque la session
+  côté Spring via `POST /api/me/logout`, puis efface les cookies), `GET` (utilisateur courant). En cas de succès, deux cookies **httpOnly** sont posés : `tpub_token` (le JWT, durée
   alignée sur son `exp`, 24 h par défaut) et `tpub_user` (`email`, `nom`, `role`, `userId`, `exp`).
   Le jeton n'est jamais renvoyé au navigateur.
 - `src/middleware.ts` protège les routes : `/espace/**` réservé aux `ANNONCEUR`, `/admin/**` aux
   `ADMINISTRATEUR | SUPERVISEUR | OPERATEUR`, visiteur non connecté redirigé vers
   `/connexion?next=…`. Spring reste l'autorité sur les droits.
 - `src/lib/api/` : `client.ts` (`apiFetch`, erreurs typées `ApiError` / `ApiTransportError`,
-  événement `tpub:session-expired` sur 401), `messages.ts` (traduction des messages Spring et Bean
-  Validation), `types.ts` (types du contrat), `endpoints.ts` (une fonction par endpoint, statuts
+  événement `tpub:session-expired` sur 401), `messages.ts` (libellé français de chaque `code`
+  d'erreur du backend), `types.ts` (types du contrat), `endpoints.ts` (une fonction par endpoint, statuts
   normalisés en majuscules).
 - `src/lib/use-resource.ts` : chargement client avec annulation (pas de store global).
   `src/lib/campaign-status.ts` : libellés, tons, étapes et états dérivés (« Programmée »,
@@ -117,29 +123,32 @@ Navigateur ──► /api/session/*  ──► Spring /api/auth/*   (login, regi
 
 ### Carte des routes
 
-| Zone                      | Routes                                                                                                                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Vitrine `(marketing)`     | `/`, `/annonceurs`, `/reseau`, `/fonctionnement`, `/tarifs`, `/faq`, `/a-propos`, `/contact`, `/mentions-legales`, `/confidentialite`, `/cgu`, `/cookies`                                                     |
-| Authentification `(auth)` | `/connexion`, `/inscription`, `/mot-de-passe-oublie`                                                                                                                                                          |
-| Espace annonceur          | `/espace`, `/espace/campagnes`, `/espace/campagnes/nouvelle`, `/espace/campagnes/[id]`, `/espace/campagnes/[id]/modifier`, `/espace/reservations`, `/espace/statistiques`, `/espace/reseau`, `/espace/profil` |
-| Back-office               | `/admin`, `/admin/moderation`, `/admin/reseau`, `/admin/urgences`                                                                                                                                             |
-| Lecteur                   | `/ecran/[supportId]`                                                                                                                                                                                          |
-| API Next                  | `/api/[...path]`, `/api/session`, `/api/session/login`, `/api/session/register`, `/api/session/logout`, `/api/contact`                                                                                        |
-| Divers                    | `robots.txt` (exclut `/espace`, `/admin`, `/ecran`), `sitemap.xml`, pages 404 / erreur                                                                                                                        |
+| Zone                      | Routes                                                                                                                                                                                                                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Vitrine `(marketing)`     | `/`, `/annonceurs`, `/reseau`, `/fonctionnement`, `/tarifs`, `/faq`, `/a-propos`, `/contact`, `/mentions-legales`, `/confidentialite`, `/cgu`, `/cookies`                                                                                                                                        |
+| Authentification `(auth)` | `/connexion`, `/inscription`, `/mot-de-passe-oublie`                                                                                                                                                                                                                                             |
+| Espace annonceur          | `/espace`, `/espace/campagnes`, `/espace/campagnes/nouvelle`, `/espace/campagnes/[id]`, `/espace/campagnes/[id]/modifier`, `/espace/reservations`, `/espace/statistiques`, `/espace/reseau`, `/espace/profil`                                                                                    |
+| Back-office               | `/admin`, `/admin/moderation`, `/admin/reservations`, `/admin/reseau`, `/admin/urgences`, `/admin/statistiques`, `/admin/journal`, `/admin/utilisateurs`, `/admin/regles-ia` (superviseur en lecture seule ; opérateur : vue d'ensemble, réseau, urgences, statistiques, journal des diffusions) |
+| Lecteur                   | `/ecran/[supportId]`                                                                                                                                                                                                                                                                             |
+| API Next                  | `/api/[...path]`, `/api/session`, `/api/session/login`, `/api/session/register`, `/api/session/logout`, `/api/contact`, `/uploads/[...path]`                                                                                                                                                     |
+| Divers                    | `robots.txt` (exclut `/espace`, `/admin`, `/ecran`), `sitemap.xml`, pages 404 / erreur                                                                                                                                                                                                           |
 
-L'assistant de campagne suit l'ordre imposé par le backend, en 3 étapes (`?id=&etape=1|2|3`) :
-Détails (`POST /campaigns`, l'id est conservé dans l'URL) → Porteurs (disponibilités vérifiées
-avant sélection, réservation au clic sur « Réserver N Porteurs et continuer ») → Vérification &
-envoi (aperçu du visuel facultatif et local, `POST /campaigns/{id}/submit` puis
-`POST /ai/check-content/{id}`).
+L'assistant de campagne compte 4 étapes (`?id=&etape=1|2|3|4`, reprise possible depuis l'URL) :
+Détails (`POST /campaigns`, créneaux Matin / Après-midi / Soir / Journée ou personnalisé) →
+Contenu (envoi réel des images, bannières et vidéos, pré-analyse IA facultative) → Zone & Porteurs
+(jusqu'à 5 cercles point + rayon sur la carte ou depuis les zones recommandées, disponibilités par
+statut, réservation groupée explicite, créneaux alternatifs si la zone est saturée) → Vérification
+(liste de contrôle, estimation, un seul `POST /campaigns/{id}/submit` qui lance l'analyse IA et
+affiche son résultat).
 
 ### Carte du réseau & Studio 3D
 
 Spécification : `docs/NETWORK-MAP-SPEC.md`. MapLibre et three.js ne sont chargés que côté client
 (`next/dynamic`, `ssr: false`) sur les pages qui en ont besoin, jamais sur la vitrine.
 
-- **Où** : `/espace/reseau` (explorateur annonceur), onglet « Carte » de l'étape « Zones & écrans »
-  de `/espace/campagnes/nouvelle`, vue « Carte » de `/admin/reseau` (outils TPUB).
+- **Où** : `/espace/reseau` (explorateur annonceur), carte de ciblage de l'étape « Zone & Porteurs »
+  de `/espace/campagnes/nouvelle` (clic pour placer un cercle, poignée de rayon), vue « Carte » de
+  `/admin/reseau` (outils TPUB), choix du point des messages prioritaires.
 - **Tous les Porteurs, à leur emplacement exact** : aucun regroupement par défaut. La carte s'ouvre
   cadrée sur l'ensemble des Porteurs (et le cercle de leurs zones) ; en vue d'ensemble (zoom < 9)
   chaque Porteur est un point compact (couleur du type, anneau d'état), la lettre apparaît dès le
@@ -158,10 +167,11 @@ Spécification : `docs/NETWORK-MAP-SPEC.md`. MapLibre et three.js ne sont charg�
   relais (mêmes positions exactes, vue rapprochée du Grand Tunis quand les Porteurs s'y
   concentrent) ; la liste des Porteurs reste l'équivalent non visuel de la carte.
 - **Studio 3D** (clic sur un Porteur) : maquette three.js du Porteur (type, hauteur de mât,
-  orientation), points d'intérêt, visuel de l'annonceur sur l'écran (aperçu local), jour/nuit,
-  points de vue `1`–`5` (orbite, piéton, conducteur, drone, face écran), `R` pour réinitialiser.
-  Le configurateur réserve le Porteur sur l'un de vos brouillons (statut relu juste avant l'envoi)
-  avec la zone du Porteur ; les jours déjà réservés sont indisponibles en entier.
+  orientation), points d'intérêt, visuel de la campagne sur l'écran (média envoyé, sinon aperçu
+  local), jour/nuit, points de vue `1`–`5` (orbite, piéton, conducteur, drone, face écran), `R`
+  pour réinitialiser. Le configurateur réserve le Porteur sur l'un de vos brouillons (statut relu
+  juste avant l'envoi) : les cercles existants de la campagne sont conservés et un cercle
+  « Sélection du réseau » couvrant le Porteur est ajouté si besoin.
 - **Paramètres d'URL** de `/espace/reseau` (partageables) :
 
   | Paramètre                         | Effet                                                                                                                                                           |
@@ -271,8 +281,10 @@ npx playwright test --grep @screens    # uniquement les captures
   immédiatement avec le 502 du pont.
 - `e2e/smoke.spec.ts` : chaque route affiche son `h1` sans erreur console, gardes de rôles,
   audit axe WCAG 2.1 AA (aucune violation sérieuse ou critique).
-- `e2e/flows.spec.ts` : connexion, assistant complet (brouillon → réservation → soumission →
-  résultat IA), validation par un administrateur.
+- `e2e/flows.spec.ts` : connexion, assistant en 4 étapes (détails → envoi d'un visuel → zone
+  recommandée et réservation → soumission avec analyse IA), validation par un administrateur.
+- `e2e/network.spec.ts` : explorateur du réseau, Studio 3D, carte de ciblage de l'assistant,
+  outils de la carte du back-office.
 - `e2e/screens.spec.ts` (`@screens`) : captures pleine page et par tranches d'écran dans
   `.qa/screens/<desktop|mobile>/` (dossier ignoré par git), prises en mouvement réduit.
 
@@ -283,57 +295,71 @@ déjà démarré sur ce port est réutilisé : arrêtez-le après un nouveau bui
 
 ## Démo avec le vrai backend
 
-1. **Backend** : démarrer PostgreSQL et Spring (`docker compose up` à la racine, ou `../BackEnd`
-   en local). Pour une analyse IA instantanée et déterministe, définir dans le `.env` racine :
+Sous Windows, sans Docker, depuis la racine du dépôt (JDK et PostgreSQL portables dans
+`%LOCALAPPDATA%\tpub-jdk` et `%LOCALAPPDATA%\tpub-postgres`) :
 
-   ```dotenv
-   OPENAI_ENABLED=false
-   ```
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-local.ps1 -Seed   # PostgreSQL + Spring (8080) + Next (3000)
+powershell -ExecutionPolicy Bypass -File .\start-local.ps1 -Stop   # tout arrêter
+```
 
-2. **Frontend** : `TPUB_API_URL=http://localhost:8080` dans `.env.local`, puis `npm run dev`.
-3. **Compte administrateur** créé au premier démarrage : `admin@tpub.local` / `Admin@123`.
-   C'est le seul contenu initial : aucune zone, aucun écran, aucun annonceur.
-4. **Réseau** : se connecter en administrateur, ouvrir `/admin/reseau` et créer quelques zones
-   (par exemple Tunis Centre, Les Berges du Lac, La Marsa, Sousse Centre, Sfax Centre) puis des
-   écrans rattachés, avec l'état technique `ACTIF` (seuls les écrans actifs sont proposés aux
-   annonceurs).
-5. **Annonceur** : se déconnecter, créer un compte sur `/inscription` (l'inscription crée
-   toujours un `ANNONCEUR`).
-6. **Campagne** : `/espace/campagnes/nouvelle` → renseigner la campagne, réserver un ou plusieurs
-   écrans, passer le créatif, puis « Soumettre à la modération ». Avec l'IA locale, la campagne est
-   approuvée ; mettre « gratuit » dans l'objectif pour obtenir une revue manuelle.
-7. **Validation** : en administrateur, `/admin/moderation` → « Examiner » → « Valider ».
-8. **Lecteur** : ouvrir `/ecran/<id de l'écran>`. Le lecteur interroge
-   `GET /api/diffusion/next` avec l'heure locale courante : la campagne n'apparaît que si la date
-   et la plage horaire du jour sont couvertes (sinon le contenu TPUB par défaut s'affiche).
-   Chaque appel ajoute une ligne au journal de diffusion. Un message prioritaire créé dans
-   `/admin/urgences` prend le pas sur les publicités.
-9. **Suivi** : `/espace` et `/espace/statistiques` côté annonceur, `/admin` pour les chiffres
-   globaux de la plateforme.
+Le script applique les migrations Flyway au démarrage de Spring, réutilise le JAR de
+`../BackEnd/target` et le build `.next` s'ils existent (supprimez-les après une modification pour
+reconstruire) et lance l'IA en mode local (`OPENAI_ENABLED=false`). Avec Docker :
+`docker compose up` à la racine, puis `TPUB_API_URL=http://localhost:8080` et `npm run dev`.
 
-Les mêmes étapes, sous forme d'appels HTTP, figurent dans `docs/api-contract.md` §8.
+**Données de démo** (`node scripts/seed-demo.mjs`, idempotent, lancé par `-Seed`) : 5 zones,
+10 Porteurs couvrant tous les états techniques, une indisponibilité planifiée, 2 règles IA en plus
+des 8 de la migration, les comptes ci-dessous et 4 campagnes créées par le vrai parcours (une en
+diffusion aujourd'hui, une à valider, une en revue manuelle, un brouillon).
 
-## Limites du backend contournées par l'interface
+| Rôle           | E-mail                   | Mot de passe      |
+| -------------- | ------------------------ | ----------------- |
+| Administrateur | `admin@tpub.local`       | `Admin@123`       |
+| Superviseur    | `superviseur@tpub.local` | `Superviseur@123` |
+| Opérateur      | `operateur@tpub.local`   | `Operateur@123`   |
+| Annonceur      | `demo@annonceur.tn`      | `Demo@1234`       |
 
-Détail complet dans `docs/api-contract.md` §7.
+**Scénario du cahier des charges (§11)** : `node scripts/demo-scenario.mjs` joue les 18 étapes
+en HTTP contre le backend (compte annonceur neuf, campagne, image PNG, analyse et rapport IA,
+lecture par l'administrateur, point + rayon, créneau Soir, disponibilités, réservation,
+estimation, validation, appel du Porteur à une date simulée, statistiques, message d'urgence qui
+remplace la publicité) et affiche ✔ / ✘ par étape. À la fin, il donne l'URL du lecteur
+(`/ecran/<id>?datetime=…`) qui montre la même diffusion à l'écran.
 
-- **Pas d'envoi de fichiers** : l'étape créatif affiche un aperçu local et l'indique clairement ;
-  rien n'est téléversé.
-- **`submit` ne lance pas l'IA** : l'interface enchaîne `submit` puis `ai/check-content`.
-- **`REJECTED_BY_AI` est une impasse** : l'interface propose « Dupliquer et corriger ».
-- **Campagne `REVIEW_REQUIRED` validée = jamais diffusée** : avertissement dans la modération.
-- **Statuts jamais posés** : « Programmée » et « Terminée » sont déduits des dates.
-- **Pas de statistiques par annonceur** : les chiffres de l'espace sont calculés côté client à
-  partir des campagnes et réservations de l'annonceur ; `/statistics/dashboard` est réservé au
-  back-office.
-- **Pas d'annulation de réservation, pas de profil, pas de mot de passe oublié** : l'interface
-  l'explique et oriente vers TPUB.
-- **403 à corps vide au lieu de 401, messages en anglais** : le pont et `messages.ts` produisent
-  des erreurs françaises cohérentes.
-- **Pas de contrôle de propriété** : l'espace ne navigue qu'à partir de `/campaigns/mine`.
-- **Rapport IA absent = 400** : affiché comme « pas encore analysée ».
-- **Suppression d'une zone qui a des écrans** : message métier explicite au lieu de l'erreur
-  générique de format.
+Parcours à montrer dans l'interface :
+
+1. **Annonceur** : `/inscription`, puis `/espace/campagnes/nouvelle` → Détails → Contenu (déposer
+   une image, lancer la pré-analyse) → Zone & Porteurs (cliquer sur la carte ou « Cibler cette
+   zone », « Enregistrer les zones », cocher les Porteurs disponibles, « Réserver ») → Vérification
+   → « Soumettre ». Un objectif contenant « garanti » donne une revue manuelle, « cocaine » un avis
+   défavorable.
+2. **Administrateur** : `/admin/moderation` → « Examiner » (rapport IA, visuel, zones,
+   réservations, estimation) → « Valider… » → « Confirmer la validation » (case de dérogation pour
+   une revue manuelle).
+3. **Lecteur** : `/ecran/<id du Porteur>` (ajouter `?datetime=AAAA-MM-JJTHH:mm:ss` pour simuler une
+   heure du créneau). Un message créé dans `/admin/urgences` (point + rayon, niveau d'urgence)
+   remplace la publicité pendant sa fenêtre.
+4. **Suivi** : `/espace/statistiques` et `/espace/campagnes/<id>` (affichages, clics, budget
+   consommé, export CSV), `/admin/statistiques`, `/admin/journal` (audit, décisions IA,
+   diffusions), `/admin/reservations` (conflits).
+
+## Limites connues
+
+Détail dans `docs/api-contract.md` §7 et écarts de réalisation dans
+`../docs/completion-contract.md` §6.
+
+- **Pas de réinitialisation du mot de passe par e-mail** : `/mot-de-passe-oublie` oriente vers
+  TPUB ; le changement de mot de passe se fait dans `/espace/profil`.
+- **Pas de jeton de rafraîchissement** : la session dure 24 h (bandeau 10 min avant la fin).
+- **Réseau non public** : la vitrine ne liste pas les Porteurs réels (contenu éditorial).
+- **OCR simulé** (texte déduit du nom de fichier) sauf si Tesseract est installé côté backend.
+- **Pas de temps réel** : le lecteur interroge l'API à la fin de chaque diffusion ; les pages du
+  back-office se rafraîchissent à la demande.
+- **Estimations** d'affichages et de coûts : constantes internes de simulation, toujours
+  étiquetées « Estimation » et jamais reprises sur la vitrine.
+- Hors périmètre : double authentification, zones polygonales, tarification dynamique,
+  apprentissage à partir des décisions de l'administrateur.
 
 ---
 

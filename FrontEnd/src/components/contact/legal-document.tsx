@@ -251,7 +251,7 @@ function LegalTableDesktop({
       // Scrollable region must be keyboard-reachable (WCAG 2.1.1, axe scrollable-region-focusable).
       // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={0}
-      className="hidden overflow-x-auto rounded-card border border-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text md:block"
+      className="relative hidden overflow-x-auto rounded-card border border-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text md:block"
     >
       <table className="w-full min-w-[560px] border-collapse text-left text-[0.875rem]">
         <caption className="sr-only">{caption}</caption>

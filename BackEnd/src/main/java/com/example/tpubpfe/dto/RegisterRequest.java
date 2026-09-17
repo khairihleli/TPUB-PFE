@@ -16,6 +16,7 @@ public class RegisterRequest {
 
     @NotBlank
     @Email
+    @Size(max = 255)
     private String email;
 
     @NotBlank
@@ -23,9 +24,15 @@ public class RegisterRequest {
     private String password;
 
     @NotBlank
+    @Size(max = 150)
     private String nom;
 
+    @Size(max = 200)
     private String societe;
+
+    @Size(max = 30)
     private String telephone;
+
+    @Size(max = 1000)
     private String adresse;
 }

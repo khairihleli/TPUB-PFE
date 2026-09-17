@@ -1,33 +1,159 @@
 package com.example.tpubpfe.service;
 
 import com.example.tpubpfe.dto.CampaignResponse;
+import com.example.tpubpfe.dto.CampaignZoneResponse;
+import com.example.tpubpfe.model.AiContentCheck;
 import com.example.tpubpfe.model.Campaign;
+import com.example.tpubpfe.model.CampaignZone;
+import com.example.tpubpfe.model.Client;
+import com.example.tpubpfe.model.DiffusionSupport;
+import com.example.tpubpfe.model.MediaFile;
+import com.example.tpubpfe.model.Reservation;
+import com.example.tpubpfe.model.ReservationStatus;
+import com.example.tpubpfe.repository.AiContentCheckRepository;
+import com.example.tpubpfe.repository.CampaignZoneRepository;
+import com.example.tpubpfe.repository.DiffusionSupportRepository;
+import com.example.tpubpfe.repository.MediaFileRepository;
+import com.example.tpubpfe.repository.ReservationRepository;
+import com.example.tpubpfe.service.storage.FileStorageService;
+import com.example.tpubpfe.util.GeoUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
-public final class CampaignMapper {
+import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
 
-    private CampaignMapper() {
+/**
+ * Builds the full {@link CampaignResponse} (contract §2.1). Reads media, reservations, zones and AI checks.
+ */
+@Component
+@RequiredArgsConstructor
+public class CampaignMapper {
+
+    static final Set<ReservationStatus> LIVE_RESERVATIONS = Set.of(ReservationStatus.TEMPORAIRE, ReservationStatus.CONFIRMEE);
+
+    private final MediaFileRepository mediaFileRepository;
+    private final ReservationRepository reservationRepository;
+    private final CampaignZoneRepository campaignZoneRepository;
+    private final AiContentCheckRepository aiContentCheckRepository;
+    private final DiffusionSupportRepository supportRepository;
+    private final FileStorageService fileStorageService;
+
+    public CampaignResponse toResponse(Campaign campaign) {
+        return toResponse(campaign, supportRepository.findAll());
     }
 
-    public static CampaignResponse toResponse(Campaign campaign) {
+    public List<CampaignResponse> toResponses(List<Campaign> campaigns) {
+        if (campaigns.isEmpty()) {
+            return List.of();
+        }
+        List<DiffusionSupport> supports = supportRepository.findAll();
+        return campaigns.stream().map(campaign -> toResponse(campaign, supports)).toList();
+    }
+
+    public List<CampaignZoneResponse> toZoneResponses(List<CampaignZone> zones) {
+        List<DiffusionSupport> supports = zones.isEmpty() ? List.of() : supportRepository.findAll();
+        return zones.stream().map(zone -> toZoneResponse(zone, supports)).toList();
+    }
+
+    CampaignResponse toResponse(Campaign campaign, List<DiffusionSupport> supports) {
+        Client client = campaign.getClient();
+        List<MediaFile> media = mediaFileRepository.findByCampaignId(campaign.getId()).stream()
+                .sorted(Comparator.comparing(MediaFile::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        List<Reservation> live = reservationRepository.findByCampaignId(campaign.getId()).stream()
+                .filter(r -> LIVE_RESERVATIONS.contains(r.getReservationStatus()))
+                .toList();
+        BigDecimal estimatedCost = live.stream()
+                .map(r -> r.getEstimatedCost() == null ? BigDecimal.ZERO : r.getEstimatedCost())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<CampaignZoneResponse> zones = campaignZoneRepository.findByCampaignIdOrderByIdAsc(campaign.getId()).stream()
+                .map(zone -> toZoneResponse(zone, supports))
+                .toList();
+        AiContentCheck check = campaign.getId() == null ? null
+                : aiContentCheckRepository.findTopByCampaignIdAndIsPreviewFalseOrderByCheckedAtDescIdDesc(campaign.getId())
+                .orElse(null);
+        BigDecimal budget = campaign.getBudget() == null ? BigDecimal.ZERO : campaign.getBudget();
+        BigDecimal consumed = campaign.getConsumedBudget() == null ? BigDecimal.ZERO : campaign.getConsumedBudget();
+        MediaFile first = media.isEmpty() ? null : media.get(0);
+
         return CampaignResponse.builder()
                 .id(campaign.getId())
-                .clientId(campaign.getClient().getId())
+                .clientId(client != null ? client.getId() : null)
+                .clientName(client != null && client.getUser() != null ? client.getUser().getNom() : null)
+                .clientCompanyName(client != null ? client.getCompanyName() : null)
+                .clientValidationStatus(client != null && client.getValidationStatus() != null
+                        ? client.getValidationStatus().name() : null)
                 .name(campaign.getName())
                 .objective(campaign.getObjective())
-                .budget(campaign.getBudget())
-                .consumedBudget(campaign.getConsumedBudget())
+                .budget(budget)
+                .consumedBudget(consumed)
+                .remainingBudget(budget.subtract(consumed).max(BigDecimal.ZERO))
+                .estimatedCost(estimatedCost)
                 .status(campaign.getStatus() != null ? campaign.getStatus().name() : null)
                 .aiStatus(campaign.getAiStatus() != null ? campaign.getAiStatus().name() : null)
                 .adminStatus(campaign.getAdminStatus() != null ? campaign.getAdminStatus().name() : null)
+                .aiOverride(Boolean.TRUE.equals(campaign.getAiOverride()))
                 .startDate(campaign.getStartDate())
                 .endDate(campaign.getEndDate())
                 .startTime(campaign.getStartTime())
                 .endTime(campaign.getEndTime())
                 .estimatedViews(campaign.getEstimatedViews())
                 .priorityScore(campaign.getPriorityScore())
+                .aiRiskScore(check != null ? check.getRiskScore().intValue() : null)
+                .aiQualityScore(check != null ? check.getQualityScore().intValue() : null)
+                .aiSector(check != null && check.getSector() != null ? check.getSector().name() : null)
+                .rejectionReason(campaign.getRejectionReason())
+                .adminComment(campaign.getAdminComment())
+                .terminationReason(campaign.getTerminationReason() != null ? campaign.getTerminationReason().name() : null)
+                .mediaUrl(first != null ? mediaUrl(first) : null)
+                .mediaType(first != null && first.getFileType() != null ? first.getFileType().name() : null)
+                .mediaCount(media.size())
+                .zones(zones)
+                .reservationsCount(live.size())
+                .duplicatedFromId(campaign.getDuplicatedFromId())
+                .editable(CampaignLifecycle.acceptsUpdate(campaign.getStatus()))
+                .submittable(CampaignLifecycle.isSubmittable(campaign.getStatus()))
+                .deletable(CampaignLifecycle.isDeletable(campaign.getStatus()))
                 .createdAt(campaign.getCreatedAt())
+                .updatedAt(campaign.getUpdatedAt())
                 .submittedAt(campaign.getSubmittedAt())
                 .validatedAt(campaign.getValidatedAt())
+                .activatedAt(campaign.getActivatedAt())
+                .terminatedAt(campaign.getTerminatedAt())
                 .build();
+    }
+
+    CampaignZoneResponse toZoneResponse(CampaignZone zone, List<DiffusionSupport> supports) {
+        double lat = zone.getLatitude().doubleValue();
+        double lng = zone.getLongitude().doubleValue();
+        double radius = zone.getRadiusKm().doubleValue();
+        long inside = supports.stream()
+                .filter(s -> s.getLatitude() != null && s.getLongitude() != null)
+                .filter(s -> GeoUtils.within(s.getLatitude().doubleValue(), s.getLongitude().doubleValue(), lat, lng, radius))
+                .count();
+        return CampaignZoneResponse.builder()
+                .id(zone.getId())
+                .zoneId(zone.getZone() != null ? zone.getZone().getId() : null)
+                .zoneName(zone.getZone() != null ? zone.getZone().getName() : null)
+                .label(zone.getLabel())
+                .latitude(zone.getLatitude())
+                .longitude(zone.getLongitude())
+                .radiusKm(zone.getRadiusKm())
+                .supportsInside(inside)
+                .build();
+    }
+
+    private String mediaUrl(MediaFile media) {
+        String path = media.getFilePath();
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("/")) {
+            return path;
+        }
+        return fileStorageService.publicUrl(path);
     }
 }

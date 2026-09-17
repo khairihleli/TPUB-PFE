@@ -3,10 +3,12 @@
 import {
   CalendarRange,
   ChartColumn,
+  FileClock,
   ChevronLeft,
   ChevronRight,
   Gauge,
   LayoutDashboard,
+  ListChecks,
   Lock,
   MapPinned,
   Megaphone,
@@ -16,6 +18,7 @@ import {
   ShieldCheck,
   Siren,
   UserRound,
+  UsersRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -50,7 +53,10 @@ import {
   ESPACE_NAV,
   groupNav,
   isNavActive,
+  navForRole,
+  roleCanOpen,
 } from "@/content/nav";
+import type { RoleCode } from "@/lib/api/types";
 import { ROLE_LABEL } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { routes } from "@/lib/routes";
@@ -66,6 +72,9 @@ const ICONS: Record<AppNavIcon, ComponentType<{ className?: string; "aria-hidden
   overview: Gauge,
   moderation: ShieldCheck,
   emergency: Siren,
+  users: UsersRound,
+  journal: FileClock,
+  rules: ListChecks,
 };
 
 export type AppShellVariant = "espace" | "admin";
@@ -75,8 +84,9 @@ export interface AppShellProps {
   children: ReactNode;
 }
 
-function navFor(variant: AppShellVariant): readonly AppNavItem[] {
-  return variant === "admin" ? ADMIN_NAV : ESPACE_NAV;
+/** Entries of the shell for a role (back-office entries are role-aware, contract §5 F3). */
+export function navFor(variant: AppShellVariant, role: RoleCode): readonly AppNavItem[] {
+  return variant === "admin" ? navForRole(ADMIN_NAV, role) : ESPACE_NAV;
 }
 
 /** Topbar create CTA (IA-12): "primary" on /espace and /espace/campagnes, "secondary" elsewhere, none in the wizard. */
@@ -101,9 +111,11 @@ function NavBadge({ item, badges }: { item: AppNavItem; badges: NavBadges }) {
   const tone =
     item.badgeKey === "coherence"
       ? "border-warning/30 bg-warning/12 text-warning"
-      : item.badgeKey === "emergencies"
-        ? "border-line-strong bg-surface-3 text-ink-soft"
-        : "border-orange-line bg-orange-soft text-brand-orange-text";
+      : item.badgeKey === "conflicts"
+        ? "border-danger/30 bg-danger/12 text-danger"
+        : item.badgeKey === "emergencies"
+          ? "border-line-strong bg-surface-3 text-ink-soft"
+          : "border-orange-line bg-orange-soft text-brand-orange-text";
   return (
     <span
       className={cx(
@@ -128,6 +140,7 @@ function SidebarNav({
   badges: NavBadges;
   onNavigate?: () => void;
 }) {
+  const { role } = useSession();
   return (
     <nav
       aria-label={
@@ -135,7 +148,7 @@ function SidebarNav({
       }
       className="flex flex-col gap-5"
     >
-      {groupNav(navFor(variant)).map((group) => (
+      {groupNav(navFor(variant, role)).map((group) => (
         <div key={group.group}>
           {group.group ? (
             <p className="mb-1.5 px-3.5 text-xs font-medium text-muted">{group.group}</p>
@@ -330,7 +343,10 @@ function SearchTrigger() {
 function GlobalShortcuts({ variant, pathname }: { variant: AppShellVariant; pathname: string }) {
   const guard = useNavigationGuard();
   const { openHelp } = useShortcutsHelp();
-  const sequences = NAV_SEQUENCES[variant];
+  const { role } = useSession();
+  const sequences = NAV_SEQUENCES[variant].filter(
+    (s) => variant !== "admin" || roleCanOpen(ADMIN_NAV, role, s.href),
+  );
   const inWizard = pathname.startsWith("/espace/campagnes/nouvelle");
 
   useShortcut("shift+?", () => openHelp(), {
@@ -489,7 +505,7 @@ function ShellFrame({
       </div>
 
       <MobileTabBar
-        items={navFor(variant)}
+        items={navFor(variant, role)}
         pathname={pathname}
         badges={badges}
         onMore={() => setDrawerOpen(true)}

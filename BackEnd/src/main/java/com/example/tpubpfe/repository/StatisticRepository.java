@@ -11,6 +11,9 @@ public interface StatisticRepository extends JpaRepository<Statistic, Long> {
 
     Optional<Statistic> findByStatDateAndCampaignIdIsNullAndSupportIdIsNullAndZoneIdIsNull(LocalDate statDate);
 
+    List<Statistic> findByStatDateBetweenAndCampaignIdIsNullAndSupportIdIsNullAndZoneIdIsNullOrderByStatDateAsc(
+            LocalDate from, LocalDate to);
+
     List<Statistic> findByStatDateBetween(LocalDate start, LocalDate end);
 
     List<Statistic> findByCampaignId(Long campaignId);

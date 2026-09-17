@@ -76,4 +76,23 @@ describe("LoginForm", () => {
     expect(screen.getByLabelText(/^Mot de passe/)).toHaveValue("mauvais-mdp");
     expect(router.replace).not.toHaveBeenCalled();
   });
+
+  it("explains a deactivated account from the ACCOUNT_DISABLED code", async () => {
+    login.mockRejectedValue(new ApiError(401, "Compte désactivé.", { code: "ACCOUNT_DISABLED" }));
+    render(<LoginForm next={null} expired={false} />);
+    fill("a@b.tn", "Demo@1234");
+    fireEvent.click(screen.getByRole("button", { name: /Se connecter/ }));
+    expect(
+      await screen.findByText(
+        "Ce compte est désactivé. Contactez l'équipe TPUB pour le réactiver.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("maps BAD_CREDENTIALS by code, whatever the status", async () => {
+    const { loginErrorMessage } = await import("@/components/auth/login-form");
+    expect(loginErrorMessage(new ApiError(400, "x", { code: "BAD_CREDENTIALS" }))).toBe(
+      "E-mail ou mot de passe incorrect.",
+    );
+  });
 });

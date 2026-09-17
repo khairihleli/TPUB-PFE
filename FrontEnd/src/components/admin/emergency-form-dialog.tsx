@@ -1,60 +1,61 @@
 "use client";
 
-import { ArrowLeft, CircleCheck, CircleX, MapPin, Siren } from "lucide-react";
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Eraser, MapPin, Siren } from "lucide-react";
+import { type FormEvent, useId, useMemo, useRef, useState } from "react";
 
 import {
-  createPerZone,
+  activeSupportsInCircle,
+  activeSupportsInZone,
+  CONTENT_MAX,
   DURATION_MAX,
   DURATION_MIN,
   EMERGENCY_FIELDS,
-  type EmergencyDraft,
   type EmergencyField,
   type EmergencyFormValues,
-  emergencyImpact,
-  emergencyRequests,
   emergencySchema,
   emptyEmergencyForm,
   isEmergencyFormDirty,
   normalizeEmergencyDraft,
-  PRIORITY_OPTIONS,
+  PRIORITY_MAX,
   priorityLabel,
+  RADIUS_MAX_KM,
+  RADIUS_MIN_KM,
   TITLE_MAX,
   TITLE_RECOMMENDED,
   URGENCY_LEVELS,
-  type ZonePostResult,
 } from "@/components/admin/emergency-schema";
 import {
   firstIssues,
   focusFirstInvalid,
   type FormErrors,
+  parseDecimal,
+  parseInteger,
   serverFieldErrors,
 } from "@/components/admin/form-utils";
+import { ZoneMapPicker } from "@/components/admin/zone-map-picker";
+import { urgencyTheme } from "@/components/player/urgency-theme";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { DateRangeField } from "@/components/ui/date-field";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { DraftRestoreNotice } from "@/components/ui/draft-restore-notice";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { StatusPill } from "@/components/ui/status-pill";
-import { TimeRangeField } from "@/components/ui/time-range-field";
 import { emergencyApi } from "@/lib/api/endpoints";
-import { ApiError, presentError } from "@/lib/api/errors";
-import type { EmergencyResponse, SupportResponse, ZoneResponse } from "@/lib/api/types";
+import { ApiError, hasErrorCode, presentError } from "@/lib/api/errors";
+import type {
+  EmergencyCreateRequest,
+  EmergencyResponse,
+  SupportResponse,
+  UrgencyLevel,
+  ZoneResponse,
+} from "@/lib/api/types";
 import { URGENCY_LEVEL } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
-import { formatDateRangeLong, formatTimeRange, fromApiTime, todayISO } from "@/lib/format";
+import { formatDateTime, formatNumber } from "@/lib/format";
 import { useFormDraft } from "@/lib/forms/form-draft";
 
 export const EMERGENCY_DRAFT_KEY = "admin:emergency:new";
-const DRAFT_VERSION = 2;
-
-export interface EmergencyCreated {
-  messages: EmergencyResponse[];
-  /** An active Porteur of the targeted zones, for « Vérifier sur un écran ». */
-  sampleSupportId: number | null;
-}
+const DRAFT_VERSION = 3;
 
 export function EmergencyFormDialog({
   open,
@@ -66,10 +67,9 @@ export function EmergencyFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   zones: readonly ZoneResponse[];
-  /** For the impact line (active Porteurs per zone). */
+  /** Porteurs drawn on the map and counted inside the circle. */
   supports?: readonly SupportResponse[];
-  /** Called once per submission with every message created (partial success included). */
-  onCreated: (result: EmergencyCreated) => void;
+  onCreated: (message: EmergencyResponse) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -85,52 +85,79 @@ export function EmergencyFormDialog({
   );
 }
 
-function ScreenPreview({
+/** Simulated street screen, coloured by urgency level like the player takeover. */
+export function EmergencyScreenPreview({
   title,
-  zone,
-  size = "sm",
+  content,
+  level,
+  place,
 }: {
   title: string;
-  zone: string | null;
-  size?: "sm" | "lg";
+  content: string;
+  level: UrgencyLevel;
+  place: string | null;
 }) {
-  const text = title.trim() || "Titre du message";
+  const theme = urgencyTheme(level);
   return (
     <figure className="flex flex-col gap-2">
-      {/* Simulated street screen (always red on dark): literal colours are the screen content. */}
       <div
         aria-hidden="true"
         className={cx(
-          "@container relative aspect-video overflow-hidden rounded-card bg-brand-red-600 shadow-lift",
-          size === "lg" && "w-full",
+          "@container relative aspect-video overflow-hidden rounded-card shadow-lift",
+          theme.ground,
         )}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(70%_80%_at_30%_35%,var(--color-brand-red),transparent_70%)]" />
-        <div className="absolute inset-[3cqw] rounded-[2cqw] border-[0.7cqw] border-on-brand/90" />
-        <div className="absolute inset-0 flex flex-col justify-between p-[8cqw]">
-          <span className="inline-flex items-center gap-[2cqw] font-label text-[max(12px,3.4cqw)] font-bold tracking-[0.16em] text-on-brand uppercase">
-            <span className="inline-flex size-[8cqw] items-center justify-center rounded-full bg-on-brand text-brand-red-600">
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(70% 80% at 30% 35%, ${theme.glow}, transparent 70%)`,
+          }}
+        />
+        <div
+          className={cx(
+            "absolute inset-[3cqw] rounded-[2cqw] border-[0.7cqw] opacity-90",
+            theme.frame,
+          )}
+        />
+        <div
+          className={cx(
+            "absolute inset-0 flex flex-col justify-between gap-[2cqw] p-[7cqw]",
+            theme.ink,
+          )}
+        >
+          <span className="inline-flex items-center gap-[2cqw] font-label text-[max(11px,3.4cqw)] font-bold tracking-[0.16em] uppercase">
+            <span
+              className={cx(
+                "inline-flex size-[8cqw] items-center justify-center rounded-full",
+                theme.disc,
+              )}
+            >
               <Siren className="size-[4.6cqw]" />
             </span>
-            Message prioritaire
+            {theme.kicker}
           </span>
-          <span className="line-clamp-3 font-display text-[9cqw] leading-[1.04] font-extrabold tracking-tight break-words text-on-brand">
-            {text}
+          <span className="flex min-h-0 flex-col gap-[1.5cqw]">
+            <span className="line-clamp-2 font-display text-[8cqw] leading-[1.04] font-extrabold tracking-tight break-words">
+              {title.trim() || "Titre du message"}
+            </span>
+            <span className="line-clamp-2 text-[max(11px,3.6cqw)] leading-snug font-medium break-words opacity-90">
+              {content.trim() || "Contenu affiché sous le titre."}
+            </span>
           </span>
-          <span className="inline-flex items-center gap-[1.4cqw] text-[max(12px,3.4cqw)] font-semibold text-on-brand">
+          <span className="inline-flex items-center gap-[1.4cqw] text-[max(11px,3.2cqw)] font-semibold">
             <MapPin className="size-[3.6cqw]" />
-            {zone ?? "Zone"}
+            {place ?? "Zone ciblée"}
           </span>
         </div>
       </div>
       <figcaption className="text-xs leading-snug text-muted">
-        Aperçu : sur les écrans, seul le titre est affiché, avec le nom de la zone.
+        Aperçu : titre et contenu sont affichés en plein écran sur les Porteurs ciblés.
       </figcaption>
     </figure>
   );
 }
 
-type Step = "edit" | "confirm" | "results";
+type Step = "edit" | "confirm";
 
 function EmergencyForm({
   zones,
@@ -141,293 +168,185 @@ function EmergencyForm({
   zones: readonly ZoneResponse[];
   supports: readonly SupportResponse[];
   onClose: () => void;
-  onCreated: (result: EmergencyCreated) => void;
+  onCreated: (message: EmergencyResponse) => void;
 }) {
-  const today = todayISO();
   const uid = useId().replace(/:/g, "");
   const formRef = useRef<HTMLFormElement>(null);
-  const allRef = useRef<HTMLInputElement>(null);
-  const [values, setValues] = useState<EmergencyFormValues>(() => emptyEmergencyForm(today));
+  const [values, setValues] = useState<EmergencyFormValues>(() => emptyEmergencyForm());
   const [errors, setErrors] = useState<FormErrors<EmergencyField>>({});
   const [step, setStep] = useState<Step>("edit");
-  const [draft, setDraft] = useState<EmergencyDraft | null>(null);
-  const [sending, setSending] = useState<string | null>(null);
-  const [results, setResults] = useState<ZonePostResult[] | null>(null);
+  const [body, setBody] = useState<EmergencyCreateRequest | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
-  const dirty = isEmergencyFormDirty(values, today);
+  const dirty = isEmergencyFormDirty(values);
   const saved = useFormDraft<EmergencyFormValues>({
     key: EMERGENCY_DRAFT_KEY,
     version: DRAFT_VERSION,
     value: values,
-    dirty: dirty && results === null,
-    onRestore: (v) => setValues(normalizeEmergencyDraft(v, today)),
+    dirty,
+    onRestore: (v) => setValues(normalizeEmergencyDraft(v)),
   });
 
   const sortedZones = useMemo(
     () => [...zones].sort((a, b) => a.name.localeCompare(b.name, "fr")),
     [zones],
   );
-  const activeByZone = useMemo(() => {
-    const m = new Map<number, number>();
-    for (const s of supports) {
-      if (s.technicalStatus === "ACTIF") m.set(s.zoneId, (m.get(s.zoneId) ?? 0) + 1);
-    }
-    return m;
-  }, [supports]);
-  const zoneName = (id: number | string) =>
-    zones.find((z) => String(z.id) === String(id))?.name ?? `Zone n° ${id}`;
+  const zoneName = (id: number | null | undefined) =>
+    id === null || id === undefined
+      ? null
+      : (zones.find((z) => z.id === id)?.name ?? `Zone n° ${id}`);
 
-  const allSelected = sortedZones.length > 0 && values.zoneIds.length === sortedZones.length;
-  const someSelected = values.zoneIds.length > 0 && !allSelected;
-  useEffect(() => {
-    if (allRef.current) allRef.current.indeterminate = someSelected;
-  }, [someSelected]);
+  const lat = parseDecimal(values.latitude);
+  const lng = parseDecimal(values.longitude);
+  const radius = parseDecimal(values.radiusKm);
+  const zoneId = parseInteger(values.zoneId);
+  const hasPoint = lat !== null && lng !== null;
+  const inCircle = activeSupportsInCircle(supports, lat, lng, radius);
+  const inZone = activeSupportsInZone(supports, zoneId);
+  const impact = hasPoint
+    ? `${formatNumber(inCircle)} Porteur${inCircle > 1 ? "s" : ""} actif${inCircle > 1 ? "s" : ""} dans le cercle`
+    : zoneId !== null
+      ? `${formatNumber(inZone)} Porteur${inZone > 1 ? "s" : ""} actif${inZone > 1 ? "s" : ""} dans la zone ${zoneName(zoneId)}`
+      : "Placez un point sur la carte ou choisissez une zone.";
+  const place = hasPoint
+    ? `${zoneName(zoneId) ?? "Cercle"} · ${values.radiusKm || "?"} km`
+    : zoneName(zoneId);
 
-  const impact = emergencyImpact(values.zoneIds, zones, supports, values.startDate, today);
-
-  const set = <K extends keyof EmergencyFormValues>(key: K, value: EmergencyFormValues[K]) => {
+  const set = <K extends EmergencyField>(key: K, value: string) => {
     setValues((v) => ({ ...v, [key]: value }));
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   };
+  const setPoint = (la: number, ln: number) => {
+    setValues((v) => ({ ...v, latitude: String(la), longitude: String(ln) }));
+    setErrors((e) => ({ ...e, latitude: undefined, longitude: undefined }));
+  };
 
-  const toggleZone = (id: string, on: boolean) =>
-    set(
-      "zoneIds",
-      on ? [...new Set([...values.zoneIds, id])] : values.zoneIds.filter((z) => z !== id),
-    );
+  const reset = () => {
+    setValues(emptyEmergencyForm());
+    setErrors({});
+  };
 
   const review = (e: FormEvent) => {
     e.preventDefault();
-    const parsed = emergencySchema(today).safeParse(values);
+    const parsed = emergencySchema(new Date()).safeParse(values);
     if (!parsed.success) {
       setErrors(firstIssues(parsed.error, EMERGENCY_FIELDS));
       focusFirstInvalid(formRef.current);
       return;
     }
     setErrors({});
-    setDraft(parsed.data);
+    setSendError(null);
+    setBody(parsed.data);
     setStep("confirm");
   };
 
-  const send = async (onlyZones?: readonly number[]) => {
-    if (!draft || sending) return;
-    const requests = emergencyRequests(draft).filter(
-      (r) => !onlyZones || onlyZones.includes(r.zoneId),
-    );
-    setSending(`0 sur ${requests.length}`);
-    const out = await createPerZone(
-      requests,
-      (body) => emergencyApi.create(body),
-      (done, total) => setSending(`${done} sur ${total}`),
-    );
-    setSending(null);
-    const merged = onlyZones
-      ? [...(results ?? []).filter((r) => !onlyZones.includes(r.zoneId)), ...out]
-      : out;
-    const created = out.flatMap((r) => (r.ok && r.message ? [r.message] : []));
-    const sample = emergencyImpact(
-      created.map((m) => m.zoneId),
-      zones,
-      supports,
-      draft.body.startDate,
-      today,
-    ).sampleSupportId;
-    if (created.length > 0) onCreated({ messages: created, sampleSupportId: sample });
-
-    if (merged.every((r) => r.ok)) {
+  const send = async () => {
+    if (!body || sending) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const created = await emergencyApi.create(body);
       saved.clear();
+      onCreated(created);
       onClose();
-      return;
+    } catch (err) {
+      setSending(false);
+      const mapped = serverFieldErrors(err, EMERGENCY_FIELDS);
+      if (hasErrorCode(err, "EMERGENCY_TARGET_REQUIRED")) {
+        mapped.latitude = presentError(err).message;
+      } else if (hasErrorCode(err, "INVALID_EMERGENCY_WINDOW")) {
+        mapped.endTime = presentError(err).message;
+      }
+      if (err instanceof ApiError && Object.keys(mapped).length > 0) {
+        setErrors(mapped);
+        setStep("edit");
+        focusFirstInvalid(formRef.current);
+        return;
+      }
+      setSendError(presentError(err).message);
     }
-    // Field errors from the backend (400) on a single-zone send go back to the form.
-    const firstError = out.find((r) => !r.ok)?.error;
-    if (
-      out.length === 1 &&
-      firstError instanceof ApiError &&
-      Object.keys(firstError.fieldErrors).length > 0
-    ) {
-      const mapped = serverFieldErrors(firstError, EMERGENCY_FIELDS);
-      if ("zoneId" in firstError.fieldErrors) mapped.zoneIds = firstError.fieldErrors.zoneId;
-      setErrors(mapped);
-      setResults(null);
-      setStep("edit");
-      focusFirstInvalid(formRef.current);
-      return;
-    }
-    saved.clear();
-    setResults(merged);
-    setStep("results");
   };
 
-  const failedZones = (results ?? []).filter((r) => !r.ok).map((r) => r.zoneId);
   const formId = `${uid}-emergency-form`;
   const titleLength = values.title.trim().length;
-  const startsToday = draft ? draft.body.startDate <= today : false;
 
-  const reset = () => {
-    setValues(emptyEmergencyForm(today));
-    setErrors({});
-  };
-
-  // ---------------------------------------------------------------------------------------
-  if (step === "results" && results) {
-    const okCount = results.filter((r) => r.ok).length;
-    return (
-      <DialogContent
-        size="lg"
-        title="Résultat de la diffusion"
-        description={`${okCount} message${okCount > 1 ? "s" : ""} programmé${okCount > 1 ? "s" : ""} sur ${results.length} zone${results.length > 1 ? "s" : ""}.`}
-        preventOutsideClose={sending !== null}
-        footer={
-          <>
-            <Button variant="ghost" onClick={onClose} disabled={sending !== null}>
-              Fermer
-            </Button>
-            {failedZones.length > 0 ? (
-              <Button
-                variant="primary"
-                loading={sending !== null}
-                loadingLabel="Nouvel essai en cours"
-                iconLeft={<Siren aria-hidden="true" />}
-                onClick={() => void send(failedZones)}
-              >
-                Réessayer {failedZones.length} zone{failedZones.length > 1 ? "s" : ""}
-              </Button>
-            ) : null}
-          </>
-        }
-      >
-        <ul
-          aria-label="Résultat par zone"
-          className="flex flex-col divide-y divide-line rounded-card border border-line pb-0"
-        >
-          {results.map((r) => (
-            <li key={r.zoneId} className="flex items-start gap-3 px-4 py-3">
-              {r.ok ? (
-                <CircleCheck aria-hidden="true" className="mt-0.5 size-4.5 shrink-0 text-success" />
-              ) : (
-                <CircleX aria-hidden="true" className="mt-0.5 size-4.5 shrink-0 text-danger" />
-              )}
-              <span className="flex min-w-0 flex-col">
-                <span className="font-label text-sm font-semibold text-ink-strong">
-                  {zoneName(r.zoneId)}
-                </span>
-                <span className={cx("text-[0.8125rem]", r.ok ? "text-muted" : "text-danger")}>
-                  {r.ok
-                    ? `Programmé (message n° ${r.message?.id ?? "?"})`
-                    : `Échec : ${presentError(r.error).message}`}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-        {sending ? (
-          <p role="status" className="mt-3 text-[0.8125rem] text-muted">
-            Envoi en cours : {sending}
-          </p>
-        ) : null}
-      </DialogContent>
-    );
-  }
-
-  if (step === "confirm" && draft) {
-    const zoneList = draft.zoneIds.map(zoneName);
-    const impactConfirm = emergencyImpact(
-      draft.zoneIds,
-      zones,
-      supports,
-      draft.body.startDate,
-      today,
-    );
+  if (step === "confirm" && body) {
+    const level = body.urgencyLevel ?? "HIGH";
+    const bodyZone = zoneName(body.zoneId ?? null);
+    const circle =
+      "latitude" in body && typeof body.latitude === "number" && typeof body.radiusKm === "number";
     return (
       <DialogContent
         size="lg"
         title="Confirmer la diffusion"
-        description="Vérifiez le message tel qu'il apparaîtra. Il passe avant toute publicité sur les Porteurs des zones choisies, pendant sa période."
-        dirty={sending === null}
-        onDiscard={() => {
-          saved.discard();
-          reset();
-        }}
-        preventOutsideClose={sending !== null}
+        description="Vérifiez le message tel qu'il apparaîtra. Pendant sa période, il passe avant toute publicité sur les Porteurs ciblés."
+        preventOutsideClose={sending}
         footer={
           <>
             <Button
               variant="ghost"
               onClick={() => setStep("edit")}
-              disabled={sending !== null}
+              disabled={sending}
               iconLeft={<ArrowLeft aria-hidden="true" />}
             >
               Modifier
             </Button>
             <Button
               variant="primary"
-              loading={sending !== null}
+              loading={sending}
               loadingLabel="Diffusion en cours"
               iconLeft={<Siren aria-hidden="true" />}
               onClick={() => void send()}
             >
-              {zoneList.length > 1
-                ? `Diffuser dans ${zoneList.length} zones`
-                : "Diffuser le message"}
+              Diffuser le message
             </Button>
           </>
         }
       >
         <div className="flex flex-col gap-5 pb-2">
-          {startsToday ? (
-            <Alert tone="warning" title="Diffusion immédiate" live="none">
-              La période commence aujourd&apos;hui : le message prend la main sur les écrans dès le
-              prochain appel des lecteurs.
-            </Alert>
-          ) : null}
-          <ScreenPreview title={draft.body.title} zone={zoneList[0] ?? null} size="lg" />
-          {impactConfirm.sentence ? (
-            <p className="text-sm font-medium text-ink-soft">{impactConfirm.sentence}</p>
-          ) : null}
+          {sendError ? <Alert tone="danger">{sendError}</Alert> : null}
+          <EmergencyScreenPreview
+            title={body.title}
+            content={body.content}
+            level={level}
+            place={place}
+          />
+          <p className="text-sm font-medium text-ink-soft">{impact}.</p>
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm min-[420px]:grid-cols-2">
             <div className="min-w-0 min-[420px]:col-span-2">
-              <dt className="text-[0.8125rem] font-medium text-muted">Zones</dt>
-              <dd className="mt-0.5 text-ink-strong">{zoneList.join(", ")}</dd>
-            </div>
-            <div>
-              <dt className="text-[0.8125rem] font-medium text-muted">Période</dt>
+              <dt className="text-[0.8125rem] font-medium text-muted">Cible</dt>
               <dd className="mt-0.5 text-ink-strong">
-                {formatDateRangeLong(draft.body.startDate, draft.body.endDate)}
+                {circle
+                  ? `Cercle de ${body.radiusKm} km${bodyZone ? ` · zone ${bodyZone}` : " · zone déterminée automatiquement"}`
+                  : `Zone ${bodyZone ?? "—"}`}
               </dd>
             </div>
             <div>
-              <dt className="text-[0.8125rem] font-medium text-muted">Heures</dt>
-              <dd className="mt-0.5 text-ink-soft">
-                {draft.body.startTime
-                  ? `${formatTimeRange(draft.body.startTime, draft.body.endTime ?? null)} (enregistrées, non appliquées)`
-                  : "Toute la journée"}
+              <dt className="text-[0.8125rem] font-medium text-muted">Début</dt>
+              <dd className="mt-0.5 text-ink-strong">
+                {formatDateTime(`${body.startDate}T${body.startTime ?? "00:00:00"}`)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[0.8125rem] font-medium text-muted">Fin (arrêt automatique)</dt>
+              <dd className="mt-0.5 text-ink-strong">
+                {formatDateTime(`${body.endDate}T${body.endTime ?? "23:59:59"}`)}
               </dd>
             </div>
             <div>
               <dt className="text-[0.8125rem] font-medium text-muted">Urgence</dt>
               <dd className="mt-0.5">
-                <StatusPill type="urgency" level={draft.body.urgencyLevel ?? "HIGH"} size="sm" />
+                <StatusPill type="urgency" level={level} size="sm" />
               </dd>
             </div>
             <div>
-              <dt className="text-[0.8125rem] font-medium text-muted">Priorité</dt>
-              <dd className="mt-0.5 text-ink-soft">{priorityLabel(draft.body.priority ?? 1)}</dd>
-            </div>
-            <div className="min-w-0 min-[420px]:col-span-2">
-              <dt className="text-[0.8125rem] font-medium text-muted">
-                Contenu détaillé (back-office)
-              </dt>
-              <dd className="mt-0.5 break-words whitespace-pre-line text-ink-soft">
-                {draft.body.content}
+              <dt className="text-[0.8125rem] font-medium text-muted">Priorité · durée</dt>
+              <dd className="mt-0.5 text-ink-soft">
+                {priorityLabel(body.priority ?? 1)} · {body.durationSeconds ?? 15} s par passage
               </dd>
             </div>
           </dl>
-          {sending ? (
-            <p role="status" className="text-[0.8125rem] text-muted">
-              Envoi en cours : {sending}
-            </p>
-          ) : null}
         </div>
       </DialogContent>
     );
@@ -437,7 +356,7 @@ function EmergencyForm({
     <DialogContent
       size="lg"
       title="Nouveau message prioritaire"
-      description="Pendant sa période, un message actif passe avant toute publicité sur les Porteurs de sa zone. Réservé aux informations d'intérêt général."
+      description="Pendant sa période, un message passe avant toute publicité sur les Porteurs ciblés, puis s'arrête automatiquement. Réservé aux informations d'intérêt général."
       dirty={dirty}
       onDiscard={() => {
         saved.discard();
@@ -470,19 +389,13 @@ function EmergencyForm({
           />
         ) : null}
 
-        {zones.length === 0 ? (
-          <Alert tone="info" title="Aucune zone" live="none">
-            Un message prioritaire cible une zone : créez d&apos;abord une zone dans Réseau.
-          </Alert>
-        ) : null}
-
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,15rem)]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
           <div className="flex flex-col gap-5">
             <Field
               label="Titre affiché"
               required
               id={`${uid}-title`}
-              hint={`Seul texte transmis aux écrans : ${TITLE_RECOMMENDED} caractères au plus pour rester lisible de loin.`}
+              hint={`${TITLE_RECOMMENDED} caractères au plus pour rester lisible de loin.`}
               error={errors.title}
             >
               <Input
@@ -501,86 +414,34 @@ function EmergencyForm({
               aria-live="polite"
             >
               {titleLength}/{TITLE_RECOMMENDED} caractères recommandés
-              {titleLength > TITLE_RECOMMENDED ? " · difficile à lire de loin" : ""}
             </p>
             <Field
-              label="Contenu détaillé (facultatif)"
-              hint="Pas encore affiché sur les écrans : conservé dans le back-office. Laissé vide, le titre est repris."
+              label="Contenu affiché"
+              required
+              hint="Une ou deux phrases affichées sous le titre."
               error={errors.content}
             >
               <Textarea
                 value={values.content}
-                maxLength={2000}
+                maxLength={CONTENT_MAX}
                 rows={3}
                 onChange={(e) => set("content", e.target.value)}
               />
             </Field>
           </div>
-          <ScreenPreview
+          <EmergencyScreenPreview
             title={values.title}
-            zone={
-              values.zoneIds.length === 1
-                ? zoneName(values.zoneIds[0] ?? "")
-                : values.zoneIds.length > 1
-                  ? `${values.zoneIds.length} zones`
-                  : null
+            content={values.content}
+            level={
+              (URGENCY_LEVELS as readonly string[]).includes(values.urgencyLevel)
+                ? (values.urgencyLevel as UrgencyLevel)
+                : "HIGH"
             }
+            place={place}
           />
         </div>
 
-        <div className="hairline" aria-hidden="true" />
-
-        <fieldset
-          className="flex flex-col gap-2"
-          aria-describedby={errors.zoneIds ? `${uid}-zones-error` : undefined}
-        >
-          <legend className="mb-1 font-label text-[0.8125rem] font-medium text-ink-soft">
-            Zones
-            <span aria-hidden="true" className="ml-0.5 text-brand-orange-text">
-              *
-            </span>
-          </legend>
-          {sortedZones.length > 0 ? (
-            <>
-              <Checkbox
-                ref={allRef}
-                label="Toutes les zones"
-                description={`${sortedZones.length} zone${sortedZones.length > 1 ? "s" : ""}`}
-                checked={allSelected}
-                aria-invalid={errors.zoneIds ? true : undefined}
-                onChange={(e) =>
-                  set("zoneIds", e.target.checked ? sortedZones.map((z) => String(z.id)) : [])
-                }
-              />
-              <div className="grid max-h-56 grid-cols-1 gap-x-4 overflow-y-auto rounded-card border border-line bg-overlay-inset px-3 sm:grid-cols-2">
-                {sortedZones.map((z) => {
-                  const active = activeByZone.get(z.id) ?? 0;
-                  return (
-                    <Checkbox
-                      key={z.id}
-                      label={`${z.name}${z.isActive ? "" : " (inactive)"}`}
-                      description={`${active} Porteur${active > 1 ? "s" : ""} actif${active > 1 ? "s" : ""}`}
-                      checked={values.zoneIds.includes(String(z.id))}
-                      onChange={(e) => toggleZone(String(z.id), e.target.checked)}
-                    />
-                  );
-                })}
-              </div>
-            </>
-          ) : null}
-          {errors.zoneIds ? (
-            <p id={`${uid}-zones-error`} className="text-[0.8125rem] text-danger">
-              {errors.zoneIds}
-            </p>
-          ) : null}
-          {impact.sentence ? (
-            <p className="text-[0.8125rem] font-medium text-ink-soft" aria-live="polite">
-              {impact.sentence}
-            </p>
-          ) : null}
-        </fieldset>
-
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 sm:grid-cols-3">
           <Field label="Niveau d'urgence" required error={errors.urgencyLevel}>
             <Select
               value={values.urgencyLevel}
@@ -593,112 +454,160 @@ function EmergencyForm({
               ))}
             </Select>
           </Field>
-          <div className="flex flex-col gap-2">
-            <span
-              id={`${uid}-priority-label`}
-              className="font-label text-[0.8125rem] font-medium text-ink-soft"
-            >
-              Priorité
-            </span>
-            <div
-              role="group"
-              aria-labelledby={`${uid}-priority-label`}
-              aria-describedby={`${uid}-priority-hint`}
-              className="grid grid-cols-2 gap-1 rounded-control border border-line-strong bg-overlay-inset p-1"
-            >
-              {PRIORITY_OPTIONS.map((o) => {
-                const pressed = values.priority === o.value;
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    aria-pressed={pressed}
-                    onClick={() => set("priority", o.value)}
-                    className={cx(
-                      "min-h-10 rounded-[9px] px-3 font-label text-[0.8125rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-blue-text",
-                      pressed
-                        ? "bg-surface-3 text-ink-strong shadow-lift"
-                        : "text-muted hover:text-ink",
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p id={`${uid}-priority-hint`} className="text-[0.8125rem] leading-snug text-muted">
-              Entre plusieurs messages en cours dans une zone, « Passe en premier » est diffusé
-              avant les autres.
-            </p>
-            {errors.priority ? (
-              <p className="text-[0.8125rem] text-danger">{errors.priority}</p>
-            ) : null}
-          </div>
+          <Field label="Priorité" required hint="1 = passe en premier" error={errors.priority}>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={PRIORITY_MAX}
+              step={1}
+              value={values.priority}
+              onChange={(e) => set("priority", e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Durée d'affichage (s)"
+            required
+            hint={`Entre ${DURATION_MIN} et ${DURATION_MAX} s`}
+            error={errors.durationSeconds}
+          >
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={DURATION_MIN}
+              max={DURATION_MAX}
+              step={1}
+              value={values.durationSeconds}
+              onChange={(e) => set("durationSeconds", e.target.value)}
+            />
+          </Field>
         </div>
 
         <fieldset className="flex flex-col gap-3">
           <legend className="mb-2 font-label text-[0.8125rem] font-semibold text-ink-strong">
-            Période de diffusion
+            Période de diffusion (heure de Tunis)
           </legend>
-          <DateRangeField
-            id={`${uid}-period`}
-            value={{ start: values.startDate, end: values.endDate }}
-            onChange={(v) => {
-              setValues((prev) => ({ ...prev, startDate: v.start, endDate: v.end }));
-              if (errors.startDate || errors.endDate) {
-                setErrors((e) => ({ ...e, startDate: undefined, endDate: undefined }));
-              }
-            }}
-            startLabel="Date de début"
-            endLabel="Date de fin"
-            required
-            presets={["1w", "2w"]}
-            errors={{ start: errors.startDate, end: errors.endDate }}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Date de début" required error={errors.startDate}>
+              <Input
+                type="date"
+                value={values.startDate}
+                onChange={(e) => set("startDate", e.target.value)}
+              />
+            </Field>
+            <Field label="Heure de début" required error={errors.startTime}>
+              <Input
+                type="time"
+                value={values.startTime}
+                onChange={(e) => set("startTime", e.target.value)}
+              />
+            </Field>
+            <Field label="Date de fin" required error={errors.endDate}>
+              <Input
+                type="date"
+                value={values.endDate}
+                min={values.startDate || undefined}
+                onChange={(e) => set("endDate", e.target.value)}
+              />
+            </Field>
+            <Field label="Heure de fin" required error={errors.endTime}>
+              <Input
+                type="time"
+                value={values.endTime}
+                onChange={(e) => set("endTime", e.target.value)}
+              />
+            </Field>
+          </div>
+          <p className="text-[0.8125rem] text-muted">
+            Le message s&apos;arrête automatiquement à la fin de la période.
+          </p>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-2 font-label text-[0.8125rem] font-semibold text-ink-strong">
+            Zone ciblée
+          </legend>
+          <ZoneMapPicker
+            name={values.title.trim() || "Message prioritaire"}
+            latitude={lat}
+            longitude={lng}
+            radiusKm={radius}
+            otherZones={zones}
+            supports={supports}
+            height="16rem"
+            ariaLabel="Carte : point et rayon du message prioritaire"
+            hint={
+              hasPoint
+                ? "Cliquez sur la carte pour déplacer le point, glissez la poignée pour ajuster le rayon."
+                : "Cliquez sur la carte pour placer le centre du message."
+            }
+            onPick={setPoint}
+            onRadius={(km) =>
+              set("radiusKm", String(Math.min(RADIUS_MAX_KM, Math.max(RADIUS_MIN_KM, km))))
+            }
           />
-          <TimeRangeField
-            id={`${uid}-hours`}
-            value={{ start: fromApiTime(values.startTime), end: fromApiTime(values.endTime) }}
-            onChange={(v) => {
-              setValues((prev) => ({ ...prev, startTime: v.start, endTime: v.end }));
-              if (errors.startTime || errors.endTime) {
-                setErrors((e) => ({ ...e, startTime: undefined, endTime: undefined }));
-              }
-            }}
-            startLabel="Heure de début (facultatif)"
-            endLabel="Heure de fin (facultatif)"
-            hint="Les lecteurs n'appliquent pas encore les heures : le message passe toute la journée sur sa période."
-            errors={{ start: errors.startTime, end: errors.endTime }}
-          />
-          {values.startTime || values.endTime ? (
+          <p
+            className={cx(
+              "text-[0.8125rem] font-medium",
+              hasPoint || zoneId !== null ? "text-ink-soft" : "text-muted",
+            )}
+            aria-live="polite"
+          >
+            {impact}
+          </p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Latitude" error={errors.latitude}>
+              <Input
+                inputMode="decimal"
+                value={values.latitude}
+                placeholder="36,8008"
+                onChange={(e) => set("latitude", e.target.value)}
+              />
+            </Field>
+            <Field label="Longitude" error={errors.longitude}>
+              <Input
+                inputMode="decimal"
+                value={values.longitude}
+                placeholder="10,1815"
+                onChange={(e) => set("longitude", e.target.value)}
+              />
+            </Field>
+            <Field label="Rayon (km)" error={errors.radiusKm}>
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={RADIUS_MIN_KM}
+                max={RADIUS_MAX_KM}
+                step={0.1}
+                value={values.radiusKm}
+                onChange={(e) => set("radiusKm", e.target.value)}
+              />
+            </Field>
+            <Field label="Zone (facultatif)" hint="Sans point : zone entière" error={errors.zoneId}>
+              <Select value={values.zoneId} onChange={(e) => set("zoneId", e.target.value)}>
+                <option value="">Automatique</option>
+                {sortedZones.map((z) => (
+                  <option key={z.id} value={String(z.id)}>
+                    {z.name}
+                    {z.isActive ? "" : " (inactive)"}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          {hasPoint ? (
             <div>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setValues((prev) => ({ ...prev, startTime: "", endTime: "" }))}
+                iconLeft={<Eraser aria-hidden="true" />}
+                onClick={() => setValues((v) => ({ ...v, latitude: "", longitude: "" }))}
               >
-                Effacer les heures
+                Retirer le point (cibler la zone entière)
               </Button>
             </div>
           ) : null}
         </fieldset>
-
-        <Field
-          label="Durée d'affichage (secondes)"
-          hint={`Facultatif, entre ${DURATION_MIN} et ${DURATION_MAX} s. Par défaut : 15 s par passage.`}
-          error={errors.durationSeconds}
-          className="sm:max-w-xs"
-        >
-          <Input
-            type="number"
-            min={DURATION_MIN}
-            max={DURATION_MAX}
-            step={1}
-            inputMode="numeric"
-            placeholder="15"
-            value={values.durationSeconds}
-            onChange={(e) => set("durationSeconds", e.target.value)}
-          />
-        </Field>
       </form>
     </DialogContent>
   );

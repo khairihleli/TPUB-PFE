@@ -2,14 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { campaign, reservation, support, zone } from "@/components/espace/__tests__/fixtures";
 import { axisTicks, donutArcs, niceMax, percentOf } from "@/components/espace/chart-scale";
-import {
-  loadCampaignsWithReservationsSettled,
-  loadReservationsSettled,
-  mapWithLimit,
-} from "@/components/espace/espace-data";
-import type * as Endpoints from "@/lib/api/endpoints";
-import { ApiError } from "@/lib/api/errors";
-import { clearResourceCache } from "@/lib/resource-cache";
+import { loadNetworkCatalogue } from "@/components/espace/espace-data";
 import { splitTND } from "@/components/espace/espace-ui";
 import {
   filterSupports,
@@ -17,9 +10,9 @@ import {
   presentValues,
   summarizeZones,
 } from "@/components/espace/network-model";
-import { formatTND } from "@/lib/format";
 import {
   activeScopeFilterCount,
+  campaignOptions,
   countByStatus,
   DEFAULT_RESERVATION_SORT,
   filterReservationRows,
@@ -27,34 +20,51 @@ import {
   joinReservations,
   reservationSortCaption,
   reservationSortValue,
+  reservationSummary,
   sortReservationRows,
   zoneOptions,
 } from "@/components/espace/reservations-model";
+import {
+  campaignRows,
+  formatRate,
+  parsePeriodPreset,
+  periodRange,
+} from "@/components/espace/statistics-model";
 import { sortRows } from "@/components/ui/data-table";
+import type * as Endpoints from "@/lib/api/endpoints";
+import { formatTND } from "@/lib/format";
+import { clearResourceCache } from "@/lib/resource-cache";
 
-const api = vi.hoisted(() => ({ mine: vi.fn(), byCampaign: vi.fn() }));
+const api = vi.hoisted(() => ({ zonesActive: vi.fn(), supportsAll: vi.fn() }));
 
 vi.mock("@/lib/api/endpoints", async (importOriginal) => {
   const actual = await importOriginal<typeof Endpoints>();
   return {
     ...actual,
-    campaignsApi: { ...actual.campaignsApi, mine: api.mine },
-    reservationsApi: { ...actual.reservationsApi, byCampaign: api.byCampaign },
+    zonesApi: { ...actual.zonesApi, active: api.zonesActive },
+    supportsApi: { ...actual.supportsApi, all: api.supportsAll },
   };
 });
 
 beforeEach(() => {
   clearResourceCache();
-  api.mine.mockReset();
-  api.byCampaign.mockReset();
+  api.zonesActive.mockReset();
+  api.supportsAll.mockReset();
 });
 
 describe("reservations model", () => {
-  const campaigns = [campaign({ id: 1, name: "Rentrée" }), campaign({ id: 2, name: "Été" })];
-  const supports = [support({ id: 10, name: "Écran Bourguiba", zoneName: "Tunis Centre" })];
-  const zones = [zone({ id: 1, name: "Tunis Centre" }), zone({ id: 2, name: "La Marsa" })];
+  const campaigns = [campaign({ id: 1, name: "Rentrée" })];
+  const bourguiba = { supportName: "Écran Bourguiba", supportType: "ECRAN" as const };
   const reservations = [
-    reservation({ id: 1, campaignId: 1, supportId: 10, zoneId: 1, startDate: "2026-11-01" }),
+    reservation({
+      id: 1,
+      campaignId: 1,
+      supportId: 10,
+      zoneId: 1,
+      startDate: "2026-11-01",
+      zoneName: "Tunis Centre",
+      ...bourguiba,
+    }),
     reservation({
       id: 2,
       campaignId: 2,
@@ -62,13 +72,23 @@ describe("reservations model", () => {
       zoneId: 2,
       startDate: "2026-10-01",
       reservationStatus: "CONFIRMEE",
+      campaignName: "Été",
+      zoneName: "La Marsa",
     }),
-    reservation({ id: 3, campaignId: 2, supportId: 10, zoneId: 1, reservationStatus: "ANNULEE" }),
-    reservation({ id: 4, campaignId: 42, supportId: 10, zoneId: 1 }), // not ours
+    reservation({
+      id: 3,
+      campaignId: 2,
+      supportId: 10,
+      zoneId: 1,
+      reservationStatus: "ANNULEE",
+      campaignName: "Été",
+      zoneName: "Tunis Centre",
+      ...bourguiba,
+    }),
   ];
 
-  it("joins names and falls back to numbered labels", () => {
-    const rows = joinReservations(reservations, campaigns, supports, zones);
+  it("uses the names carried by v2 reservations and falls back to numbered labels", () => {
+    const rows = joinReservations(reservations, campaigns);
     expect(rows).toHaveLength(3);
     expect(rows[0]).toMatchObject({
       campaignName: "Rentrée",
@@ -77,13 +97,29 @@ describe("reservations model", () => {
       zoneName: "Tunis Centre",
     });
     expect(rows[1]).toMatchObject({ supportName: "Porteur n° 99", supportType: null });
+    expect(joinReservations([reservation({ id: 9, campaignId: 7, zoneId: 3 })])[0]).toMatchObject({
+      campaignName: "Campagne n° 7",
+      zoneName: "Zone n° 3",
+    });
+  });
 
-    const noLookups = joinReservations(reservations, campaigns, null, null);
-    expect(noLookups[1]?.zoneName).toBe("Zone n° 2");
+  it("summarises holding slots and their estimated cost (millimes)", () => {
+    const rows = joinReservations([
+      reservation({ id: 1, campaignId: 1, estimatedCost: 0.1 }),
+      reservation({ id: 2, campaignId: 1, estimatedCost: 0.2, reservationStatus: "CONFIRMEE" }),
+      reservation({ id: 3, campaignId: 1, estimatedCost: 50, reservationStatus: "EXPIREE" }),
+    ]);
+    expect(reservationSummary(rows)).toEqual({
+      holding: 2,
+      temporary: 1,
+      confirmed: 1,
+      estimatedCost: 0.3,
+    });
+    expect(campaignOptions(rows)).toEqual([{ id: 1, name: "Campagne n° 1" }]);
   });
 
   it("filters by status, campaign and zone, and counts by status", () => {
-    const rows = joinReservations(reservations, campaigns, supports, zones);
+    const rows = joinReservations(reservations, campaigns);
     expect(
       filterReservationRows(rows, { status: "CONFIRMEE", campaignId: null, zoneId: null }),
     ).toHaveLength(1);
@@ -105,7 +141,7 @@ describe("reservations model", () => {
   });
 
   it("sorts holding slots first, soonest first", () => {
-    const rows = sortReservationRows(joinReservations(reservations, campaigns, supports, zones));
+    const rows = sortReservationRows(joinReservations(reservations, campaigns));
     expect(rows.map((r) => r.reservation.id)).toEqual([2, 1, 3]);
   });
 
@@ -135,10 +171,8 @@ describe("reservations model", () => {
           startDate: "2026-10-15",
           estimatedCost: 120,
         }),
-      ],
+      ].map((r) => (r.supportId === 10 ? { ...r, supportName: "Écran Bourguiba" } : r)),
       campaigns,
-      supports,
-      zones,
     );
     const columns = (["periode", "cout", "porteur", "statut"] as const).map((key) => ({
       key,
@@ -160,50 +194,78 @@ describe("reservations model", () => {
   });
 });
 
-describe("settled loaders (partial failure)", () => {
-  it("keeps successful reservation lists and records failed campaigns", async () => {
-    api.mine.mockResolvedValue([campaign({ id: 1 }), campaign({ id: 2 }), campaign({ id: 3 })]);
-    api.byCampaign.mockImplementation((id: number) =>
-      id === 2
-        ? Promise.reject(new ApiError(502, "Le service TPUB est momentanément indisponible."))
-        : Promise.resolve([reservation({ id: id * 10, campaignId: id })]),
-    );
-    const result = await loadCampaignsWithReservationsSettled(new AbortController().signal);
-    expect(result.campaigns.map((c) => c.id)).toEqual([1, 2, 3]);
-    expect(result.failedCampaignIds).toEqual([2]);
-    expect(result.reservations.map((r) => r.id)).toEqual([10, 30]);
-    expect([...result.reservationsByCampaign.keys()]).toEqual([1, 3]);
+describe("statistics model", () => {
+  const TODAY = "2026-09-17";
+
+  it("computes preset ranges ending today", () => {
+    expect(periodRange("7", { from: "", to: "" }, TODAY)).toEqual({
+      ok: true,
+      range: { from: "2026-09-11", to: TODAY },
+    });
+    expect(periodRange("90", { from: "", to: "" }, TODAY)).toMatchObject({
+      range: { from: "2026-06-20" },
+    });
   });
 
-  it("rejects only when /mine fails", async () => {
-    api.mine.mockRejectedValue(new ApiError(502, "Indisponible"));
-    await expect(
-      loadCampaignsWithReservationsSettled(new AbortController().signal),
-    ).rejects.toBeInstanceOf(ApiError);
+  it("validates a custom range (complete, ordered, at most 366 days)", () => {
+    expect(periodRange("perso", { from: "", to: "2026-09-01" }, TODAY)).toMatchObject({
+      ok: false,
+    });
+    expect(periodRange("perso", { from: "2026-09-10", to: "2026-09-01" }, TODAY)).toMatchObject({
+      ok: false,
+      message: "La date de fin doit suivre la date de début.",
+    });
+    expect(periodRange("perso", { from: "2024-01-01", to: "2026-01-01" }, TODAY)).toMatchObject({
+      ok: false,
+    });
+    expect(periodRange("perso", { from: "2026-09-01", to: "2026-09-10" }, TODAY)).toEqual({
+      ok: true,
+      range: { from: "2026-09-01", to: "2026-09-10" },
+    });
   });
 
-  it("serves successful lists from the 30 s cache and retries only the failures", async () => {
-    let fail = true;
-    api.byCampaign.mockImplementation((id: number) =>
-      id === 2 && fail
-        ? Promise.reject(new ApiError(500, "Erreur"))
-        : Promise.resolve([reservation({ id, campaignId: id })]),
-    );
-    const list = [campaign({ id: 1 }), campaign({ id: 2 })];
-    const first = await loadReservationsSettled(list, new AbortController().signal);
-    expect(first.failedCampaignIds).toEqual([2]);
-    fail = false;
-    const retry = await loadReservationsSettled(list, new AbortController().signal);
-    expect(retry.failedCampaignIds).toEqual([]);
-    expect(api.byCampaign.mock.calls.map((c: unknown[]) => c[0] as number)).toEqual([1, 2, 2]);
+  it("parses the preset param with a 30-day default", () => {
+    expect(parsePeriodPreset("90")).toBe("90");
+    expect(parsePeriodPreset("365")).toBe("30");
+    expect(parsePeriodPreset(null)).toBe("30");
   });
 
-  it("rethrows aborts", async () => {
-    const controller = new AbortController();
-    api.byCampaign.mockImplementation(() => new Promise(() => undefined));
-    const pending = loadReservationsSettled([campaign({ id: 1 })], controller.signal);
-    controller.abort();
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  it("sorts campaign rows by views then name and formats the click rate", () => {
+    const row = (campaignId: number, name: string, views: number) => ({
+      campaignId,
+      name,
+      status: "ACTIVE" as const,
+      views,
+      clicks: 0,
+      interactions: 0,
+      estimatedViews: 0,
+      estimatedCost: 0,
+      budget: 0,
+      consumedBudget: 0,
+    });
+    const rows = campaignRows({
+      byCampaign: [row(1, "Zèbre", 5), row(2, "Abeille", 5), row(3, "Mouette", 9)],
+    });
+    expect(rows.map((r) => r.campaignId)).toEqual([3, 2, 1]);
+    expect(formatRate(0, 3)).toBe("—");
+    expect(formatRate(400, 5)).toMatch(/^1,25\s?%$/);
+  });
+});
+
+describe("loadNetworkCatalogue", () => {
+  it("keeps Porteurs of active zones, sorted by zone then name", async () => {
+    api.zonesActive.mockResolvedValue([
+      zone({ id: 2, name: "Sousse" }),
+      zone({ id: 1, name: "Ariana" }),
+    ]);
+    api.supportsAll.mockResolvedValue([
+      support({ id: 1, zoneId: 2, zoneName: "Sousse", name: "B" }),
+      support({ id: 2, zoneId: 1, zoneName: "Ariana", name: "C" }),
+      support({ id: 3, zoneId: 9, zoneName: "Fermée", name: "A" }),
+    ]);
+    const catalogue = await loadNetworkCatalogue(new AbortController().signal);
+    expect(catalogue.zones.map((z) => z.name)).toEqual(["Ariana", "Sousse"]);
+    expect(catalogue.supports.map((s) => s.id)).toEqual([2, 1]);
   });
 });
 
@@ -264,23 +326,6 @@ describe("chart scale", () => {
     // a single visible segment closes the ring without a gap
     expect(donutArcs([0, 5], 100, 2)[1]?.length).toBe(100);
     expect(donutArcs([0, 0], 100, 2).every((a) => a.length === 0)).toBe(true);
-  });
-});
-
-describe("mapWithLimit", () => {
-  it("keeps order and never exceeds the concurrency limit", async () => {
-    let inFlight = 0;
-    let peak = 0;
-    const out = await mapWithLimit([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
-      inFlight += 1;
-      peak = Math.max(peak, inFlight);
-      await new Promise((r) => setTimeout(r, (8 - n) * 2));
-      inFlight -= 1;
-      return n * 10;
-    });
-    expect(out).toEqual([10, 20, 30, 40, 50, 60, 70]);
-    expect(peak).toBeLessThanOrEqual(3);
-    expect(await mapWithLimit([], 4, (n: number) => Promise.resolve(n))).toEqual([]);
   });
 });
 

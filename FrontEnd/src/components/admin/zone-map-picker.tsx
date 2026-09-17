@@ -25,6 +25,9 @@ export function ZoneMapPicker({
   supports,
   onPick,
   onRadius,
+  ariaLabel = "Carte de positionnement de la zone",
+  hint,
+  height = "15rem",
 }: {
   name: string;
   latitude: number | null;
@@ -36,6 +39,10 @@ export function ZoneMapPicker({
   supports: readonly SupportResponse[];
   onPick: (lat: number, lng: number) => void;
   onRadius: (km: number) => void;
+  ariaLabel?: string;
+  /** Replaces the default caption under the map. */
+  hint?: string;
+  height?: string;
 }) {
   const hasPoint = latitude !== null && longitude !== null;
 
@@ -66,8 +73,8 @@ export function ZoneMapPicker({
         supports={supportList}
         activeZoneId={hasPoint ? DRAFT_ZONE_ID : null}
         focusZoneId={null}
-        height="15rem"
-        ariaLabel="Carte de positionnement de la zone"
+        height={height}
+        ariaLabel={ariaLabel}
         onMapClick={(p) => onPick(roundCoord(p.lat), roundCoord(p.lng))}
         onZoneRadiusChange={(zoneId, km) => {
           if (zoneId === DRAFT_ZONE_ID) onRadius(clampRadiusKm(km));
@@ -75,9 +82,10 @@ export function ZoneMapPicker({
       />
       <p className="flex items-center gap-1.5 text-[0.75rem] text-muted">
         <Crosshair aria-hidden="true" className="size-3.5 shrink-0 text-brand-orange-text" />
-        {latitude !== null && longitude !== null
-          ? `Centre : ${formatCoordinates(latitude, longitude)}. Cliquez sur la carte pour le déplacer${radiusKm ? ", glissez la poignée pour ajuster le rayon" : ""}.`
-          : "Cliquez sur la carte pour placer le centre de la zone, ou saisissez les coordonnées."}
+        {hint ??
+          (latitude !== null && longitude !== null
+            ? `Centre : ${formatCoordinates(latitude, longitude)}. Cliquez sur la carte pour le déplacer${radiusKm ? ", glissez la poignée pour ajuster le rayon" : ""}.`
+            : "Cliquez sur la carte pour placer le centre de la zone, ou saisissez les coordonnées.")}
       </p>
     </div>
   );

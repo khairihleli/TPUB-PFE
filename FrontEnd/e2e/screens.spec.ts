@@ -163,14 +163,9 @@ const NETWORK_SHOTS: readonly InteractiveShot[] = [
   {
     slug: "assistant-carte",
     persona: "annonceur",
-    path: "/espace/campagnes/nouvelle?id=1&etape=2",
-    arrange: async (page) => {
-      await page
-        .getByRole("group", { name: "Affichage des écrans" })
-        .getByRole("button", { name: "Carte" })
-        .click();
-      await waitForMap(page, "Carte des Porteurs réservables pour la campagne");
-    },
+    path: "/espace/campagnes/nouvelle?id=1&etape=3",
+    arrange: (page) =>
+      waitForMap(page, "Carte de ciblage : cliquez pour placer ou déplacer la zone"),
   },
   {
     slug: "admin-reseau-carte",

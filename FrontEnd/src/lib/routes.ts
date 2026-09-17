@@ -18,22 +18,39 @@ export function withQuery(path: string, query: Record<string, QueryValue> = {}):
   return qs ? `${path}?${qs}` : path;
 }
 
-export type WizardStep = "details" | "porteurs" | "verification";
+/**
+ * v2 wizard (contract §5 F1/F2): details → contenu → porteurs → verification (?etape=1..4).
+ */
+export type WizardStepV2 = "details" | "contenu" | "porteurs" | "verification";
 
-/** Wizard steps in the URL: details=1, porteurs=2, verification=3 (legacy 4 → 3). */
-export const WIZARD_STEP_NUMBER: Readonly<Record<WizardStep, 1 | 2 | 3>> = {
+export const WIZARD_V2_STEPS: readonly WizardStepV2[] = [
+  "details",
+  "contenu",
+  "porteurs",
+  "verification",
+];
+
+export const WIZARD_V2_STEP_NUMBER: Readonly<Record<WizardStepV2, 1 | 2 | 3 | 4>> = {
   details: 1,
-  porteurs: 2,
-  verification: 3,
+  contenu: 2,
+  porteurs: 3,
+  verification: 4,
 };
 
-/** `?etape=` → step. Accepts "1".."3", legacy "4" (→ verification) and step names. Default details. */
-export function parseWizardStepParam(raw: string | number | null | undefined): WizardStep {
+/** `?etape=` → v2 step. Accepts "1".."4" and step names. Default details. */
+export function parseWizardStepV2Param(raw: string | number | null | undefined): WizardStepV2 {
   const value = typeof raw === "number" ? String(raw) : (raw ?? "").trim();
-  if (value === "2" || value === "porteurs") return "porteurs";
-  if (value === "3" || value === "4" || value === "verification") return "verification";
-  return "details";
+  const byName = WIZARD_V2_STEPS.find((s) => s === value);
+  if (byName) return byName;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 4
+    ? (WIZARD_V2_STEPS[n - 1] as WizardStepV2)
+    : "details";
 }
+
+export type AdminUsersTab = "annonceurs" | "equipe";
+export type AdminJournalTab = "audit" | "decisions-ia" | "diffusions";
+export type AdminReservationsTab = "toutes" | "conflits";
 
 export type ModerationTab = "a-traiter" | "revue" | "ia" | "toutes";
 export type AdminNetworkTab = "carte" | "ecrans" | "zones";
@@ -57,14 +74,22 @@ export const routes = {
       }),
     campaign: (id: number) => `/espace/campagnes/${id}`,
     campaignEdit: (id: number) => `/espace/campagnes/${id}/modifier`,
-    /** `wizard(null)` → new campaign; `wizard(7, "porteurs")` → ?id=7&etape=2. Numbers 1–4 accepted. */
-    wizard: (id: number | null, step?: WizardStep | 1 | 2 | 3 | 4) =>
+    /** `wizard(null)` → new campaign; `wizard(7, "porteurs")` → ?id=7&etape=3. Numbers 1–4 accepted. */
+    wizard: (id: number | null, step?: WizardStepV2 | 1 | 2 | 3 | 4) =>
       withQuery("/espace/campagnes/nouvelle", {
         id: id ?? undefined,
         etape:
           step === undefined
             ? undefined
-            : WIZARD_STEP_NUMBER[typeof step === "number" ? parseWizardStepParam(step) : step],
+            : WIZARD_V2_STEP_NUMBER[
+                typeof step === "number" ? parseWizardStepV2Param(step) : step
+              ],
+      }),
+    /** Same as `wizard` with a step name: `campaignWizard(7, "contenu")` → ?id=7&etape=2. */
+    campaignWizard: (id: number | null, step?: WizardStepV2) =>
+      withQuery("/espace/campagnes/nouvelle", {
+        id: id ?? undefined,
+        etape: step === undefined ? undefined : WIZARD_V2_STEP_NUMBER[step],
       }),
     reservations: (q?: {
       statut?: ReservationStatus;
@@ -100,6 +125,25 @@ export const routes = {
     network: (q?: { onglet?: AdminNetworkTab; porteur?: number; panneau?: "coherence" }) =>
       withQuery("/admin/reseau", { onglet: q?.onglet, porteur: q?.porteur, panneau: q?.panneau }),
     emergencies: () => "/admin/urgences",
+    users: (q?: { onglet?: AdminUsersTab; q?: string; utilisateur?: number }) =>
+      withQuery("/admin/utilisateurs", {
+        onglet: q?.onglet === "annonceurs" ? undefined : q?.onglet,
+        q: q?.q,
+        utilisateur: q?.utilisateur,
+      }),
+    journal: (q?: { onglet?: AdminJournalTab; campagne?: number }) =>
+      withQuery("/admin/journal", {
+        onglet: q?.onglet === "audit" ? undefined : q?.onglet,
+        campagne: q?.campagne,
+      }),
+    aiRules: () => "/admin/regles-ia",
+    reservations: (q?: { onglet?: AdminReservationsTab; campagne?: number; porteur?: number }) =>
+      withQuery("/admin/reservations", {
+        onglet: q?.onglet === "toutes" ? undefined : q?.onglet,
+        campagne: q?.campagne,
+        porteur: q?.porteur,
+      }),
+    statistics: () => "/admin/statistiques",
   },
   player: (supportId: number) => `/ecran/${supportId}`,
 } as const;

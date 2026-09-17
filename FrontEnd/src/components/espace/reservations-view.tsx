@@ -2,43 +2,46 @@
 
 import { Box, CalendarRange, SearchX, X } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
-import { loadNetworkLookups, type NetworkLookups } from "@/components/espace/espace-data";
 import { Amount, EstimateTag } from "@/components/espace/espace-ui";
-import { computeAdvertiserKpis } from "@/components/espace/kpis";
 import {
   activeScopeFilterCount,
-  isFiltering,
+  campaignOptions,
   countByStatus,
   DEFAULT_RESERVATION_SORT,
   filterByScope,
   filterReservationRows,
+  isFiltering,
   joinReservations,
   RESERVATION_SORT_KEYS,
   RESERVATION_SORT_OPTIONS,
   RESERVATION_STATUSES,
   reservationSortCaption,
   reservationSortValue,
+  reservationSummary,
   type ReservationRow,
   zoneOptions,
 } from "@/components/espace/reservations-model";
-import { type AdvertiserData, useAdvertiserData } from "@/components/espace/use-advertiser-data";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
-import { Field, Select } from "@/components/ui/field";
+import { Field, Select, Textarea } from "@/components/ui/field";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
-import { PartialNotice } from "@/components/ui/partial-notice";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RESERVATION_STATUS } from "@/lib/campaign-status";
+import { useToast } from "@/components/ui/toast";
+import { reservationsApi } from "@/lib/api/endpoints";
+import type { ReservationResponse } from "@/lib/api/types";
+import { canCancelReservation, RESERVATION_STATUS } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { formatCount, formatDateRange, formatEstimate, formatTimeRange } from "@/lib/format";
+import { fetchCached, invalidate, resourceKeys } from "@/lib/resource-cache";
 import { routes } from "@/lib/routes";
 import { param, parseSortParam, serializeSort, useTableSort, useUrlState } from "@/lib/url-state";
 import { useDismissible } from "@/lib/use-dismissible";
@@ -50,21 +53,35 @@ const URL_SCHEMA = {
   zone: param.id(),
 };
 
-/** Plural tile labels (glossary: TEMPORAIRE « Bloqué », CONFIRMEE « Confirmé »). */
 const STATUS_TABS = [
   { value: "toutes", label: "Toutes" },
   ...RESERVATION_STATUSES.map((s) => ({ value: s, label: RESERVATION_STATUS[s].label })),
 ] as const;
 
-/** Must render under <Suspense> (URL state). */
+/** Cancel reason sent to the backend (≤ 255 characters). */
+export const CANCEL_REASON_MAX = 255;
+
+/** `/reservations/mine` through the shared cache (invalidated after any booking change). */
+export function loadMyReservations(
+  signal: AbortSignal,
+  options: { force?: boolean } = {},
+): Promise<ReservationResponse[]> {
+  return fetchCached(resourceKeys.reservationsMine, (s) => reservationsApi.mine({ signal: s }), {
+    signal,
+    force: options.force,
+  });
+}
+
+/**
+ * /espace/reservations — GET /reservations/mine (every status, EXPIREE and ANNULEE included),
+ * filters in the URL, cancellation of TEMPORAIRE slots when the backend says `cancellable`.
+ * Must render under <Suspense> (URL state).
+ */
 export function ReservationsView() {
-  const data = useAdvertiserData();
-  const lookups = useResource("espace:lookups", loadNetworkLookups);
-  const lookupsFailed = lookups.data === undefined && Boolean(lookups.error);
-  const resolvedLookups = useMemo<NetworkLookups | undefined>(
-    () => lookups.data ?? (lookupsFailed ? { supports: null, zones: null } : undefined),
-    [lookups.data, lookupsFailed],
-  );
+  const resource = useResource("espace:reservations", (signal) => loadMyReservations(signal), {
+    cacheKey: resourceKeys.reservationsMine,
+  });
+  const { setData } = resource;
 
   return (
     <>
@@ -72,48 +89,56 @@ export function ReservationsView() {
         title="Réservations"
         description="Vos créneaux par Porteur et par zone, pour toutes vos campagnes."
       />
-      {data.campaigns ? (
-        <ReservationsContent data={data} lookups={resolvedLookups} />
-      ) : data.error ? (
-        <ErrorState error={data.error} onRetry={data.reload} />
+      {resource.data ? (
+        <ReservationsContent
+          reservations={resource.data}
+          refreshing={resource.loading}
+          onChanged={(updated) => {
+            setData((prev) => (prev ?? []).map((r) => (r.id === updated.id ? updated : r)));
+            invalidate(resourceKeys.reservationsByCampaign(updated.campaignId));
+            invalidate(resourceKeys.campaignsMine);
+            invalidate(resourceKeys.statisticsMine);
+          }}
+        />
+      ) : resource.error ? (
+        <ErrorState error={resource.error} onRetry={resource.reload} />
       ) : (
-        <ReservationsSkeleton slow={data.slow} onRetry={data.reload} />
+        <LoadingRegion
+          label="Chargement des réservations…"
+          slow={resource.slow}
+          onRetry={resource.reload}
+          className="flex flex-col gap-5"
+        >
+          <Skeleton className="h-20 rounded-card" />
+          <Skeleton className="h-11 w-full max-w-lg rounded-full" />
+          <Skeleton className="h-72 rounded-card" />
+        </LoadingRegion>
       )}
     </>
   );
 }
 
-function ReservationsSkeleton({ slow, onRetry }: { slow?: boolean; onRetry?: () => void }) {
-  return (
-    <LoadingRegion
-      label="Chargement des réservations…"
-      slow={slow}
-      onRetry={onRetry}
-      className="flex flex-col gap-5"
-    >
-      <Skeleton className="h-20 rounded-card" />
-      <Skeleton className="h-11 w-full max-w-lg rounded-full" />
-      <Skeleton className="h-72 rounded-card" />
-    </LoadingRegion>
-  );
-}
-
 function ReservationsContent({
-  data,
-  lookups,
+  reservations,
+  refreshing,
+  onChanged,
 }: {
-  data: AdvertiserData;
-  lookups: NetworkLookups | undefined;
+  reservations: readonly ReservationResponse[];
+  refreshing: boolean;
+  onChanged: (updated: ReservationResponse) => void;
 }) {
-  const campaigns = useMemo(() => data.campaigns ?? [], [data.campaigns]);
-  const reservations = data.reservations;
+  const { toast } = useToast();
   const [state, setState] = useUrlState(URL_SCHEMA);
   const { sort, setSort } = useTableSort("tri", {
     defaultSort: DEFAULT_RESERVATION_SORT,
     allowedKeys: RESERVATION_SORT_KEYS,
   });
   const [explainerDismissed, dismissExplainer] = useDismissible("hint:reservations-explainer");
+  const [cancelling, setCancelling] = useState<ReservationRow | null>(null);
+  const [reason, setReason] = useState("");
 
+  const rows = useMemo(() => joinReservations(reservations), [reservations]);
+  const campaigns = useMemo(() => campaignOptions(rows), [rows]);
   // Ids from the URL only filter the caller's own rows (never trusted for access).
   const campaignId =
     state.campagne !== null && campaigns.some((c) => c.id === state.campagne)
@@ -121,22 +146,7 @@ function ReservationsContent({
       : null;
   const filters = { status: state.statut, campaignId, zoneId: state.zone };
 
-  const rows = useMemo(
-    () =>
-      reservations
-        ? joinReservations(
-            reservations,
-            campaigns,
-            lookups?.supports ?? null,
-            lookups?.zones ?? null,
-          )
-        : [],
-    [reservations, campaigns, lookups],
-  );
-  const kpis = useMemo(
-    () => computeAdvertiserKpis(campaigns, reservations ?? []),
-    [campaigns, reservations],
-  );
+  const summary = useMemo(() => reservationSummary(rows), [rows]);
   const scoped = useMemo(
     () => filterByScope(rows, { campaignId, zoneId: state.zone }),
     [rows, campaignId, state.zone],
@@ -154,18 +164,15 @@ function ReservationsContent({
     return options;
   }, [rows, state.zone]);
 
-  const ready = reservations !== undefined && lookups !== undefined;
-  const namesMissing =
-    lookups !== undefined && (lookups.supports === null || lookups.zones === null);
   const activeCount = activeScopeFilterCount(filters);
   const reset = () => setState({ statut: null, campagne: null, zone: null });
 
-  if (ready && rows.length === 0 && !data.partial) {
+  if (rows.length === 0) {
     return (
       <EmptyState
         icon={<CalendarRange />}
         title="Aucun créneau réservé."
-        description="Les créneaux se réservent depuis une campagne : choisissez vos Porteurs sur sa période."
+        description="Les créneaux se réservent depuis une campagne : placez votre zone sur la carte puis choisissez vos Porteurs."
         action={
           <Button asChild variant="primary">
             <Link href={routes.espace.wizard(null)}>Créer une campagne</Link>
@@ -174,6 +181,23 @@ function ReservationsContent({
       />
     );
   }
+
+  const confirmCancel = async () => {
+    if (!cancelling) return;
+    const trimmed = reason.trim();
+    const updated = await reservationsApi.cancel(
+      cancelling.reservation.id,
+      trimmed ? trimmed.slice(0, CANCEL_REASON_MAX) : null,
+    );
+    onChanged(updated);
+    toast({
+      title: "Créneau libéré",
+      description: `${cancelling.supportName} · ${cancelling.campaignName}`,
+      variant: "success",
+    });
+    setCancelling(null);
+    setReason("");
+  };
 
   const columns: DataTableColumn<ReservationRow>[] = [
     {
@@ -248,7 +272,16 @@ function ReservationsContent({
       sortLabel: "statut",
       sortValue: (row) => reservationSortValue(row, "statut"),
       mobileMeta: true,
-      cell: (row) => <StatusPill type="reservation" status={row.reservation.reservationStatus} />,
+      cell: (row) => (
+        <span className="flex flex-col items-start gap-1">
+          <StatusPill type="reservation" status={row.reservation.reservationStatus} />
+          {row.reservation.reservationStatus === "ANNULEE" && row.reservation.cancelReason ? (
+            <span className="text-[0.75rem] text-muted">
+              Motif : {row.reservation.cancelReason}
+            </span>
+          ) : null}
+        </span>
+      ),
     },
     {
       key: "cout",
@@ -264,9 +297,10 @@ function ReservationsContent({
   ];
 
   const resultCount = formatCount(visible.length, "réservation", "réservations");
+  const filtering = isFiltering(filters);
 
   return (
-    <div className="flex flex-col gap-6" aria-busy={data.refreshing || undefined}>
+    <div className="flex flex-col gap-6" aria-busy={refreshing || undefined}>
       <section
         aria-labelledby="resa-summary"
         className="rounded-card border border-line bg-grad-card"
@@ -276,9 +310,9 @@ function ReservationsContent({
         </h2>
         <dl className="grid grid-cols-3 lg:grid-cols-[repeat(3,minmax(0,1fr))_minmax(0,1.7fr)]">
           {[
-            { label: "Créneaux actifs", value: kpis.holdingReservationCount },
-            { label: "Bloqués", value: kpis.reservationsByStatus.TEMPORAIRE },
-            { label: "Confirmés", value: kpis.reservationsByStatus.CONFIRMEE },
+            { label: "Créneaux actifs", value: summary.holding },
+            { label: "Bloqués", value: summary.temporary },
+            { label: "Confirmés", value: summary.confirmed },
           ].map((item, i) => (
             <div
               key={item.label}
@@ -289,7 +323,7 @@ function ReservationsContent({
             >
               <dt className="font-label text-[0.8125rem] font-medium text-muted">{item.label}</dt>
               <dd className="mt-1.5 font-display text-[1.5rem] leading-none font-semibold text-ink-strong tabular">
-                {ready ? item.value : <Skeleton className="h-6 w-8" />}
+                {item.value}
               </dd>
             </div>
           ))}
@@ -298,26 +332,14 @@ function ReservationsContent({
               Coût estimé des créneaux actifs
             </dt>
             <dd className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              {ready ? (
-                <Amount
-                  value={kpis.estimatedCost}
-                  className="font-display text-[1.5rem] leading-none font-semibold text-ink-strong"
-                />
-              ) : (
-                <Skeleton className="h-6 w-24" />
-              )}
+              <Amount
+                value={summary.estimatedCost}
+                className="font-display text-[1.5rem] leading-none font-semibold text-ink-strong"
+              />
               <EstimateTag />
             </dd>
           </div>
         </dl>
-        {data.partial ? (
-          <div className="border-t border-line px-4 py-3 sm:px-5">
-            <PartialNotice
-              message="Données partielles : les créneaux de certaines campagnes n'ont pas pu être chargés"
-              onRetry={data.retryReservations}
-            />
-          </div>
-        ) : null}
       </section>
 
       {explainerDismissed ? null : (
@@ -338,17 +360,10 @@ function ReservationsContent({
           }
         >
           {RESERVATION_STATUS.TEMPORAIRE.description} Il est confirmé à la validation de votre
-          campagne ; si elle est refusée, ses créneaux sont libérés. Pour libérer un créneau,
-          contactez votre interlocuteur TPUB.
+          campagne. Un créneau dont la période est passée devient «&nbsp;
+          {RESERVATION_STATUS.EXPIREE.label}&nbsp;».
         </Alert>
       )}
-
-      {namesMissing ? (
-        <Alert tone="warning" live="none">
-          Certains noms de Porteurs ou de zones n&apos;ont pas pu être chargés : ils sont affichés
-          par leur numéro.
-        </Alert>
-      ) : null}
 
       <Tabs
         value={state.statut ?? "toutes"}
@@ -359,11 +374,7 @@ function ReservationsContent({
         <div className="flex flex-col gap-4">
           <TabsList aria-label="Filtrer par statut" className="self-start">
             {STATUS_TABS.map((t) => (
-              <TabsTrigger
-                key={t.value}
-                value={t.value}
-                count={ready ? counts[t.value] : undefined}
-              >
+              <TabsTrigger key={t.value} value={t.value} count={counts[t.value]}>
                 {t.label}
               </TabsTrigger>
             ))}
@@ -372,7 +383,7 @@ function ReservationsContent({
           <FilterBar
             activeCount={activeCount}
             onReset={reset}
-            resultCount={ready ? resultCount : undefined}
+            resultCount={resultCount}
             sort={{
               value: serializeSort(sort) ?? "periode",
               options: RESERVATION_SORT_OPTIONS,
@@ -411,53 +422,88 @@ function ReservationsContent({
         </div>
 
         <TabsContent value={state.statut ?? "toutes"} className="mt-4">
-          {ready ? (
-            <>
-              <DataTable
-                columns={columns}
-                rows={visible}
-                getRowKey={(row) => row.reservation.id}
-                caption="Réservations de vos campagnes"
-                sort={sort}
-                onSortChange={setSort}
-                sortCaption={reservationSortCaption(sort)}
-                emptyFiltered={
-                  !isFiltering(filters) ? (
-                    <div className="flex flex-col items-start gap-2 rounded-card border border-line px-5 py-6">
-                      <p className="font-label text-[0.9375rem] font-semibold text-ink-strong">
-                        Aucun créneau chargé pour le moment.
-                      </p>
-                      <PartialNotice onRetry={data.retryReservations} />
-                    </div>
-                  ) : (
-                    <div
-                      role="status"
-                      className="flex flex-col items-start gap-3 rounded-card border border-line px-5 py-6"
-                    >
-                      <p className="flex items-center gap-2 font-label text-[0.9375rem] font-semibold text-ink-strong">
-                        <SearchX aria-hidden="true" className="size-4 text-muted" />
-                        Aucun résultat pour ces filtres
-                      </p>
-                      <Button variant="secondary" onClick={reset}>
-                        Réinitialiser les filtres
-                      </Button>
-                    </div>
-                  )
-                }
-              />
-              <p className="mt-4 flex flex-wrap items-center gap-2 text-[0.8125rem] text-muted">
-                <EstimateTag />
-                Coût estimé : 10 % du budget de la campagne par créneau, fixé à la réservation. Ce
-                n&apos;est ni un prix ni une facture.
-              </p>
-            </>
-          ) : (
-            <LoadingRegion label="Chargement des créneaux…">
-              <Skeleton className="h-72 rounded-card" />
-            </LoadingRegion>
-          )}
+          <DataTable
+            columns={columns}
+            rows={visible}
+            getRowKey={(row) => row.reservation.id}
+            caption="Réservations de vos campagnes"
+            sort={sort}
+            onSortChange={setSort}
+            sortCaption={reservationSortCaption(sort)}
+            rowActionsLabel="Actions"
+            rowActions={(row) =>
+              canCancelReservation(row.reservation, "ANNONCEUR") ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconLeft={<X aria-hidden="true" />}
+                  onClick={() => {
+                    setReason("");
+                    setCancelling(row);
+                  }}
+                >
+                  Annuler<span className="sr-only"> le créneau : {row.supportName}</span>
+                </Button>
+              ) : null
+            }
+            emptyFiltered={
+              <div
+                role="status"
+                className="flex flex-col items-start gap-3 rounded-card border border-line px-5 py-6"
+              >
+                <p className="flex items-center gap-2 font-label text-[0.9375rem] font-semibold text-ink-strong">
+                  <SearchX aria-hidden="true" className="size-4 text-muted" />
+                  {filtering ? "Aucun résultat pour ces filtres" : "Aucun créneau avec ce statut"}
+                </p>
+                {filtering ? (
+                  <Button variant="secondary" onClick={reset}>
+                    Réinitialiser les filtres
+                  </Button>
+                ) : null}
+              </div>
+            }
+          />
+          <p className="mt-4 flex flex-wrap items-center gap-2 text-[0.8125rem] text-muted">
+            <EstimateTag />
+            Coût estimé à la réservation selon le type de Porteur, sa visibilité et la durée du
+            créneau. Ce n&apos;est ni un prix ni une facture.
+          </p>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={cancelling !== null}
+        onOpenChange={(open) => {
+          if (!open) setCancelling(null);
+        }}
+        title="Libérer ce créneau ?"
+        description={
+          cancelling ? (
+            <>
+              {cancelling.supportName} ·{" "}
+              {formatDateRange(
+                cancelling.reservation.startDate,
+                cancelling.reservation.endDate,
+                "medium",
+              )}{" "}
+              · {cancelling.campaignName}. Le Porteur redevient disponible pour d&apos;autres
+              annonceurs.
+            </>
+          ) : undefined
+        }
+        confirmLabel="Libérer le créneau"
+        cancelLabel="Garder le créneau"
+        onConfirm={confirmCancel}
+      >
+        <Field label="Motif (facultatif)" hint={`${CANCEL_REASON_MAX} caractères au maximum.`}>
+          <Textarea
+            value={reason}
+            maxLength={CANCEL_REASON_MAX}
+            rows={2}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </Field>
+      </ConfirmDialog>
     </div>
   );
 }

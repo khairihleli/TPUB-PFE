@@ -58,6 +58,16 @@ public class MediaFile {
     @Column(length = 128)
     private String checksum;
 
+    @Column(name = "width_px")
+    private Integer widthPx;
+
+    @Column(name = "height_px")
+    private Integer heightPx;
+
+    @Column(name = "sort_order", nullable = false)
+    @Builder.Default
+    private Short sortOrder = 0;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

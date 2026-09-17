@@ -80,10 +80,13 @@ export function PlayerOverlay({
   supportId,
   state,
   onRetry,
+  simulated = false,
 }: {
   supportId: number;
   state: PlayerState;
   onRetry: () => void;
+  /** `?datetime=` simulation: the backend receives a simulated local date-time. */
+  simulated?: boolean;
 }) {
   const [visible, setVisible] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
@@ -223,6 +226,14 @@ export function PlayerOverlay({
               {state.diffusion ? TYPE_LABEL[state.diffusion.type] : "—"}
             </dd>
           </div>
+          {simulated ? (
+            <div className="col-span-2 min-w-0">
+              <dt className="text-[0.6875rem] text-muted-2">Heure simulée (?datetime)</dt>
+              <dd className="font-label font-semibold text-warning tabular">
+                {state.diffusion?.datetime?.replace("T", " à ") ?? "—"}
+              </dd>
+            </div>
+          ) : null}
           <div className="col-span-2 min-w-0">
             <dt className="text-[0.6875rem] text-muted-2">
               {state.error ? "Nouvelle tentative" : "Prochain appel"}

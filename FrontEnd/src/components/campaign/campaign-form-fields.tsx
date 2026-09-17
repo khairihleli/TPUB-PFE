@@ -1,6 +1,6 @@
 "use client";
 
-import { Info, Lock } from "lucide-react";
+import { Info } from "lucide-react";
 import { type ReactNode, useId } from "react";
 
 import {
@@ -9,23 +9,13 @@ import {
   type CampaignFormValues,
   OBJECTIVE_MAX,
 } from "@/components/campaign/campaign-schema";
+import { SlotPresetField } from "@/components/campaign/slot-preset-field";
 import { DateRangeField } from "@/components/ui/date-field";
 import type { ErrorSummaryItem } from "@/components/ui/error-summary";
 import { focusField } from "@/components/ui/error-summary";
 import { Field, Input, Textarea } from "@/components/ui/field";
-import { TimeRangeField } from "@/components/ui/time-range-field";
 import { cx } from "@/lib/cx";
-import { DAY_PARTS } from "@/lib/network/availability";
 import { detectReviewTriggers, reviewTriggerHint } from "@/lib/review-triggers";
-
-/** Reason shown on read-only dates when créneaux exist (FLOW-01). */
-export const LOCKED_PERIOD_REASON =
-  "La période est verrouillée : des Porteurs sont bloqués sur ces dates.";
-
-/** Day-part chips of the time range (same presets as the Studio booking plan). */
-const DAY_PART_OPTIONS = DAY_PARTS.flatMap((p) =>
-  p.start && p.end ? [{ label: p.label, start: p.start, end: p.end }] : [],
-);
 
 export interface CampaignFormFieldsProps {
   values: CampaignFormValues;
@@ -33,13 +23,9 @@ export interface CampaignFormFieldsProps {
   onChange: (field: CampaignField, value: string) => void;
   /** Today in Africa/Tunis (min of the start date). */
   today: string;
-  /** Period and time range read-only because Porteurs are already booked. */
-  lockSchedule?: boolean;
-  /** Reason displayed on the locked period (default LOCKED_PERIOD_REASON). */
-  lockedReason?: string;
-  /** Action next to the locked period, e.g. « Changer de période… ». */
-  scheduleAction?: ReactNode;
-  /** Note under the budget (e.g. estimates of booked créneaux keep the old budget). */
+  /** Note under the period (e.g. reserved Porteurs outside the new window are released). */
+  scheduleNote?: ReactNode;
+  /** Note under the budget. */
   budgetNote?: ReactNode;
   disabled?: boolean;
   /** Prefix for control ids (focus management). */
@@ -124,15 +110,12 @@ export function CampaignFormFields({
   errors,
   onChange,
   today,
-  lockSchedule = false,
-  lockedReason = LOCKED_PERIOD_REASON,
-  scheduleAction,
+  scheduleNote,
   budgetNote,
   disabled = false,
   idPrefix,
 }: CampaignFormFieldsProps) {
   const id = (f: CampaignField) => campaignFieldId(idPrefix, f);
-  const scheduleDisabled = disabled || lockSchedule;
   const triggers = detectReviewTriggers(values.objective);
   const firstTrigger = triggers[0]?.term;
   const triggerId = `${idPrefix}-objective-termes`;
@@ -141,7 +124,7 @@ export function CampaignFormFields({
     <div className="flex flex-col gap-7">
       <Group
         title="Identité"
-        description="Le nom vous sert à retrouver la campagne. L'objectif est le texte lu par l'analyse IA."
+        description="Le nom vous sert à retrouver la campagne. Le nom et l'objectif sont les textes lus par l'analyse IA."
       >
         <Field
           label="Nom de la campagne"
@@ -198,7 +181,7 @@ export function CampaignFormFields({
 
       <Group
         title="Budget"
-        description="Budget déclaré en dinars (TND). Il sert de base aux estimations des créneaux."
+        description="Budget maximal en dinars (TND). La diffusion s'arrête quand il est consommé."
       >
         <Field
           label="Budget déclaré"
@@ -233,19 +216,8 @@ export function CampaignFormFields({
       </Group>
 
       <Group
-        title="Période et heures"
-        description="Dates de début et de fin, puis la plage horaire quotidienne."
-        aside={
-          lockSchedule ? (
-            <div className="mt-3 flex flex-col items-start gap-2">
-              <p className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1 font-label text-[0.75rem] font-semibold text-ink-soft">
-                <Lock aria-hidden="true" className="size-3.5 text-brand-orange-text" />
-                Période verrouillée
-              </p>
-              {scheduleAction}
-            </div>
-          ) : null
-        }
+        title="Période et créneau"
+        description="Dates de diffusion, puis le créneau horaire quotidien."
       >
         <DateRangeField
           id={`${idPrefix}-periode`}
@@ -254,27 +226,31 @@ export function CampaignFormFields({
             if (next.start !== values.startDate) onChange("startDate", next.start);
             if (next.end !== values.endDate) onChange("endDate", next.end);
           }}
-          min={lockSchedule ? undefined : today}
-          presets={lockSchedule ? false : ["1w", "2w", "1m"]}
+          min={today}
+          presets={["1w", "2w", "1m"]}
           startLabel="Date de début"
           endLabel="Date de fin"
           errors={{ start: errors.startDate, end: errors.endDate }}
-          lockedReason={lockSchedule ? lockedReason : null}
           disabled={disabled}
           required
         />
-        <TimeRangeField
+        <SlotPresetField
           id={`${idPrefix}-horaires`}
-          value={{ start: values.startTime, end: values.endTime }}
+          start={values.startTime}
+          end={values.endTime}
           onChange={(next) => {
             if (next.start !== values.startTime) onChange("startTime", next.start);
             if (next.end !== values.endTime) onChange("endTime", next.end);
           }}
-          dayParts={scheduleDisabled ? undefined : DAY_PART_OPTIONS}
           errors={{ start: errors.startTime, end: errors.endTime }}
-          disabled={scheduleDisabled}
-          required
+          disabled={disabled}
         />
+        {scheduleNote ? (
+          <p className="flex items-start gap-1.5 text-[0.8125rem] leading-snug text-muted">
+            <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand-blue-text" />
+            <span>{scheduleNote}</span>
+          </p>
+        ) : null}
       </Group>
     </div>
   );

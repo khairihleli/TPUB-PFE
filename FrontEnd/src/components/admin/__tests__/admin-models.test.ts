@@ -2,38 +2,46 @@ import { describe, expect, it } from "vitest";
 
 import { parseDecimal, parseInteger } from "@/components/admin/form-utils";
 import {
+  activeFilterCount,
+  advertiserName,
   applyReasonPreset,
   bulkEligibility,
   bulkSummary,
   canDecide,
-  countByTab,
-  DEFAULT_MODERATION_SORT,
-  filterCampaigns,
+  canRunAiCheck,
   formatWaiting,
   joinReservations,
   matchesQuery,
+  type ModerationFilterState,
+  moderationSearchFilters,
   moderationSortCaption,
   parseModerationTab,
+  parsePriority,
   refusalMessage,
+  rejectReasonError,
   reviewNeighbours,
-  sortQueue,
   startCue,
   sumEstimatedCost,
+  tabCountsFromDashboard,
   validateSequentially,
-  validationWillNotAir,
+  validationBody,
   waitingDays,
 } from "@/components/admin/moderation-model";
 import {
   countSupportsByZone,
   isZoneInUseError,
+  supportFormFrom,
   supportSchema,
   zoneFormFrom,
   zoneSchema,
 } from "@/components/admin/network-schemas";
 import {
+  budgetConsumption,
   buildOverviewGroups,
   coherenceWatch,
+  decisionQueueFromDashboard,
   emergenciesWatch,
+  liveEmergencies,
   porteursWatch,
   summarizeDecisionQueue,
 } from "@/components/admin/overview-model";
@@ -41,6 +49,7 @@ import { ApiError } from "@/lib/api/errors";
 import type {
   CampaignResponse,
   DashboardResponse,
+  EmergencyResponse,
   ReservationResponse,
   SupportResponse,
   ZoneResponse,
@@ -70,85 +79,162 @@ function campaign(over: Partial<CampaignResponse>): CampaignResponse {
   };
 }
 
-describe("moderation model", () => {
-  const list = [
-    campaign({
-      id: 1,
-      status: "APPROVED_BY_AI",
-      aiStatus: "APPROVED",
-      submittedAt: "2026-09-05T08:00:00Z",
-      createdAt: "2026-09-04T08:00:00Z",
-    }),
-    campaign({
-      id: 2,
-      name: "Promo Été gratuit",
-      status: "REVIEW_REQUIRED",
-      aiStatus: "REVIEW_REQUIRED",
-      submittedAt: "2026-09-02T08:00:00Z",
-      createdAt: "2026-09-02T07:00:00Z",
-    }),
-    campaign({
-      id: 3,
-      status: "PENDING_AI_CHECK",
-      submittedAt: "2026-09-06T08:00:00Z",
-      createdAt: "2026-09-06T07:00:00Z",
-    }),
-    campaign({ id: 4, status: "ACTIVE", createdAt: "2026-09-10T07:00:00Z" }),
-    campaign({ id: 5, status: "BROUILLON", createdAt: "2026-09-11T07:00:00Z" }),
-  ];
+const baseFilters: ModerationFilterState = {
+  tab: "a-traiter",
+  q: "",
+  client: "",
+  zoneId: null,
+  status: null,
+  aiStatus: null,
+  from: "",
+  to: "",
+  supportType: null,
+  sort: "attente",
+  page: 0,
+};
 
-  it("queues APPROVED_BY_AI and REVIEW_REQUIRED, oldest submission first", () => {
-    expect(filterCampaigns(list, "a-traiter", "").map((c) => c.id)).toEqual([2, 1]);
-    expect(filterCampaigns(list, "revue", "").map((c) => c.id)).toEqual([2]);
-    expect(filterCampaigns(list, "ia", "").map((c) => c.id)).toEqual([3]);
-    // « Attente la plus longue » is the default order on every tab (caption is truthful).
-    expect(filterCampaigns(list, "toutes", "").map((c) => c.id)).toEqual([2, 1, 3, 4, 5]);
-    expect(
-      filterCampaigns(list, "toutes", "", { key: "attente", dir: "desc" }).map((c) => c.id),
-    ).toEqual([5, 4, 3, 1, 2]);
-    expect(countByTab(list)).toEqual({ "a-traiter": 2, revue: 1, ia: 1, toutes: 5 });
-  });
-
-  it("parses ?onglet= with the legacy value and sorts by nearest start", () => {
-    expect(parseModerationTab("analyse")).toBe("ia");
-    expect(parseModerationTab("revue")).toBe("revue");
-    expect(parseModerationTab("nimporte")).toBe("a-traiter");
-    const rows = [
-      campaign({ id: 1, startDate: "2026-10-20" }),
-      campaign({ id: 2, startDate: null }),
-      campaign({ id: 3, startDate: "2026-09-15" }),
-    ];
-    expect(sortQueue(rows, { key: "debut", dir: "asc" }).map((c) => c.id)).toEqual([3, 1, 2]);
-    expect(sortQueue(rows, { key: "debut", dir: "desc" }).map((c) => c.id)).toEqual([1, 3, 2]);
-    expect(moderationSortCaption({ key: "debut", dir: "asc" })).toBe("début le plus proche");
-    expect(moderationSortCaption(DEFAULT_MODERATION_SORT)).toBe("attente la plus longue");
-  });
-
-  it("keeps the campaign under review in place after it left the tab", () => {
-    const decided = list.map((c) => (c.id === 2 ? { ...c, status: "BLOCKED" as const } : c));
-    expect(filterCampaigns(decided, "a-traiter", "").map((c) => c.id)).toEqual([1]);
-    expect(filterCampaigns(decided, "a-traiter", "", undefined, 2).map((c) => c.id)).toEqual([
-      2, 1,
-    ]);
-  });
-
-  it("gives the start-date urgency tone", () => {
-    const today = "2026-09-13";
-    expect(startCue("2026-09-12", today)).toMatchObject({ tone: "danger", days: -1 });
-    expect(startCue("2026-09-13", today)).toMatchObject({
-      tone: "warning",
-      label: "Commence aujourd'hui",
+describe("moderation model (server search)", () => {
+  it("maps tabs and filters to GET /api/campaigns", () => {
+    expect(moderationSearchFilters(baseFilters)).toEqual({
+      q: undefined,
+      client: undefined,
+      zoneId: undefined,
+      status: ["APPROVED_BY_AI", "REVIEW_REQUIRED"],
+      aiStatus: undefined,
+      from: undefined,
+      to: undefined,
+      supportType: undefined,
+      sort: "submittedAt,asc",
+      page: 0,
+      size: 20,
     });
-    expect(startCue("2026-09-15", today)).toMatchObject({ tone: "warning", label: "Dans 2 j" });
-    expect(startCue("2026-09-16", today)).toMatchObject({ tone: "neutral", label: "Dans 3 j" });
-    expect(startCue(null, today)).toMatchObject({ tone: "neutral", days: null });
+    // The status filter only applies on « Toutes »; a single date bound becomes a one-day range.
+    expect(
+      moderationSearchFilters({
+        ...baseFilters,
+        tab: "revue",
+        status: "ACTIVE",
+        q: "  soldes ",
+        client: "Café",
+        zoneId: 4,
+        aiStatus: "REVIEW_REQUIRED",
+        from: "2026-10-01",
+        supportType: "ECRAN",
+        sort: "budget",
+        page: 2,
+      }),
+    ).toMatchObject({
+      q: "soldes",
+      client: "Café",
+      zoneId: 4,
+      status: ["REVIEW_REQUIRED"],
+      aiStatus: ["REVIEW_REQUIRED"],
+      from: "2026-10-01",
+      to: "2026-10-01",
+      supportType: ["ECRAN"],
+      sort: "budget,desc",
+      page: 2,
+    });
+    expect(
+      moderationSearchFilters({ ...baseFilters, tab: "toutes", status: "BLOCKED" }).status,
+    ).toEqual(["BLOCKED"]);
+    expect(moderationSearchFilters({ ...baseFilters, tab: "toutes" }).status).toBeUndefined();
+    expect(
+      activeFilterCount({
+        ...baseFilters,
+        tab: "revue",
+        status: "ACTIVE",
+        client: "x",
+        to: "2026-10-02",
+      }),
+    ).toBe(2);
+    expect(moderationSortCaption("debut")).toBe("début le plus proche");
   });
 
-  it("finds the neighbours and the next campaign awaiting a decision", () => {
+  it("parses ?onglet= with the legacy value and counts tabs from the dashboard", () => {
+    expect(parseModerationTab("analyse")).toBe("ia");
+    expect(parseModerationTab("nope")).toBe("a-traiter");
+    expect(
+      tabCountsFromDashboard({
+        totalCampaigns: 40,
+        aiPendingCampaigns: 3,
+        approvedByAiCampaigns: 2,
+        reviewRequiredCampaigns: 5,
+      }),
+    ).toEqual({ "a-traiter": 7, revue: 5, ia: 3, toutes: 40 });
+  });
+
+  it("allows decisions after the AI check and a re-run on pending or reviewable campaigns", () => {
+    expect(canDecide("APPROVED_BY_AI")).toBe(true);
+    expect(canDecide("REVIEW_REQUIRED")).toBe(true);
+    expect(canDecide("PENDING_AI_CHECK")).toBe(false);
+    expect(canRunAiCheck("PENDING_AI_CHECK")).toBe(true);
+    expect(canRunAiCheck("REVIEW_REQUIRED")).toBe(true);
+    expect(canRunAiCheck("ACTIVE")).toBe(false);
+  });
+
+  it("requires the explicit override for REVIEW_REQUIRED and validates comment and priority", () => {
+    const review = campaign({ status: "REVIEW_REQUIRED" });
+    expect(validationBody(review, { comment: "", priority: "", override: false })).toMatchObject({
+      ok: false,
+      field: "override",
+    });
+    expect(validationBody(review, { comment: " ok ", priority: "7", override: true })).toEqual({
+      ok: true,
+      body: { overrideAi: true, comment: "ok", priorityScore: 7 },
+    });
+    const approved = campaign({ status: "APPROVED_BY_AI" });
+    expect(validationBody(approved, { comment: "", priority: "", override: false })).toEqual({
+      ok: true,
+      body: { comment: null },
+    });
+    expect(
+      validationBody(approved, { comment: "", priority: "11", override: false }),
+    ).toMatchObject({ ok: false, field: "priority" });
+    expect(parsePriority("")).toBeNull();
+    expect(parsePriority("0")).toBe(0);
+    expect(parsePriority("-1")).toBeNaN();
+    expect(parsePriority("3.5")).toBeNaN();
+  });
+
+  it("checks the refusal reason (3..1000) and appends presets once", () => {
+    expect(rejectReasonError("")).toBe("Indiquez le motif du refus.");
+    expect(rejectReasonError(" ab ")).toBe("Au moins 3 caractères.");
+    expect(rejectReasonError("abc")).toBeNull();
+    expect(rejectReasonError("x".repeat(1001))).toBe("1000 caractères maximum.");
+    const once = applyReasonPreset("Visuel flou.", "Objectif trop vague");
+    expect(once).toBe("Visuel flou ; Objectif trop vague");
+    expect(applyReasonPreset(once, "objectif trop vague")).toBe(once);
+    const msg = refusalMessage({ id: 7, name: "Soldes" }, " Visuel flou ");
+    expect(msg).toContain("CAMP-00007");
+    expect(msg).toContain("Motif : Visuel flou");
+  });
+
+  it("restricts bulk validation to APPROVED_BY_AI campaigns holding a reservation", async () => {
+    expect(
+      bulkEligibility({ status: "APPROVED_BY_AI", aiStatus: "APPROVED", reservationsCount: 2 }),
+    ).toBe("eligible");
+    expect(
+      bulkEligibility({ status: "APPROVED_BY_AI", aiStatus: "APPROVED", reservationsCount: 0 }),
+    ).toBe("no-slot");
+    expect(
+      bulkEligibility({
+        status: "REVIEW_REQUIRED",
+        aiStatus: "REVIEW_REQUIRED",
+        reservationsCount: 1,
+      }),
+    ).toBe("not-approved");
+    const results = await validateSequentially([1, 2, 3], (id) =>
+      id === 2 ? Promise.reject(new Error("x")) : Promise.resolve(campaign({ id })),
+    );
+    expect(bulkSummary(results)).toBe("2 validées · 1 échec : #2");
+  });
+
+  it("finds neighbours and the next campaign awaiting a decision", () => {
     const rows = [
-      { id: 1, status: "APPROVED_BY_AI" as const },
-      { id: 2, status: "ACTIVE" as const },
-      { id: 3, status: "REVIEW_REQUIRED" as const },
+      campaign({ id: 1, status: "APPROVED_BY_AI" }),
+      campaign({ id: 2, status: "ACTIVE" }),
+      campaign({ id: 3, status: "REVIEW_REQUIRED" }),
     ];
     expect(reviewNeighbours(rows, 1)).toMatchObject({
       index: 0,
@@ -157,121 +243,58 @@ describe("moderation model", () => {
       nextDecidable: 3,
       remaining: 1,
     });
-    expect(reviewNeighbours(rows, 3)).toMatchObject({ previous: 2, next: null, nextDecidable: 1 });
-    expect(reviewNeighbours([{ id: 1, status: "APPROVED_BY_AI" as const }], 1)).toMatchObject({
-      nextDecidable: null,
-      remaining: 0,
-    });
+    expect(reviewNeighbours(rows, 3)).toMatchObject({ next: null, nextDecidable: 1 });
   });
 
-  it("restricts bulk validation and summarises results", async () => {
-    const approved = { status: "APPROVED_BY_AI" as const, aiStatus: "APPROVED" as const };
-    const slot = (reservationStatus: ReservationResponse["reservationStatus"]) => ({
-      state: "ready" as const,
-      list: [{ reservationStatus }],
+  it("names advertisers, searches without accents and computes waiting and start cues", () => {
+    expect(advertiserName(campaign({ clientId: 3, clientCompanyName: " Café Démo " }))).toBe(
+      "Café Démo",
+    );
+    expect(advertiserName(campaign({ clientId: 3, clientName: "Salma" }))).toBe("Salma");
+    expect(advertiserName(campaign({ clientId: 3 }))).toBe("Annonceur n° 3");
+    expect(matchesQuery(campaign({ id: 12, name: "Promo Été" }), "ete")).toBe(true);
+    expect(matchesQuery(campaign({ id: 12 }), "#12")).toBe(true);
+    const now = new Date("2026-09-10T12:00:00Z");
+    expect(formatWaiting(waitingDays(campaign({ submittedAt: "2026-09-08T10:00:00Z" }), now))).toBe(
+      "Depuis 2 jours",
+    );
+    expect(startCue("2026-09-11", "2026-09-10")).toMatchObject({
+      label: "Commence demain",
+      tone: "warning",
     });
-    expect(bulkEligibility(approved, slot("TEMPORAIRE"))).toBe("eligible");
-    expect(bulkEligibility(approved, slot("ANNULEE"))).toBe("no-slot");
-    expect(bulkEligibility(approved, { state: "error" })).toBe("unknown");
+    expect(startCue("2026-09-08", "2026-09-10")).toMatchObject({ tone: "danger" });
+    expect(startCue(null, "2026-09-10").days).toBeNull();
+  });
+
+  it("uses v2 reservation names and sums only holding reservations", () => {
+    const r = (over: Partial<ReservationResponse>): ReservationResponse => ({
+      id: 1,
+      campaignId: 1,
+      zoneId: 2,
+      supportId: 9,
+      startDate: "2026-10-01",
+      endDate: "2026-10-02",
+      startTime: "08:00:00",
+      endTime: "12:00:00",
+      availabilityStatus: "RESERVE",
+      reservationStatus: "TEMPORAIRE",
+      estimatedViews: 100,
+      estimatedCost: 12.5,
+      ...over,
+    });
+    const rows = joinReservations(
+      [r({ supportName: "Porteur Lac", zoneName: "Lac" }), r({ id: 2 })],
+      [{ id: 9, name: "Ancien nom", zoneName: "Z" } as SupportResponse],
+    );
+    expect(rows[0]).toMatchObject({ supportName: "Porteur Lac", zoneName: "Lac" });
+    expect(rows[1]).toMatchObject({ supportName: "Ancien nom", zoneName: "Z" });
     expect(
-      bulkEligibility(
-        { status: "REVIEW_REQUIRED", aiStatus: "REVIEW_REQUIRED" },
-        slot("TEMPORAIRE"),
-      ),
-    ).toBe("not-approved");
-
-    const order: number[] = [];
-    const results = await validateSequentially([4, 5, 6], (id) => {
-      order.push(id);
-      return id === 5 ? Promise.reject(new Error("x")) : Promise.resolve(campaign({ id }));
-    });
-    expect(order).toEqual([4, 5, 6]);
-    expect(bulkSummary(results)).toBe("2 validées · 1 échec : #5");
-    expect(bulkSummary([{ id: 1, ok: true }])).toBe("1 validée");
-  });
-
-  it("builds the refusal message and appends presets once", () => {
-    const text = refusalMessage({ id: 7, name: "Promo", clientId: 3 }, " Objectif trop vague ");
-    expect(text).toContain("« Promo » (référence CAMP-00007)");
-    expect(text).toContain("Motif : Objectif trop vague");
-    expect(applyReasonPreset("", "Objectif trop vague")).toBe("Objectif trop vague");
-    expect(applyReasonPreset("Objectif trop vague", "Objectif trop vague")).toBe(
-      "Objectif trop vague",
-    );
-    expect(applyReasonPreset("Texte ambigu.", "Période incohérente")).toBe(
-      "Texte ambigu ; Période incohérente",
-    );
-  });
-
-  it("searches name/objective without accents and by id", () => {
-    expect(matchesQuery(list[1]!, "ete")).toBe(true);
-    expect(matchesQuery(list[1]!, "#2")).toBe(true);
-    expect(matchesQuery(list[1]!, "3")).toBe(false);
-    expect(filterCampaigns(list, "toutes", "GRATUIT").map((c) => c.id)).toEqual([2]);
-  });
-
-  it("only allows a decision after the AI check", () => {
-    expect(canDecide("APPROVED_BY_AI")).toBe(true);
-    expect(canDecide("REVIEW_REQUIRED")).toBe(true);
-    expect(canDecide("PENDING_AI_CHECK")).toBe(false);
-    expect(canDecide("ACTIVE")).toBe(false);
-  });
-
-  it("flags validations that will never air (contract §7.14)", () => {
-    expect(validationWillNotAir(list[1]!)).toBe(true);
-    expect(validationWillNotAir(list[0]!)).toBe(false);
-    expect(validationWillNotAir(list[3]!)).toBe(false);
-  });
-
-  it("formats the waiting time", () => {
-    const now = new Date("2026-09-13T09:00:00Z");
-    expect(waitingDays(list[1]!, now)).toBe(11);
-    expect(formatWaiting(0)).toBe("Aujourd'hui");
-    expect(formatWaiting(1)).toBe("Depuis 1 jour");
-    expect(formatWaiting(11)).toBe("Depuis 11 jours");
-  });
-
-  it("joins reservations with support and zone names", () => {
-    const reservations: ReservationResponse[] = [
-      {
-        id: 9,
-        campaignId: 1,
-        zoneId: 1,
-        supportId: 7,
-        startDate: "2026-10-01",
-        endDate: "2026-10-31",
-        startTime: "08:00:00",
-        endTime: "22:00:00",
-        availabilityStatus: "RESERVE",
-        reservationStatus: "TEMPORAIRE",
-        estimatedViews: 1000,
-        estimatedCost: 100,
-      },
-      {
-        id: 10,
-        campaignId: 1,
-        zoneId: 2,
-        supportId: 99,
-        startDate: "2026-10-01",
-        endDate: "2026-10-31",
-        startTime: "08:00:00",
-        endTime: "22:00:00",
-        availabilityStatus: "RESERVE",
-        reservationStatus: "TEMPORAIRE",
-        estimatedViews: 1000,
-        estimatedCost: 100,
-      },
-    ];
-    const supports = [
-      { id: 7, zoneId: 1, zoneName: "Tunis Centre", name: "Écran Bourguiba" },
-    ] as SupportResponse[];
-    const zones = [{ id: 1, name: "Tunis Centre" }] as ZoneResponse[];
-    const rows = joinReservations(reservations, supports, zones);
-    expect(rows.map((r) => [r.supportName, r.zoneName])).toEqual([
-      ["Écran Bourguiba", "Tunis Centre"],
-      ["Porteur n° 99", "Zone n° 2"],
-    ]);
-    expect(sumEstimatedCost(rows)).toBe(200);
+      sumEstimatedCost([
+        r({}),
+        r({ reservationStatus: "ANNULEE" }),
+        r({ reservationStatus: "CONFIRMEE", estimatedCost: 7.5 }),
+      ]),
+    ).toBe(20);
   });
 });
 
@@ -372,59 +395,113 @@ describe("network schemas", () => {
   });
 });
 
-describe("overview model", () => {
+describe("support schema v2", () => {
+  it("accepts an optional visibility score 0..100", () => {
+    const base = {
+      ...supportFormFrom(null),
+      zoneId: "1",
+      name: "P",
+      latitude: "36.8",
+      longitude: "10.1",
+    };
+    expect(
+      supportSchema.safeParse({ ...base, visibilityScore: "" }).data?.visibilityScore,
+    ).toBeNull();
+    expect(supportSchema.safeParse({ ...base, visibilityScore: "80" }).data?.visibilityScore).toBe(
+      80,
+    );
+    expect(supportSchema.safeParse({ ...base, visibilityScore: "101" }).success).toBe(false);
+    expect(supportFormFrom({ visibilityScore: 35 } as SupportResponse).visibilityScore).toBe("35");
+    expect(isZoneInUseError(new ApiError(409, "x", { code: "ZONE_IN_USE" }))).toBe(true);
+  });
+});
+
+describe("overview model (dashboard v2)", () => {
   const d: DashboardResponse = {
     totalCampaigns: 12,
     activeCampaigns: 3,
-    pendingCampaigns: 2,
+    pendingCampaigns: 5,
     aiPendingCampaigns: 1,
     aiRejectedCampaigns: 1,
     availableSupports: 4,
     confirmedReservations: 6,
     totalViews: 5321,
-    estimatedBudget: 25000,
-    consumedBudget: 0,
+    estimatedBudget: 2000,
+    consumedBudget: 250,
+    approvedByAiCampaigns: 2,
+    reviewRequiredCampaigns: 2,
+    aiFlaggedCampaigns: 3,
+    supportsByStatus: { ACTIF: 4, MAINTENANCE: 1, HORS_LIGNE: 1, INACTIF: 0 },
+    totalSupports: 6,
   };
 
-  it("labels diffusion log rows honestly (never « vues » or audience)", () => {
-    const items = buildOverviewGroups(d).flatMap((g) => g.items);
-    const views = items.find((i) => i.key === "totalViews");
-    expect(views?.label.toLowerCase()).toContain("lignes du journal de diffusion");
-    expect(views?.source).toContain("pas une audience");
-    for (const item of items) expect(item.label.toLowerCase()).not.toMatch(/\bvues?\b|audience/);
-    expect(items).toHaveLength(9);
-    // No quoted enum wording, glossary labels.
-    for (const item of items) expect(item.hint).not.toMatch(/« active »/);
-    expect(items.find((i) => i.key === "estimatedBudget")?.label).toBe("Budget déclaré");
-    expect(items.find((i) => i.key === "availableSupports")?.label).toBe("Porteurs actifs");
-    expect(items.find((i) => i.key === "activeCampaigns")?.label).toBe(
-      "Validées (programmées ou en diffusion)",
+  it("shows every CdC §6 figure, grouped, with honest labels", () => {
+    const groups = buildOverviewGroups(d);
+    expect(groups.map((g) => g.id)).toEqual([
+      "campagnes",
+      "ia",
+      "reseau",
+      "reservations",
+      "diffusion",
+      "budgets",
+    ]);
+    const items = groups.flatMap((g) => g.items);
+    for (const key of [
+      "totalCampaigns",
+      "activeCampaigns",
+      "pendingCampaigns",
+      "aiPendingCampaigns",
+      "aiFlaggedCampaigns",
+      "availableSupports",
+      "confirmedReservations",
+      "totalViews",
+      "estimatedBudget",
+      "consumedBudget",
+    ] as const) {
+      expect(items.some((i) => i.key === key)).toBe(true);
+    }
+    expect(items.find((i) => i.key === "aiFlaggedCampaigns")?.label).toBe(
+      "Refusées ou signalées par l'IA",
     );
-  });
-
-  it("derives the hero and the campaign cards from the same list", () => {
-    const list = [
-      campaign({ id: 1, status: "APPROVED_BY_AI" }),
-      campaign({ id: 2, status: "REVIEW_REQUIRED" }),
-      campaign({ id: 3, status: "PENDING_AI_CHECK" }),
-      campaign({ id: 4, status: "ACTIVE" }),
-      campaign({ id: 5, status: "VALIDATED_BY_ADMIN" }),
-    ];
-    expect(summarizeDecisionQueue(list)).toMatchObject({
-      total: 2,
-      breakdown: "1 avis IA favorable · 1 revue manuelle",
+    expect(items.find((i) => i.key === "outOfServiceSupports")).toMatchObject({
+      value: 2,
+      accent: "warning",
     });
-    const items = buildOverviewGroups(d, list).flatMap((g) => g.items);
-    expect(items.find((i) => i.key === "aiPendingCampaigns")?.value).toBe(1);
-    expect(items.find((i) => i.key === "totalCampaigns")?.value).toBe(5);
-    expect(items.find((i) => i.key === "activeCampaigns")?.value).toBe(2);
-    expect(items.find((i) => i.key === "aiRejectedCampaigns")).toMatchObject({
+    expect(items.find((i) => i.key === "simulatedRevenue")?.source).toContain("simulés");
+    for (const item of items) expect(item.label.toLowerCase()).not.toMatch(/audience/);
+    // Missing v2 counters are zero and dimmed, never invented.
+    expect(items.find((i) => i.key === "expiredReservations")).toMatchObject({
       value: 0,
       dimmed: true,
     });
   });
 
-  it("builds « À surveiller » with attention tones only above zero", () => {
+  it("summarises the decision queue from the list or the counters", () => {
+    expect(decisionQueueFromDashboard(d)).toMatchObject({
+      total: 4,
+      breakdown: "2 avis IA favorables · 2 revues manuelles",
+    });
+    expect(
+      summarizeDecisionQueue([
+        campaign({ status: "APPROVED_BY_AI" }),
+        campaign({ status: "REVIEW_REQUIRED" }),
+        campaign({ status: "ACTIVE" }),
+      ]),
+    ).toMatchObject({ total: 2, breakdown: "1 avis IA favorable · 1 revue manuelle" });
+  });
+
+  it("compares the estimated and consumed budgets", () => {
+    expect(budgetConsumption(d)).toMatchObject({
+      ratio: 0.125,
+      label: "12,5 % du budget estimé consommé",
+    });
+    expect(budgetConsumption({ estimatedBudget: 0, consumedBudget: 0 })).toMatchObject({
+      ratio: null,
+      label: "Aucun budget engagé",
+    });
+  });
+
+  it("builds « À surveiller » and the live messages strip", () => {
     const zones = [
       { id: 1, name: "Z", isActive: true, latitude: 36.8, longitude: 10.18, radiusKm: null },
     ] as ZoneResponse[];
@@ -444,32 +521,34 @@ describe("overview model", () => {
       },
     ] as SupportResponse[];
     expect(porteursWatch(supports)).toMatchObject({ count: 1, tone: "warning" });
-    expect(porteursWatch([])).toMatchObject({ count: 0, tone: "neutral" });
-    expect(coherenceWatch(zones, supports)).toMatchObject({ count: 0, tone: "neutral" });
     expect(coherenceWatch(zones, supports).href).toBe(
       "/admin/reseau?onglet=ecrans&panneau=coherence",
     );
-    const today = "2026-09-13";
-    const msg = { isActive: true, startDate: "2026-09-10", endDate: "2026-09-20" };
-    expect(emergenciesWatch([msg, { ...msg, startDate: "2026-09-15" }], today)).toMatchObject({
+    const msg = (over: Partial<EmergencyResponse>): EmergencyResponse => ({
+      id: 1,
+      title: "Route",
+      content: "Déviation",
+      zoneId: 1,
+      startDate: "2026-09-10",
+      endDate: "2026-09-20",
+      startTime: "00:00:00",
+      endTime: "23:59:59",
+      priority: 1,
+      urgencyLevel: "HIGH",
+      isActive: true,
+      ...over,
+    });
+    const now = new Date("2026-09-13T10:00:00Z");
+    const list = [
+      msg({ id: 1, state: "EN_COURS" }),
+      msg({ id: 2, state: "PROGRAMME" }),
+      msg({ id: 3, state: "TERMINE" }),
+    ];
+    expect(emergenciesWatch(list, now)).toMatchObject({
       count: 2,
       detail: "1 en cours · 1 programmé",
       tone: "warning",
     });
-    expect(emergenciesWatch([{ ...msg, isActive: false }], today)).toMatchObject({
-      count: 0,
-      tone: "neutral",
-    });
-  });
-
-  it("formats budgets as TND and keeps raw values", () => {
-    const items = buildOverviewGroups({ ...d, estimatedBudget: Number.NaN }).flatMap(
-      (g) => g.items,
-    );
-    expect(items.find((i) => i.key === "estimatedBudget")).toMatchObject({
-      format: "tnd",
-      value: 0,
-    });
-    expect(items.find((i) => i.key === "totalCampaigns")?.value).toBe(12);
+    expect(liveEmergencies([...list].reverse(), now).map((m) => m.id)).toEqual([1, 2]);
   });
 });

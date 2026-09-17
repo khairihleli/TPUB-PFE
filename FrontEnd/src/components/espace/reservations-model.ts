@@ -1,14 +1,11 @@
 /**
- * Joins reservations with their campaign, Porteur (support) and zone names, filters and sorts them.
- * The reservation API returns ids only (contract §5.7), so names come from /supports + /zones.
+ * Reservations of the advertiser (GET /reservations/mine): rows, filters, sort and summary.
  */
 import type {
   CampaignResponse,
   ReservationResponse,
   ReservationStatus,
-  SupportResponse,
   SupportType,
-  ZoneResponse,
 } from "@/lib/api/types";
 import { RESERVATION_STATUS } from "@/lib/campaign-status";
 import type { SortState } from "@/lib/url-state";
@@ -22,31 +19,51 @@ export interface ReservationRow {
   zoneName: string;
 }
 
+/**
+ * v2 reservations carry their campaign, Porteur and zone names (GET /reservations/mine);
+ * the campaign list only adds the full campaign when known.
+ */
 export function joinReservations(
   reservations: readonly ReservationResponse[],
-  campaigns: readonly CampaignResponse[],
-  supports: readonly SupportResponse[] | null,
-  zones: readonly ZoneResponse[] | null,
+  campaigns: readonly CampaignResponse[] = [],
 ): ReservationRow[] {
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
-  const supportById = new Map((supports ?? []).map((s) => [s.id, s]));
-  const zoneById = new Map((zones ?? []).map((z) => [z.id, z]));
+  return reservations.map((r) => {
+    const campaign = campaignById.get(r.campaignId) ?? null;
+    return {
+      reservation: r,
+      campaign,
+      campaignName: r.campaignName ?? campaign?.name ?? `Campagne n° ${r.campaignId}`,
+      supportName: r.supportName ?? `Porteur n° ${r.supportId}`,
+      supportType: r.supportType ?? null,
+      zoneName: r.zoneName ?? `Zone n° ${r.zoneId}`,
+    };
+  });
+}
 
-  return reservations
-    .filter((r) => campaignById.has(r.campaignId))
-    .map((r) => {
-      const campaign = campaignById.get(r.campaignId) ?? null;
-      const support = supportById.get(r.supportId);
-      const zone = zoneById.get(r.zoneId);
-      return {
-        reservation: r,
-        campaign,
-        campaignName: campaign?.name ?? `Campagne n° ${r.campaignId}`,
-        supportName: support?.name ?? `Porteur n° ${r.supportId}`,
-        supportType: support?.supportType ?? null,
-        zoneName: zone?.name ?? support?.zoneName ?? `Zone n° ${r.zoneId}`,
-      };
-    });
+/** Holding / TEMPORAIRE / CONFIRMEE counts and the estimated cost of holding reservations. */
+export function reservationSummary(rows: readonly ReservationRow[]): {
+  holding: number;
+  temporary: number;
+  confirmed: number;
+  estimatedCost: number;
+} {
+  let temporary = 0;
+  let confirmed = 0;
+  let cost = 0;
+  for (const { reservation: r } of rows) {
+    if (r.reservationStatus === "TEMPORAIRE") temporary += 1;
+    if (r.reservationStatus === "CONFIRMEE") confirmed += 1;
+    if (r.reservationStatus === "TEMPORAIRE" || r.reservationStatus === "CONFIRMEE") {
+      cost += Number.isFinite(r.estimatedCost) ? r.estimatedCost : 0;
+    }
+  }
+  return {
+    holding: temporary + confirmed,
+    temporary,
+    confirmed,
+    estimatedCost: Math.round(cost * 1000) / 1000,
+  };
 }
 
 export type ReservationStatusFilter = "toutes" | ReservationStatus;
@@ -132,6 +149,16 @@ export function sortReservationRows(rows: readonly ReservationRow[]): Reservatio
   });
 }
 
+/** Unique campaigns present in the rows, sorted by name (filter options). */
+export function campaignOptions(rows: readonly ReservationRow[]): ZoneOption[] {
+  const byId = new Map<number, string>();
+  for (const r of rows)
+    if (!byId.has(r.reservation.campaignId)) byId.set(r.reservation.campaignId, r.campaignName);
+  return [...byId.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr") || a.id - b.id);
+}
+
 export interface ZoneOption {
   id: number;
   name: string;
@@ -162,7 +189,7 @@ export const RESERVATION_SORT_KEYS: readonly ReservationSortKey[] = [
 /** Default: période, début croissant (UX-PLAN §12.B.4). */
 export const DEFAULT_RESERVATION_SORT: SortState = { key: "periode", dir: "asc" };
 
-/** Status order for sorting: blocked, confirmed, past, released. */
+/** Status order for sorting: blocked, confirmed, expired, cancelled. */
 const STATUS_RANK: Record<ReservationStatus, number> = {
   TEMPORAIRE: 0,
   CONFIRMEE: 1,

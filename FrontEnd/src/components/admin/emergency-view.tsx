@@ -6,8 +6,9 @@ import { useMemo, useState } from "react";
 import { IdChip, ReadOnlyNotice } from "@/components/admin/admin-ui";
 import { EmergencyFormDialog } from "@/components/admin/emergency-form-dialog";
 import {
-  EMERGENCY_PHASE,
-  emergencyPhase,
+  emergencyStateOf,
+  emergencyTargetLabel,
+  isLiveState,
   priorityLabel,
   sortEmergencies,
 } from "@/components/admin/emergency-schema";
@@ -26,7 +27,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { emergencyApi, supportsApi, zonesApi } from "@/lib/api/endpoints";
 import type { EmergencyResponse, SupportResponse, ZoneResponse } from "@/lib/api/types";
-import { formatDateRange, formatTimeRange, todayISO } from "@/lib/format";
+import { EMERGENCY_STATE, EMERGENCY_STOP_REASON_LABEL } from "@/lib/campaign-status";
+import { formatDateTime, formatNumber } from "@/lib/format";
+import { withinKm } from "@/lib/geo";
 import { fetchCached, invalidate, resourceKeys } from "@/lib/resource-cache";
 import { routes } from "@/lib/routes";
 import { useResource } from "@/lib/use-resource";
@@ -34,7 +37,7 @@ import { useResource } from "@/lib/use-resource";
 interface EmergencyData {
   messages: EmergencyResponse[];
   zones: ZoneResponse[];
-  /** Used for the impact line only: empty when the request failed. */
+  /** Map context and impact only: empty when the request failed. */
   supports: SupportResponse[];
 }
 
@@ -49,30 +52,50 @@ async function loadEmergencies(signal: AbortSignal): Promise<EmergencyData> {
   return { messages, zones, supports };
 }
 
-type Filter = "actifs" | "tous";
+type Filter = "actifs" | "historique";
 
 const PRINCIPLES = [
   {
     icon: <ListOrdered />,
     title: "Passe avant la publicité",
-    text: "Pendant sa période, un message actif prend la main sur les écrans de sa zone. Entre plusieurs messages, « Passe en premier » est diffusé avant les autres.",
+    text: "Pendant sa période, un message prend la main sur les écrans ciblés. Entre plusieurs messages, le niveau d'urgence le plus élevé passe d'abord, puis la priorité 1.",
   },
   {
     icon: <Clock />,
-    title: "Programmé par dates",
-    text: "Les lecteurs appliquent les dates de début et de fin. Les heures sont enregistrées mais pas encore prises en compte.",
+    title: "Fenêtre date et heure",
+    text: "Le message démarre à la date et l'heure de début et s'arrête automatiquement à la fin de sa période.",
   },
   {
     icon: <MonitorSmartphone />,
-    title: "Titre seul à l'écran",
-    text: "Seuls le titre et la zone sont transmis aux écrans ; le contenu détaillé reste dans le back-office.",
+    title: "Titre et contenu à l'écran",
+    text: "Les Porteurs du cercle (ou de la zone) affichent le titre et le contenu en plein écran, aux couleurs du niveau d'urgence.",
   },
 ];
+
+/** First ACTIF Porteur reached by the message (« Vérifier sur un écran »). */
+export function sampleSupportFor(
+  message: Pick<EmergencyResponse, "zoneId" | "latitude" | "longitude" | "radiusKm">,
+  supports: readonly SupportResponse[],
+): number | null {
+  const active = supports.filter((s) => s.technicalStatus === "ACTIF");
+  const { latitude, longitude, radiusKm } = message;
+  const hit =
+    typeof latitude === "number" && typeof longitude === "number" && typeof radiusKm === "number"
+      ? active.find((s) => withinKm(s.latitude, s.longitude, latitude, longitude, radiusKm))
+      : active.find((s) => s.zoneId === message.zoneId);
+  return hit?.id ?? null;
+}
 
 export function EmergencyView() {
   const { role, canAct } = useSession();
   const { toast } = useToast();
-  const { data, error, loading, reload, setData } = useResource("admin:emergency", loadEmergencies);
+  const { data, error, loading, reload, setData } = useResource(
+    "admin:emergency",
+    loadEmergencies,
+    {
+      pollInterval: 60_000,
+    },
+  );
   const [filter, setFilter] = useState<Filter>("actifs");
   const [createOpen, setCreateOpen] = useState(false);
   const [toDeactivate, setToDeactivate] = useState<EmergencyResponse | null>(null);
@@ -91,19 +114,28 @@ export function EmergencyView() {
     [canAct, Boolean(data)],
   );
 
-  const today = todayISO();
+  const now = new Date();
   const zoneName = useMemo(() => {
     const m = new Map((data?.zones ?? []).map((z) => [z.id, z.name]));
     return (id: number) => m.get(id) ?? `Zone n° ${id}`;
   }, [data]);
 
-  const sorted = useMemo(() => sortEmergencies(data?.messages ?? [], today), [data, today]);
-  const activeRows = sorted.filter((m) => {
-    const p = emergencyPhase(m, today);
-    return p === "current" || p === "scheduled";
-  });
-  const rows = filter === "actifs" ? activeRows : sorted;
-  const currentCount = sorted.filter((m) => emergencyPhase(m, today) === "current").length;
+  const sorted = useMemo(() => sortEmergencies(data?.messages ?? []), [data]);
+  const liveRows = sorted.filter((m) => isLiveState(emergencyStateOf(m, now)));
+  const rows = filter === "actifs" ? liveRows : sorted;
+  const currentCount = sorted.filter((m) => emergencyStateOf(m, now) === "EN_COURS").length;
+
+  const deactivateButton = (m: EmergencyResponse) =>
+    m.isActive && isLiveState(emergencyStateOf(m, now)) ? (
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => setToDeactivate(m)}
+        aria-label={`Arrêter le message ${m.title}`}
+      >
+        Arrêter
+      </Button>
+    ) : null;
 
   const columns: DataTableColumn<EmergencyResponse>[] = [
     {
@@ -124,52 +156,77 @@ export function EmergencyView() {
       ),
     },
     {
-      key: "zone",
-      header: "Zone",
-      cell: (m) => <span className="md:whitespace-nowrap">{zoneName(m.zoneId)}</span>,
+      key: "target",
+      header: "Cible",
+      cell: (m) => (
+        <span className="md:whitespace-nowrap">{emergencyTargetLabel(m, zoneName)}</span>
+      ),
     },
     {
       key: "period",
       header: "Période",
       cell: (m) => (
-        // Global `p { text-wrap: pretty }` resets the wrap mode: nowrap must sit on each <p>.
         <div>
-          <p className="md:whitespace-nowrap">{formatDateRange(m.startDate, m.endDate)}</p>
-          {m.startTime || m.endTime ? (
-            <p className="text-[0.75rem] text-muted-2 md:whitespace-nowrap">
-              {formatTimeRange(m.startTime, m.endTime)} (indicatif)
-            </p>
-          ) : null}
+          <p className="md:whitespace-nowrap">
+            {formatDateTime(`${m.startDate}T${m.startTime ?? "00:00:00"}`)}
+          </p>
+          <p className="text-[0.8125rem] text-muted md:whitespace-nowrap">
+            → {formatDateTime(`${m.endDate}T${m.endTime ?? "23:59:59"}`)}
+          </p>
         </div>
       ),
     },
     {
       key: "level",
       header: "Urgence",
-      cell: (m) => <StatusPill type="urgency" level={m.urgencyLevel} size="sm" />,
+      cell: (m) => (
+        <div className="flex flex-col items-start gap-1">
+          <StatusPill type="urgency" level={m.urgencyLevel} size="sm" />
+          <span className="text-[0.75rem] text-muted md:whitespace-nowrap">
+            {priorityLabel(m.priority)} · {m.durationSeconds ?? 15} s
+          </span>
+        </div>
+      ),
     },
     {
-      key: "priority",
-      header: "Priorité",
-      cell: (m) => <span className="md:whitespace-nowrap">{priorityLabel(m.priority)}</span>,
-    },
-    {
-      key: "phase",
+      key: "state",
       header: "État",
+      mobileMeta: true,
       cell: (m) => {
-        const p = EMERGENCY_PHASE[emergencyPhase(m, today)];
+        const state = emergencyStateOf(m, now);
+        const meta = EMERGENCY_STATE[state];
         return (
-          <Badge
-            tone={p.tone}
-            dot
-            pulse={emergencyPhase(m, today) === "current"}
-            size="sm"
-            title={p.description}
-          >
-            {p.label}
-          </Badge>
+          <div className="flex flex-col items-start gap-1">
+            <Badge tone={meta.tone} dot pulse={meta.pulse} size="sm" title={meta.description}>
+              {meta.label}
+            </Badge>
+            {m.stopReason ? (
+              <span className="text-[0.75rem] text-muted md:whitespace-nowrap">
+                {EMERGENCY_STOP_REASON_LABEL[m.stopReason]}
+                {m.stoppedAt ? ` · ${formatDateTime(m.stoppedAt)}` : ""}
+              </span>
+            ) : null}
+          </div>
         );
       },
+    },
+    {
+      key: "impact",
+      header: "Diffusion",
+      cell: (m) => (
+        <div className="text-[0.8125rem] md:whitespace-nowrap">
+          <p>
+            <span className="font-semibold text-ink-strong tabular">
+              {formatNumber(m.affectedSupports ?? 0)}
+            </span>{" "}
+            Porteur{(m.affectedSupports ?? 0) > 1 ? "s" : ""} actif
+            {(m.affectedSupports ?? 0) > 1 ? "s" : ""}
+          </p>
+          <p className="text-muted">
+            {formatNumber(m.diffusionCount ?? 0)} passage{(m.diffusionCount ?? 0) > 1 ? "s" : ""}
+          </p>
+        </div>
+      ),
     },
     ...(canAct
       ? [
@@ -178,17 +235,7 @@ export function EmergencyView() {
             header: <span className="sr-only">Actions</span>,
             align: "right" as const,
             hideOnMobile: true,
-            cell: (m: EmergencyResponse) =>
-              m.isActive ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setToDeactivate(m)}
-                  aria-label={`Désactiver le message ${m.title}`}
-                >
-                  Désactiver
-                </Button>
-              ) : null,
+            cell: deactivateButton,
           },
         ]
       : []),
@@ -198,7 +245,7 @@ export function EmergencyView() {
     <>
       <PageHeader
         title="Messages prioritaires"
-        description="Informations d'intérêt général programmées par zone : elles passent avant la publicité sur les écrans concernés."
+        description="Informations d'intérêt général ciblées sur la carte : elles passent avant la publicité sur les écrans concernés pendant leur période."
         meta={
           currentCount > 0 ? (
             <Badge tone="warning" dot pulse>
@@ -233,7 +280,7 @@ export function EmergencyView() {
 
       {!canAct ? (
         <ReadOnlyNotice role={role} className="mb-6">
-          La création et la désactivation des messages sont réservées aux administrateurs.
+          La création et l&apos;arrêt des messages sont réservés aux administrateurs.
         </ReadOnlyNotice>
       ) : null}
 
@@ -257,15 +304,15 @@ export function EmergencyView() {
       {data ? (
         <Tabs
           value={filter}
-          onValueChange={(v) => setFilter(v === "tous" ? "tous" : "actifs")}
+          onValueChange={(v) => setFilter(v === "historique" ? "historique" : "actifs")}
           className="flex flex-col gap-5"
         >
           <TabsList aria-label="Filtrer les messages" className="self-start">
-            <TabsTrigger value="actifs" count={activeRows.length}>
+            <TabsTrigger value="actifs" count={liveRows.length}>
               En cours et programmés
             </TabsTrigger>
-            <TabsTrigger value="tous" count={sorted.length}>
-              Tous
+            <TabsTrigger value="historique" count={sorted.length}>
+              Historique
             </TabsTrigger>
           </TabsList>
 
@@ -275,16 +322,7 @@ export function EmergencyView() {
               rows={rows}
               getRowKey={(m) => m.id}
               caption="Messages prioritaires"
-              mobileFooter={
-                canAct
-                  ? (m) =>
-                      m.isActive ? (
-                        <Button size="sm" variant="secondary" onClick={() => setToDeactivate(m)}>
-                          Désactiver
-                        </Button>
-                      ) : null
-                  : undefined
-              }
+              mobileFooter={canAct ? deactivateButton : undefined}
               empty={
                 <EmptyState
                   icon={<Siren />}
@@ -295,16 +333,15 @@ export function EmergencyView() {
                   }
                   description={
                     filter === "actifs" && sorted.length > 0
-                      ? "Les messages passés ou désactivés restent consultables dans l'onglet « Tous »."
-                      : "Les messages d'intérêt général (information de service, fermeture temporaire d'une voie, changement d'horaires) apparaîtront ici."
+                      ? "Les messages terminés ou arrêtés restent consultables dans l'historique."
+                      : "Les messages d'intérêt général (information de service, fermeture temporaire d'une voie, alerte météo) apparaîtront ici."
                   }
                   action={
                     filter === "actifs" && sorted.length > 0 ? (
-                      <Button variant="secondary" onClick={() => setFilter("tous")}>
-                        Voir tous les messages
+                      <Button variant="secondary" onClick={() => setFilter("historique")}>
+                        Voir l&apos;historique
                       </Button>
                     ) : canAct ? (
-                      // Secondary: the header already holds the page's primary « Nouveau message prioritaire ».
                       <Button
                         variant="secondary"
                         onClick={() => setCreateOpen(true)}
@@ -339,29 +376,27 @@ export function EmergencyView() {
             onOpenChange={setCreateOpen}
             zones={data?.zones ?? []}
             supports={data?.supports ?? []}
-            onCreated={({ messages, sampleSupportId }) => {
+            onCreated={(message) => {
               setData((prev) => ({
-                messages: [...(prev?.messages ?? []), ...messages],
+                messages: [message, ...(prev?.messages ?? [])],
                 zones: prev?.zones ?? [],
                 supports: prev?.supports ?? [],
               }));
               invalidate(resourceKeys.emergencies);
-              const current = messages.some((m) => emergencyPhase(m, todayISO()) === "current");
               setFilter("actifs");
+              const sample = sampleSupportFor(message, data?.supports ?? []);
+              const onAir = emergencyStateOf(message) === "EN_COURS";
               toast({
-                title:
-                  messages.length > 1
-                    ? `${messages.length} messages programmés`
-                    : "Message programmé",
-                description: current
-                  ? "Diffusé en priorité dès le prochain appel des lecteurs des zones choisies."
-                  : "Diffusé en priorité à partir de sa date de début.",
+                title: "Message programmé",
+                description: onAir
+                  ? "Diffusé en priorité dès le prochain appel des lecteurs ciblés."
+                  : "Diffusé en priorité à partir de son début.",
                 variant: "success",
-                ...(sampleSupportId !== null
+                ...(sample !== null
                   ? {
                       action: {
                         label: "Vérifier sur un écran",
-                        href: routes.player(sampleSupportId),
+                        href: routes.player(sample),
                         external: true,
                       },
                     }
@@ -374,11 +409,9 @@ export function EmergencyView() {
             onOpenChange={(open) => {
               if (!open) setToDeactivate(null);
             }}
-            title={
-              toDeactivate ? `Désactiver « ${toDeactivate.title} » ?` : "Désactiver le message ?"
-            }
-            description="Le message est retiré de la diffusion dès le prochain appel des écrans. Il ne peut pas être réactivé : programmez un nouveau message si besoin."
-            confirmLabel="Désactiver"
+            title={toDeactivate ? `Arrêter « ${toDeactivate.title} » ?` : "Arrêter le message ?"}
+            description="Le message est retiré de la diffusion dès le prochain appel des écrans (arrêt manuel journalisé). Il ne peut pas être réactivé : programmez un nouveau message si besoin."
+            confirmLabel="Arrêter le message"
             tone="danger"
             onConfirm={async () => {
               if (!toDeactivate) return;
@@ -389,7 +422,7 @@ export function EmergencyView() {
                 supports: prev?.supports ?? [],
               }));
               invalidate(resourceKeys.emergencies);
-              toast({ title: "Message désactivé", variant: "success" });
+              toast({ title: "Message arrêté", variant: "success" });
             }}
           />
         </>

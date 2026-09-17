@@ -12,6 +12,12 @@ public interface EmergencyMessageRepository extends JpaRepository<EmergencyMessa
 
     List<EmergencyMessage> findByZoneId(Long zoneId);
 
+    List<EmergencyMessage> findByIsActiveTrue();
+
+    List<EmergencyMessage> findAllByOrderByCreatedAtDescIdDesc();
+
+    long countByZoneId(Long zoneId);
+
     @Query("""
             SELECT e FROM EmergencyMessage e
             WHERE e.isActive = true
@@ -24,4 +30,14 @@ public interface EmergencyMessageRepository extends JpaRepository<EmergencyMessa
             @Param("zoneId") Long zoneId,
             @Param("date") LocalDate date
     );
+
+    /** Active messages whose date range covers {@code date}, any zone (time window and target filtered in Java). */
+    @Query("""
+            SELECT e FROM EmergencyMessage e
+            JOIN FETCH e.zone z
+            WHERE e.isActive = true
+              AND e.startDate <= :date
+              AND e.endDate >= :date
+            """)
+    List<EmergencyMessage> findActiveOnDate(@Param("date") LocalDate date);
 }

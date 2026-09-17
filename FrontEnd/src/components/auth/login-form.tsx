@@ -16,6 +16,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input, PasswordInput } from "@/components/ui/field";
 import { ApiError, presentError, sessionApi, SESSION_EXPIRED_MESSAGE } from "@/lib/api";
+import { hasErrorCode } from "@/lib/api/errors";
 
 const FIELDS = ["email", "password"] as const;
 type Errors = FieldErrorsOf<LoginValues>;
@@ -25,9 +26,16 @@ export interface LoginFormProps {
   expired: boolean;
 }
 
-function loginErrorMessage(e: unknown): string {
+export const ACCOUNT_DISABLED_MESSAGE =
+  "Ce compte est désactivé. Contactez l'équipe TPUB pour le réactiver.";
+export const BAD_CREDENTIALS_MESSAGE = "E-mail ou mot de passe incorrect.";
+
+/** Stable backend codes first (contract §2.0 / §2.10), then the legacy status fallbacks. */
+export function loginErrorMessage(e: unknown): string {
+  if (hasErrorCode(e, "ACCOUNT_DISABLED")) return ACCOUNT_DISABLED_MESSAGE;
+  if (hasErrorCode(e, "BAD_CREDENTIALS")) return BAD_CREDENTIALS_MESSAGE;
   if (e instanceof ApiError) {
-    if (e.status === 401) return "E-mail ou mot de passe incorrect.";
+    if (e.status === 401) return BAD_CREDENTIALS_MESSAGE;
     // Spring answers 500 for a deactivated account (contract §4).
     if (e.status === 500) {
       return "La connexion n'a pas abouti. Si le problème persiste, contactez l'équipe TPUB.";

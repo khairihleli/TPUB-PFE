@@ -3,7 +3,7 @@ package com.example.tpubpfe.service.ai;
 import com.example.tpubpfe.config.TpubProperties;
 import com.example.tpubpfe.model.AiCheckStatus;
 import com.example.tpubpfe.model.Campaign;
-import com.example.tpubpfe.model.MediaFile;
+import com.example.tpubpfe.model.AiMediaAnalysis;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -61,8 +61,8 @@ public class OpenAiAnalysisClient {
                 && !ai.getOpenaiApiKey().isBlank();
     }
 
-    public AiAnalysisResult analyze(Campaign campaign, List<MediaFile> mediaFiles) {
-        String userPrompt = buildUserPrompt(campaign, mediaFiles);
+    public AiAnalysisResult analyze(Campaign campaign, ContentAnalysisPipeline.AnalysisOutcome local) {
+        String userPrompt = buildUserPrompt(campaign, local);
 
         try {
             JsonNode response = restClient.post()
@@ -96,22 +96,28 @@ public class OpenAiAnalysisClient {
         );
     }
 
-    private String buildUserPrompt(Campaign campaign, List<MediaFile> mediaFiles) {
-        String mediaSummary = mediaFiles.isEmpty()
+    private String buildUserPrompt(Campaign campaign, ContentAnalysisPipeline.AnalysisOutcome local) {
+        List<AiMediaAnalysis> media = local.mediaAnalyses();
+        String mediaSummary = media == null || media.isEmpty()
                 ? "Aucun média joint"
-                : mediaFiles.stream()
-                .map(m -> "- " + m.getFileName() + " (" + m.getFileType() + ", " + m.getMimeType() + ")")
+                : media.stream()
+                .map(m -> "- " + m.getFileName() + " (" + m.getContentType()
+                        + (m.getWidthPx() != null && m.getHeightPx() != null ? ", " + m.getWidthPx() + "x" + m.getHeightPx() + " px" : "")
+                        + (m.getDurationSeconds() != null ? ", " + m.getDurationSeconds() + " s" : "")
+                        + ")")
                 .collect(Collectors.joining("\n"));
 
         return """
                 Analyse cette campagne publicitaire :
-                
+
                 Nom : %s
                 Objectif : %s
                 Budget : %s TND
                 Période : %s → %s
-                Vues estimées : %d
-                
+
+                Texte extrait des visuels (OCR) :
+                %s
+
                 Médias :
                 %s
                 """.formatted(
@@ -120,7 +126,7 @@ public class OpenAiAnalysisClient {
                 campaign.getBudget(),
                 campaign.getStartDate(),
                 campaign.getEndDate(),
-                campaign.getEstimatedViews(),
+                local.extractedText() != null ? local.extractedText() : "Aucun",
                 mediaSummary
         );
     }

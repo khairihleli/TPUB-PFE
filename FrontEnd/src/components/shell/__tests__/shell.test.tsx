@@ -53,6 +53,7 @@ import {
 } from "@/components/shell/command-palette";
 import {
   countActiveEmergencies,
+  countConflicts,
   countDraftsToFinalise,
   countModerationQueue,
 } from "@/components/shell/nav-badges";
@@ -62,7 +63,7 @@ import { SessionExpiredDialog, SessionExpiryBanner } from "@/components/shell/se
 import { SessionExpiredListener } from "@/components/shell/session-expired-listener";
 import { SessionProvider } from "@/components/shell/session-provider";
 import { ShortcutsProvider, useShortcut } from "@/components/shell/shortcuts";
-import { ADMIN_NAV, ESPACE_NAV } from "@/content/nav";
+import { ADMIN_NAV, ESPACE_NAV, navForRole, roleCanOpen } from "@/content/nav";
 import { SESSION_EXPIRED_EVENT } from "@/lib/api/client";
 import type {
   CampaignResponse,
@@ -180,7 +181,7 @@ describe("command palette logic", () => {
     expect(espace.find((c) => c.label === "Profil")?.href).toBe("/espace/profil");
     expect(espace.find((c) => c.id === "campaign:7")?.href).toBe("/espace/campagnes/7");
     expect(espace.find((c) => c.id === "campaign:7:finaliser")?.href).toBe(
-      "/espace/campagnes/nouvelle?id=7&etape=2",
+      "/espace/campagnes/nouvelle?id=7&etape=3",
     );
     expect(espace.find((c) => c.id === "porteur:12")?.href).toBe("/espace/reseau?porteur=12");
     expect(espace.some((c) => c.label === "Nouveau message prioritaire")).toBe(false);
@@ -222,6 +223,75 @@ describe("command palette logic", () => {
     expect(readRecents(43)).toEqual([]);
     window.localStorage.setItem("tpub:recents:42", "{oops");
     expect(readRecents(42)).toEqual([]);
+  });
+});
+
+describe("role-aware back-office navigation (contract §5 F3)", () => {
+  it("shows every page to administrators and hides dossier pages from opérateurs", () => {
+    const hrefs = (role: Parameters<typeof navForRole>[1]) =>
+      navForRole(ADMIN_NAV, role).map((i) => i.href);
+    expect(hrefs("ADMINISTRATEUR")).toEqual([
+      "/admin",
+      "/admin/moderation",
+      "/admin/reservations",
+      "/admin/reseau",
+      "/admin/urgences",
+      "/admin/statistiques",
+      "/admin/journal",
+      "/admin/utilisateurs",
+      "/admin/regles-ia",
+    ]);
+    expect(hrefs("SUPERVISEUR")).toEqual(hrefs("ADMINISTRATEUR"));
+    expect(hrefs("OPERATEUR")).toEqual([
+      "/admin",
+      "/admin/reseau",
+      "/admin/urgences",
+      "/admin/statistiques",
+      "/admin/journal",
+    ]);
+    expect(roleCanOpen(ADMIN_NAV, "OPERATEUR", "/admin/utilisateurs?onglet=equipe")).toBe(false);
+    expect(roleCanOpen(ADMIN_NAV, "OPERATEUR", "/admin/journal?onglet=diffusions")).toBe(true);
+    expect(roleCanOpen(ADMIN_NAV, "SUPERVISEUR", "/admin/regles-ia")).toBe(true);
+  });
+
+  it("registers the new pages and actions in the palette per role", () => {
+    const data = { campaigns: [], supports: SUPPORTS, zones: ZONES };
+    const actions = { openShortcuts: vi.fn(), logout: vi.fn() };
+    const admin = buildCommands({ role: "ADMINISTRATEUR", data, actions });
+    for (const href of [
+      "/admin/utilisateurs",
+      "/admin/journal",
+      "/admin/regles-ia",
+      "/admin/reservations",
+      "/admin/statistiques",
+    ]) {
+      expect(admin.some((c) => c.href === href)).toBe(true);
+    }
+    expect(admin.find((c) => c.id === "action:new-staff")?.href).toBe(
+      "/admin/utilisateurs?onglet=equipe",
+    );
+    expect(admin.find((c) => c.id === "action:conflicts")?.href).toBe(
+      "/admin/reservations?onglet=conflits",
+    );
+    const operateur = buildCommands({ role: "OPERATEUR", data, actions });
+    expect(operateur.some((c) => c.href === "/admin/utilisateurs")).toBe(false);
+    expect(operateur.some((c) => c.id === "action:new-staff")).toBe(false);
+    expect(operateur.some((c) => c.id === "action:conflicts")).toBe(false);
+    expect(operateur.find((c) => c.id === "action:journal-diffusions")?.href).toBe(
+      "/admin/journal?onglet=diffusions",
+    );
+  });
+
+  it("counts only CONFLIT groups for the reservations badge", () => {
+    expect(
+      countConflicts([{ severity: "CONFLIT" }, { severity: "SATURE" }, { severity: "CONFLIT" }]),
+    ).toBe(2);
+    expect(
+      countActiveEmergencies([
+        { isActive: true, state: "TERMINE" },
+        { isActive: false, state: "PROGRAMME" },
+      ]),
+    ).toBe(1);
   });
 });
 

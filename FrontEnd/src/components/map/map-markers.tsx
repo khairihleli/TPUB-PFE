@@ -3,13 +3,19 @@
 import { Check } from "lucide-react";
 import { useEffect, useRef, type FocusEvent, type ReactNode } from "react";
 
-import type { SupportResponse, ZoneResponse } from "@/lib/api/types";
+import type { AvailabilityStatus, SupportResponse, ZoneResponse } from "@/lib/api/types";
+import { AVAILABILITY_STATUS } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { formatRadiusKm } from "@/lib/network/geo";
 import { PORTEUR_TYPES, porteurAriaLabel, resolvePorteurType } from "@/lib/network/porteur";
 
 import { PorteurCard } from "@/components/map/porteur-card";
-import { STATUS_RING, TONE_BG, TONE_TEXT } from "@/components/map/porteur-visuals";
+import {
+  AVAILABILITY_RING,
+  STATUS_RING,
+  TONE_BG,
+  TONE_TEXT,
+} from "@/components/map/porteur-visuals";
 
 export interface PorteurMarkerProps {
   support: SupportResponse;
@@ -28,6 +34,8 @@ export interface PorteurMarkerProps {
    * target, letter hidden. Same accessible name, focus and hover/focus mini card.
    */
   compact?: boolean;
+  /** Campaign-window availability: replaces the technical status ring and label. */
+  availability?: AvailabilityStatus;
   onActivate: () => void;
   onToggleSelect: () => void;
   onOpen?: () => void;
@@ -49,6 +57,7 @@ export function PorteurMarker({
   openLabel,
   size = "md",
   compact = false,
+  availability,
   onActivate,
   onToggleSelect,
   onOpen,
@@ -58,6 +67,13 @@ export function PorteurMarker({
   const { type, inferred } = resolvePorteurType(support);
   const meta = PORTEUR_TYPES[type];
   const cardId = `porteur-card-${support.id}`;
+  const ring = availability
+    ? AVAILABILITY_RING[availability]
+    : STATUS_RING[support.technicalStatus];
+  const dimmed = availability ? availability !== "DISPONIBLE" : support.technicalStatus !== "ACTIF";
+  const ariaLabel = availability
+    ? `${porteurAriaLabel(support, { selected })} — ${AVAILABILITY_STATUS[availability].label} sur la période`
+    : porteurAriaLabel(support, { selected });
 
   const handleBlur = (e: FocusEvent<HTMLDivElement>) => {
     if (!rootRef.current?.contains(e.relatedTarget)) onCardChange(false);
@@ -97,7 +113,7 @@ export function PorteurMarker({
           type="button"
           data-support-id={support.id}
           data-marker-variant="compact"
-          aria-label={porteurAriaLabel(support, { selected })}
+          aria-label={ariaLabel}
           aria-describedby={cardOpen ? cardId : undefined}
           onClick={onActivate}
           className={cx(
@@ -111,11 +127,11 @@ export function PorteurMarker({
             className={cx(
               "block size-4 rounded-full border-2 shadow-lift",
               TONE_BG[meta.tone],
-              STATUS_RING[support.technicalStatus],
+              ring,
               type === "D" && "border-dashed",
               selected && "ring-2 ring-brand-blue-text ring-offset-1 ring-offset-bg",
               highlighted && !selected && "ring-2 ring-ink-strong/70 ring-offset-1 ring-offset-bg",
-              support.technicalStatus !== "ACTIF" && "opacity-90",
+              dimmed && "opacity-90",
             )}
           />
         </button>
@@ -124,18 +140,18 @@ export function PorteurMarker({
           type="button"
           data-support-id={support.id}
           data-marker-variant="full"
-          aria-label={porteurAriaLabel(support, { selected })}
+          aria-label={ariaLabel}
           aria-describedby={cardOpen ? cardId : undefined}
           onClick={onActivate}
           className={cx(
             "relative grid cursor-pointer place-items-center rounded-full border-2 bg-bg shadow-lift transition-[transform,box-shadow] duration-200 ease-smooth hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand-blue-text motion-reduce:transition-none",
             size === "sm" ? "size-7" : "size-9",
-            STATUS_RING[support.technicalStatus],
+            ring,
             type === "D" && "border-dashed",
             selected && "ring-2 ring-brand-blue-text ring-offset-2 ring-offset-bg",
             highlighted && !selected && "ring-2 ring-ink-strong/70 ring-offset-2 ring-offset-bg",
             (highlighted || cardOpen) && "scale-110",
-            support.technicalStatus !== "ACTIF" && "opacity-85",
+            dimmed && "opacity-85",
           )}
         >
           <span

@@ -1,8 +1,9 @@
-import { Box, MapPin } from "lucide-react";
+import { Box, MapPin, X } from "lucide-react";
 import Link from "next/link";
 
 import type { JoinedReservation } from "@/components/campaign/campaign-data";
 import { SUPPORT_TYPE_ICON } from "@/components/campaign/campaign-ui";
+import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
 import { SUPPORT_TYPE_LABEL } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
@@ -21,6 +22,10 @@ export interface ReservationListProps {
   links?: boolean;
   /** « Bloqué · en attente de décision TPUB » instead of « Bloqué » (glossary long labels). */
   longStatus?: boolean;
+  /** « Annuler » on reservations the caller may cancel (`cancellable`). */
+  onCancel?: (reservation: JoinedReservation) => void;
+  /** Reservation whose cancellation is in flight. */
+  cancellingId?: number | null;
   className?: string;
 }
 
@@ -34,6 +39,8 @@ export function ReservationList({
   dense = false,
   links = true,
   longStatus = false,
+  onCancel,
+  cancellingId = null,
   className,
 }: ReservationListProps) {
   return (
@@ -97,6 +104,9 @@ export function ReservationList({
                   {formatTimeRange(r.startTime, r.endTime)}
                 </span>
               </p>
+              {r.cancelReason && r.reservationStatus === "ANNULEE" ? (
+                <p className="mt-1 text-[0.8125rem] text-muted">Motif : {r.cancelReason}</p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-3 sm:flex-col sm:items-end sm:gap-1.5">
               <StatusPill
@@ -110,6 +120,19 @@ export function ReservationList({
                   <span className="sr-only">Coût estimé : </span>
                   {formatTND(r.estimatedCost)}
                 </span>
+              ) : null}
+              {onCancel && r.cancellable ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconLeft={<X aria-hidden="true" />}
+                  loading={cancellingId === r.id}
+                  loadingLabel="Annulation en cours"
+                  disabled={cancellingId !== null && cancellingId !== r.id}
+                  onClick={() => onCancel(r)}
+                >
+                  Annuler<span className="sr-only"> la réservation : {r.supportName}</span>
+                </Button>
               ) : null}
               {links ? (
                 <Link

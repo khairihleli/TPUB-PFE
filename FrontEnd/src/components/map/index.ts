@@ -5,7 +5,7 @@
  */
 export { NetworkMap } from "@/components/map/network-map";
 export { NetworkMapSkeleton } from "@/components/map/network-map-skeleton";
-export { MapLegend, type MapLegendProps } from "@/components/map/map-legend";
+export { AvailabilityLegend, MapLegend, type MapLegendProps } from "@/components/map/map-legend";
 export {
   MapToolbar,
   MapToolButton,
@@ -27,6 +27,8 @@ export {
   TONE_BG_SOFT,
   TONE_TEXT,
   ACCENT_TEXT,
+  AVAILABILITY_DOT,
+  AVAILABILITY_RING,
   PORTEUR_ICONS,
   STATUS_DOT,
   STATUS_RING,

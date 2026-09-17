@@ -49,7 +49,7 @@ public class PaymentSimulation {
     @Builder.Default
     private BigDecimal budgetEstimated = BigDecimal.ZERO;
 
-    @Column(name = "budget_consumed", nullable = false, precision = 14, scale = 2)
+    @Column(name = "budget_consumed", nullable = false, precision = 16, scale = 4)
     @Builder.Default
     private BigDecimal budgetConsumed = BigDecimal.ZERO;
 

@@ -1,5 +1,7 @@
 package com.example.tpubpfe.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -18,21 +20,23 @@ public class ReservationRequest {
     @NotNull
     private Long campaignId;
 
-    @NotNull
+    /** Ignored: the reservation zone is always the support's zone. */
     private Long zoneId;
 
     @NotNull
     private Long supportId;
 
-    @NotNull
+    /** Null: the campaign value. */
     private LocalDate startDate;
 
-    @NotNull
+    /** Null: the campaign value. */
     private LocalDate endDate;
 
-    @NotNull
+    @Schema(type = "string", example = "08:00", description = "HH:mm ou HH:mm:ss ; vide = créneau de la campagne")
+    @JsonFormat(pattern = "HH:mm[:ss]")
     private LocalTime startTime;
 
-    @NotNull
+    @Schema(type = "string", example = "22:00", description = "HH:mm ou HH:mm:ss ; vide = créneau de la campagne")
+    @JsonFormat(pattern = "HH:mm[:ss]")
     private LocalTime endTime;
 }

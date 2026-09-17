@@ -353,7 +353,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       });
       await expect(
         studio.getByRole("link", { name: /Continuer dans l'assistant/ }),
-      ).toHaveAttribute("href", `/espace/campagnes/nouvelle?id=${draft?.id}&etape=3`);
+      ).toHaveAttribute("href", `/espace/campagnes/nouvelle?id=${draft?.id}&etape=4`);
 
       // Closing the studio clears ?porteur=.
       await studio.getByRole("button", { name: "Fermer le studio" }).click();
@@ -370,7 +370,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       expect(api.unhandled).toEqual([]);
     });
 
-    test("assistant : onglet « Carte » → studio → « Ajouter à la sélection » → réservation explicite", async ({
+    test("assistant étape 3 : zone recommandée → carte de ciblage → marqueur → réservation explicite", async ({
       page,
     }) => {
       test.setTimeout(120_000);
@@ -381,51 +381,36 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       if (!draft) throw new Error("campagne 1 manquante");
       Object.assign(draft, { startDate: isoDay(40), endDate: isoDay(50) });
 
-      await page.goto("/espace/campagnes/nouvelle?id=1&etape=2");
+      await page.goto("/espace/campagnes/nouvelle?id=1&etape=3");
       await waitForContent(page);
-      const views = page.getByRole("group", { name: "Affichage des Porteurs" });
-      await expect(views.getByRole("button", { name: "Liste" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
+      const map = await waitForMap(
+        page,
+        "Carte de ciblage : cliquez pour placer ou déplacer la zone",
       );
-      await views.getByRole("button", { name: "Carte" }).click();
 
-      const map = await waitForMap(page, "Carte des Porteurs réservables pour la campagne");
-      // Every Porteur of the open zones is on the map (non-réservables included).
-      await expect(map.getByText("8 Porteurs affichés sur 8")).toBeVisible();
-      await map.getByRole("combobox", { name: "Rechercher sur la carte" }).fill("Lac 2");
-      await page
-        .getByRole("option", { name: /Écran Promenade du Lac 2/ })
-        .first()
-        .click();
-      const marker = map.getByRole("button", {
-        name: /^Porteur Type B — Écran Promenade du Lac 2/,
+      // The recommended zone becomes a circle wide enough to hold the zone's Porteurs.
+      await page.getByRole("button", { name: "Cibler cette zone : Les Berges du Lac" }).click();
+      await page.getByRole("button", { name: "Enregistrer les zones" }).click();
+      const checkbox = page.getByRole("checkbox", {
+        name: "Sélectionner Écran Promenade du Lac 2",
       });
-      await expect(marker).toBeVisible({ timeout: 15_000 });
-      await marker.click();
+      await expect(checkbox).toBeVisible({ timeout: 15_000 });
+      expect(api.calls.some((c) => c.startsWith("PUT /api/campaigns/1/zones"))).toBe(true);
+      expect(api.calls.some((c) => c.startsWith("GET /api/availability?"))).toBe(true);
 
-      const dialog = page.getByRole("dialog", { name: "Écran Promenade du Lac 2" });
-      await expect(dialog).toBeVisible();
-      await waitForStudio(dialog);
-      await expect(dialog.getByRole("button", { name: "Réserver ce Porteur" })).toHaveCount(0);
-      const add = dialog.getByRole("button", { name: "Ajouter à la sélection" });
-      await expect(add).not.toHaveAttribute("aria-disabled", "true", { timeout: 15_000 });
-      await add.click();
-      await expect(add).toHaveAttribute("aria-pressed", "true");
-      // Selecting books nothing: the reservation only happens on the sticky bar's explicit action.
+      // Clicking the Porteur marker selects it; selecting books nothing.
+      await map.getByRole("button", { name: /^Porteur Type B — Écran Promenade du Lac 2/ }).click();
+      await expect(checkbox).toBeChecked();
       expect(api.state.reservations.filter((r) => r.campaignId === 1)).toEqual([]);
-      await page.keyboard.press("Escape");
-      await expect(dialog).toHaveCount(0);
+
       await page
         .getByRole("region", { name: "Réservation des Porteurs" })
-        .getByRole("button", { name: "Réserver 1 Porteur et continuer" })
+        .getByRole("button", { name: "Réserver 1 Porteur" })
         .click();
-      await expect(page).toHaveURL(/[?&]etape=3/);
-
+      await expect(page.getByText("Réservé pour cette campagne").first()).toBeVisible();
       expect(
         api.state.reservations.filter((r) => r.campaignId === 1).map((r) => r.supportId),
       ).toEqual([3]);
-      expect(api.calls.some((c) => c.startsWith("GET /api/supports/3/availability?"))).toBe(true);
       expect(api.unhandled).toEqual([]);
       expect(errors).toEqual([]);
     });

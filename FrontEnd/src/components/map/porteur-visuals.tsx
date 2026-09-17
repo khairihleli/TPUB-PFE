@@ -1,6 +1,6 @@
 import { Columns2, Orbit, RadioTower, RectangleVertical, type LucideIcon } from "lucide-react";
 
-import type { TechnicalStatus } from "@/lib/api/types";
+import type { AvailabilityStatus, TechnicalStatus } from "@/lib/api/types";
 import type { CategoricalTone, PorteurAccent, PorteurIconKey } from "@/lib/network/porteur";
 
 /** lucide icon per Porteur typology icon key. */
@@ -75,4 +75,21 @@ export const STATUS_DOT: Record<TechnicalStatus, string> = {
   MAINTENANCE: "bg-warning",
   INACTIF: "bg-muted-2",
   HORS_LIGNE: "bg-danger",
+};
+
+/** Marker ring for a campaign-window availability (contract §2.7). Text always accompanies it. */
+export const AVAILABILITY_RING: Record<AvailabilityStatus, string> = {
+  DISPONIBLE: "border-success",
+  RESERVE: "border-warning",
+  OCCUPE: "border-danger",
+  MAINTENANCE: "border-muted-2",
+  HORS_LIGNE: "border-muted-2 border-dashed",
+};
+
+export const AVAILABILITY_DOT: Record<AvailabilityStatus, string> = {
+  DISPONIBLE: "bg-success",
+  RESERVE: "bg-warning",
+  OCCUPE: "bg-danger",
+  MAINTENANCE: "bg-muted-2",
+  HORS_LIGNE: "bg-surface-3 border border-dashed border-muted-2",
 };

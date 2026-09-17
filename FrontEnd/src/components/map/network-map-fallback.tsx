@@ -98,6 +98,7 @@ export function NetworkMapFallback({
   onOpenPorteur,
   onReady,
   pickPoints,
+  availability,
 }: EngineProps) {
   const projection = useMemo(() => createProjection(undefined, SVG_HEIGHT), []);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -224,6 +225,7 @@ export function NetworkMapFallback({
     onToggleSupport,
     onHoverSupport,
     onOpenPorteur,
+    availability,
   };
 
   return (
@@ -362,6 +364,7 @@ type MarkerCommonProps = Pick<
   | "onToggleSupport"
   | "onHoverSupport"
   | "onOpenPorteur"
+  | "availability"
 >;
 
 /**
@@ -385,6 +388,7 @@ function SpiderMarkers({
   onToggleSupport,
   onHoverSupport,
   onOpenPorteur,
+  availability,
 }: MarkerCommonProps & {
   items: ProjectedPorteur[];
   pxPerPercentX: number;
@@ -451,6 +455,7 @@ function SpiderMarkers({
               <PorteurMarker
                 size="sm"
                 support={s}
+                availability={availability?.get(s.id)}
                 selected={selection.supportIds.includes(s.id)}
                 highlighted={highlightSupportId === s.id}
                 pulse={pulseSupportId === s.id && !reducedMotion}

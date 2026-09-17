@@ -45,7 +45,7 @@ export function ChartTable({
         <span className="group-open/table:hidden">Afficher les données en tableau</span>
         <span className="hidden group-open/table:inline">Masquer le tableau</span>
       </summary>
-      <div className="overflow-x-auto border-t border-line">
+      <div className="relative overflow-x-auto border-t border-line">
         <table className="w-full border-collapse text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>
@@ -442,5 +442,140 @@ export function PairedBars({
         ))}
       </ul>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Daily columns (one measure per chart: never two scales on one axis)
+// ---------------------------------------------------------------------------
+export interface DailyDatum {
+  /** "YYYY-MM-DD" */
+  date: string;
+  value: number;
+}
+
+const DAY_LABEL = new Intl.DateTimeFormat("fr-TN", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/** « 12 sept. » from "2026-09-12" (UTC, so the day never shifts). */
+export function dayLabel(date: string): string {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  if (!y || !m || !d) return date;
+  return DAY_LABEL.format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+/**
+ * Columns per day with a recessive grid, the axis maximum, first/middle/last date labels and a
+ * native tooltip per day (hover and focus). Every chart ships a table fallback next to it.
+ */
+export function DailyColumns({
+  data,
+  label,
+  fillClass = "fill-cat-2",
+  format = formatNumber,
+  className,
+}: {
+  data: readonly DailyDatum[];
+  /** Accessible name, e.g. « Affichages par jour ». */
+  label: string;
+  fillClass?: string;
+  format?: (n: number) => string;
+  className?: string;
+}) {
+  const max = niceMax(Math.max(0, ...data.map((d) => d.value)));
+  const total = data.reduce((s, d) => s + (Number.isFinite(d.value) ? d.value : 0), 0);
+  const n = Math.max(1, data.length);
+  const slot = 100 / n;
+  const barWidth = Math.max(slot * 0.62, Math.min(slot, 0.6));
+  const ticks = axisTicks(max, 2);
+  const marks = data.length > 0 ? [0, Math.floor((data.length - 1) / 2), data.length - 1] : [];
+  const summary = `${label} : ${format(total)} au total sur ${formatNumber(data.length)} jours, maximum ${format(Math.max(0, ...data.map((d) => d.value)))}.`;
+
+  return (
+    <figure className={cx("flex flex-col gap-2", className)}>
+      <div className="flex gap-2">
+        <div
+          aria-hidden="true"
+          className="flex h-40 w-12 shrink-0 flex-col justify-between text-right text-[0.75rem] text-muted tabular"
+        >
+          {[...ticks].reverse().map((t) => (
+            <span key={t} className="leading-none">
+              {format(t)}
+            </span>
+          ))}
+        </div>
+        <svg
+          role="img"
+          aria-label={summary}
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="h-40 min-w-0 flex-1 overflow-visible"
+        >
+          {ticks.map((t) => (
+            <line
+              key={t}
+              x1={0}
+              x2={100}
+              y1={100 - percentOf(t, max)}
+              y2={100 - percentOf(t, max)}
+              vectorEffect="non-scaling-stroke"
+              className="stroke-line"
+              strokeWidth={1}
+            />
+          ))}
+          {data.map((d, i) => {
+            const h = percentOf(d.value, max);
+            const x = i * slot + (slot - barWidth) / 2;
+            return (
+              <g key={d.date}>
+                <rect
+                  x={i * slot}
+                  y={0}
+                  width={slot}
+                  height={100}
+                  className="fill-transparent hover:fill-overlay-hover"
+                >
+                  <title>{`${dayLabel(d.date)} : ${format(d.value)}`}</title>
+                </rect>
+                {h > 0 ? (
+                  <rect
+                    x={x}
+                    y={100 - Math.max(h, 0.8)}
+                    width={barWidth}
+                    height={Math.max(h, 0.8)}
+                    className={cx(fillClass, "pointer-events-none")}
+                  />
+                ) : null}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div aria-hidden="true" className="relative ml-14 h-4 text-[0.75rem] text-muted tabular">
+        {marks.map((i, k) => {
+          const d = data[i];
+          if (!d || (k > 0 && marks[k - 1] === i)) return null;
+          return (
+            <span
+              key={`${i}-${k}`}
+              className={cx(
+                "absolute top-0 whitespace-nowrap",
+                k === 0
+                  ? "translate-x-0"
+                  : k === marks.length - 1
+                    ? "-translate-x-full"
+                    : "-translate-x-1/2",
+              )}
+              style={{ left: `${k === 0 ? 0 : k === marks.length - 1 ? 100 : (i + 0.5) * slot}%` }}
+            >
+              {dayLabel(d.date)}
+            </span>
+          );
+        })}
+      </div>
+    </figure>
   );
 }

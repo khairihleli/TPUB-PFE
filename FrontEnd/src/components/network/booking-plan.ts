@@ -3,22 +3,35 @@
  * créneau (dates + day-part), availability validation, quick draft validation (existing campaign
  * zod schema), reservation plan per Porteur and outcome mapping.
  *
- * Backend rules mirrored here (contract §5.7): the conflict check is by DATE RANGE per support,
- * times are ignored; the reservation carries the SUPPORT's own zoneId; times are HH:mm:ss.
+ * Backend rules mirrored here (completion contract §2.4, §2.7): a conflict is a date AND time
+ * overlap on the support; the Porteur must lie inside one of the campaign circles (zones are
+ * extended before booking, see `runBatchBooking`); times are HH:mm:ss.
  */
 import {
   type CampaignFormValues,
   validateCampaignForm,
 } from "@/components/campaign/campaign-schema";
-import { isAbortError, isReservationConflictError, presentError } from "@/lib/api/errors";
+import { coveringCircle } from "@/components/campaign/zone-model";
+import {
+  ApiError,
+  batchConflicts,
+  isAbortError,
+  isReservationConflictError,
+  presentError,
+} from "@/lib/api/errors";
+import { translateFieldMessage } from "@/lib/api/messages";
 import type {
   CampaignRequest,
   CampaignResponse,
+  CampaignZoneRequest,
+  CampaignZoneResponse,
+  ReservationBatchRequest,
   ReservationRequest,
   ReservationResponse,
   SupportAvailabilitySlot,
   SupportResponse,
 } from "@/lib/api/types";
+import { CAMPAIGN_ZONE_LIMITS, insideAnyCircle } from "@/lib/geo";
 import {
   addDaysISO,
   availabilityMessage,
@@ -294,7 +307,8 @@ export function reserveButtonLabel(draft: Pick<ScheduleDraft, "startDate" | "end
 }
 
 /** Consequence line next to the booking button (FFA-03). */
-export const BOOKING_CONSEQUENCE = "Non libérable en ligne.";
+export const BOOKING_CONSEQUENCE =
+  "Annulable depuis vos réservations tant que la campagne est en brouillon.";
 
 /** Why « Réserver ce Porteur » is not available yet, in priority order (null = can book). */
 export type ReserveBlocker =
@@ -649,4 +663,122 @@ export function summarizeOutcomes(outcomes: Iterable<BookingOutcome>): OutcomeSu
   if (conflicts > 0) parts.push(`${conflicts} indisponible${conflicts > 1 ? "s" : ""}`);
   if (errors > 0) parts.push(`${errors} erreur${errors > 1 ? "s" : ""}`);
   return { reserved, conflicts, errors, label: parts.join(" · ") };
+}
+
+// ---------------------------------------------------------------------------------------------
+// v2 booking: campaign zones first, then one batch (contract §5 F2 item 9)
+
+export const CAMPAIGN_ZONE_LABEL = "Sélection du réseau";
+
+export const ZONE_LIMIT_MESSAGE =
+  "Cette campagne a déjà 5 zones : ajustez ses zones dans l'assistant pour y inclure ces Porteurs.";
+
+export interface ZoneCoverage {
+  /** Circles to send with PUT /campaigns/{id}/zones, or null when every Porteur is covered. */
+  zones: CampaignZoneRequest[] | null;
+  /** Porteurs outside every current circle. */
+  uncovered: number[];
+}
+
+/**
+ * A reservation requires the Porteur inside one of the campaign circles (backend rule 6).
+ * Keeps the existing circles (so no reservation is released) and adds one circle centred on the
+ * uncovered Porteurs, covering them plus 0.5 km. Throws when the 5-circle limit is reached.
+ */
+export function planZoneCoverage(
+  existing: readonly Pick<CampaignZoneResponse, "latitude" | "longitude" | "radiusKm" | "label">[],
+  supports: readonly Pick<SupportResponse, "id" | "latitude" | "longitude">[],
+): ZoneCoverage {
+  const uncoveredSupports = supports.filter(
+    (s) => !insideAnyCircle(s.latitude, s.longitude, existing),
+  );
+  if (uncoveredSupports.length === 0) return { zones: null, uncovered: [] };
+  if (existing.length >= CAMPAIGN_ZONE_LIMITS.maxZones) throw new Error(ZONE_LIMIT_MESSAGE);
+  const circle = coveringCircle(uncoveredSupports);
+  if (!circle) return { zones: null, uncovered: [] };
+  return {
+    zones: [
+      ...existing.map((z) => ({
+        latitude: z.latitude,
+        longitude: z.longitude,
+        radiusKm: z.radiusKm,
+        label: z.label ?? null,
+      })),
+      { ...circle, label: CAMPAIGN_ZONE_LABEL },
+    ],
+    uncovered: uncoveredSupports.map((s) => s.id),
+  };
+}
+
+export interface BatchBookingDeps {
+  zones: (campaignId: number) => Promise<CampaignZoneResponse[]>;
+  setZones: (campaignId: number, zones: CampaignZoneRequest[]) => Promise<unknown>;
+  createBatch: (body: ReservationBatchRequest) => Promise<ReservationResponse[]>;
+}
+
+/**
+ * Books every Porteur of `requests` (same campaign and window) with POST /reservations/batch.
+ * The batch is all-or-nothing: on 409 BATCH_CONFLICT the conflicting Porteurs get their own
+ * message and the remaining ones are booked in a second batch. Zone coverage is ensured first.
+ */
+export async function runBatchBooking(
+  requests: readonly ReservationRequest[],
+  supports: readonly Pick<SupportResponse, "id" | "latitude" | "longitude">[],
+  deps: BatchBookingDeps,
+): Promise<Map<number, BookingOutcome>> {
+  const outcomes = new Map<number, BookingOutcome>();
+  const first = requests[0];
+  if (!first) return outcomes;
+  const ids = requests.map((r) => r.supportId);
+  const failAll = (e: unknown, targets: readonly number[]) => {
+    if (isAbortError(e)) throw e;
+    const outcome =
+      e instanceof Error && !(e instanceof ApiError) && e.message === ZONE_LIMIT_MESSAGE
+        ? ({ status: "error", message: ZONE_LIMIT_MESSAGE, retryable: false } as const)
+        : outcomeFromError(e);
+    for (const id of targets) outcomes.set(id, outcome);
+  };
+
+  try {
+    const wanted = new Set(ids);
+    const coverage = planZoneCoverage(
+      await deps.zones(first.campaignId),
+      supports.filter((s) => wanted.has(s.id)),
+    );
+    if (coverage.zones) await deps.setZones(first.campaignId, coverage.zones);
+  } catch (e) {
+    failAll(e, ids);
+    return outcomes;
+  }
+
+  const window = {
+    campaignId: first.campaignId,
+    startDate: first.startDate ?? null,
+    endDate: first.endDate ?? null,
+    startTime: first.startTime ?? null,
+    endTime: first.endTime ?? null,
+  };
+  let remaining = ids;
+  for (let attempt = 0; attempt < 2 && remaining.length > 0; attempt++) {
+    try {
+      const created = await deps.createBatch({ ...window, supportIds: remaining });
+      for (const r of created) outcomes.set(r.supportId, { status: "reserved", reservation: r });
+      remaining = [];
+    } catch (e) {
+      const conflicts = batchConflicts(e);
+      const conflictIds = Object.keys(conflicts).map(Number);
+      if (conflictIds.length === 0 || attempt === 1) {
+        failAll(e, remaining);
+        return outcomes;
+      }
+      for (const id of conflictIds) {
+        outcomes.set(id, {
+          status: "conflict",
+          message: translateFieldMessage(conflicts[id]),
+        });
+      }
+      remaining = remaining.filter((id) => !(id in conflicts));
+    }
+  }
+  return outcomes;
 }

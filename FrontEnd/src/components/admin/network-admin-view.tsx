@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarClock,
   Map as MapIcon,
   MapPinned,
   MonitorPlay,
@@ -27,10 +28,12 @@ import {
   formatCoordinates,
   isZoneInUseError,
   type SupportFormValues,
+  SUPPORT_TYPES,
   TECHNICAL_STATUSES,
   ZONE_IN_USE_MESSAGE,
   type ZoneFormValues,
 } from "@/components/admin/network-schemas";
+import { SupportAvailabilityDialog } from "@/components/admin/support-availability-dialog";
 import { SupportFormDialog } from "@/components/admin/support-form-dialog";
 import { ZoneFormDialog } from "@/components/admin/zone-form-dialog";
 import { useSession } from "@/components/shell/session-provider";
@@ -129,6 +132,8 @@ export function NetworkAdminView({
     support: SupportResponse | null;
     initial?: SupportFormValues | null;
   }>({ open: false, support: null });
+  // « Disponibilités » (calendar + unavailability blocks)
+  const [availabilityOf, setAvailabilityOf] = useState<SupportResponse | null>(null);
 
   const changeView = (next: NetworkView) => {
     setView(next);
@@ -323,6 +328,7 @@ export function NetworkAdminView({
                     canAct={canAct}
                     onCreate={() => setSupportDialog({ open: true, support: null })}
                     onEdit={(support) => setSupportDialog({ open: true, support })}
+                    onAvailability={setAvailabilityOf}
                     onGoToZones={() => changeTab("zones")}
                   />
                 </TabsContent>
@@ -363,6 +369,14 @@ export function NetworkAdminView({
             zones={data?.zones ?? []}
             onOpenChange={(open) => setSupportDialog((d) => ({ ...d, open }))}
             onSaved={onSupportSaved}
+          />
+          <SupportAvailabilityDialog
+            support={availabilityOf}
+            open={availabilityOf !== null}
+            onOpenChange={(open) => {
+              if (!open) setAvailabilityOf(null);
+            }}
+            canAct={canAct}
           />
           <ConfirmDialog
             open={zoneToDelete !== null}
@@ -675,17 +689,20 @@ function SupportsPanel({
   canAct,
   onCreate,
   onEdit,
+  onAvailability,
   onGoToZones,
 }: {
   data: NetworkData;
   canAct: boolean;
   onCreate: () => void;
   onEdit: (support: SupportResponse) => void;
+  onAvailability: (support: SupportResponse) => void;
   onGoToZones: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [zoneFilter, setZoneFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const q = normalizeText(query);
 
   const rows = data.supports.filter(
@@ -694,9 +711,10 @@ function SupportsPanel({
         normalizeText(`${s.name} ${s.zoneName}`).includes(q) ||
         String(s.id) === q.replace(/^#/, "")) &&
       (!zoneFilter || String(s.zoneId) === zoneFilter) &&
-      (!statusFilter || s.technicalStatus === statusFilter),
+      (!statusFilter || s.technicalStatus === statusFilter) &&
+      (!typeFilter || s.supportType === typeFilter),
   );
-  const filtered = Boolean(q || zoneFilter || statusFilter);
+  const filtered = Boolean(q || zoneFilter || statusFilter || typeFilter);
 
   const columns: DataTableColumn<SupportResponse>[] = [
     {
@@ -722,6 +740,17 @@ function SupportsPanel({
       header: "Capacité",
       align: "right",
       cell: (s) => <span className="tabular">{formatNumber(s.diffusionCapacity)}</span>,
+    },
+    {
+      key: "visibility",
+      header: "Visibilité",
+      align: "right",
+      cell: (s) =>
+        s.visibilityScore != null ? (
+          <span className="tabular">{formatNumber(s.visibilityScore)} / 100</span>
+        ) : (
+          <span className="text-muted">Standard</span>
+        ),
     },
     {
       key: "coords",
@@ -752,6 +781,12 @@ function SupportsPanel({
               Ouvrir le lecteur du Porteur {s.name} (nouvel onglet, chaque appel est journalisé)
             </span>
           </a>
+          <IconAction
+            label={`Disponibilités du Porteur ${s.name}`}
+            onClick={() => onAvailability(s)}
+          >
+            <CalendarClock aria-hidden="true" />
+          </IconAction>
           {canAct ? (
             <IconAction label={`Modifier le Porteur ${s.name}`} onClick={() => onEdit(s)}>
               <Pencil aria-hidden="true" />
@@ -805,6 +840,19 @@ function SupportsPanel({
                 </option>
               ))}
             </Select>
+            <Select
+              aria-label="Filtrer par type"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="sm:w-44"
+            >
+              <option value="">Tous les types</option>
+              {SUPPORT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {SUPPORT_TYPE_LABEL[t]}
+                </option>
+              ))}
+            </Select>
           </div>
         </div>
       ) : null}
@@ -822,6 +870,14 @@ function SupportsPanel({
                 Lecteur
                 <span className="sr-only"> (nouvel onglet, chaque appel est journalisé)</span>
               </a>
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onAvailability(s)}
+              iconLeft={<CalendarClock aria-hidden="true" />}
+            >
+              Disponibilités
             </Button>
             {canAct ? (
               <Button
@@ -849,6 +905,7 @@ function SupportsPanel({
                     setQuery("");
                     setZoneFilter("");
                     setStatusFilter("");
+                    setTypeFilter("");
                   }}
                 >
                   Réinitialiser les filtres

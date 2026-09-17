@@ -27,6 +27,16 @@ export const resourceKeys = {
   reservationsByCampaign: (id: number) => `reservations:campaign:${id}`,
   supportAvailability: (id: number, from: string, to: string) =>
     `supports:${id}:availability:${from}:${to}`,
+  me: "me",
+  statisticsMine: "statistics:mine",
+  reservationsMine: "reservations:mine",
+  aiDashboard: "ai:dashboard",
+  reservationConflicts: "reservations:conflicts",
+  campaign: (id: number) => `campaign:${id}`,
+  campaignMedia: (id: number) => `campaign:${id}:media`,
+  campaignZones: (id: number) => `campaign:${id}:zones`,
+  campaignEstimate: (id: number) => `campaign:${id}:estimate`,
+  aiReport: (campaignId: number) => `ai:report:${campaignId}`,
 } as const;
 
 function notify(key: string): void {

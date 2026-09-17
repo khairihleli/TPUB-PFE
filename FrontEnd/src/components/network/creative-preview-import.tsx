@@ -1,6 +1,7 @@
 "use client";
 
 import { FileImage, FileVideo, ImageUp, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useId, useRef, useState } from "react";
 
 import {
@@ -8,63 +9,77 @@ import {
   checkCreativeFile,
   clearLocalCreative,
   formatFileSize,
-  type LocalCreative,
   setLocalCreative,
   useLocalCreative,
 } from "@/components/campaign/creative-store";
 import { Button } from "@/components/ui/button";
+import type { CampaignResponse } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
+import { routes } from "@/lib/routes";
 
-/**
- * Creative preview key used before a campaign is chosen. Campaign ids are > 0, so 0 never
- * collides with a real campaign in the shared creative store.
- */
+/** Key of the explorer's local « try it on the screen » preview in the creative store. */
 export const EXPLORER_CREATIVE_KEY = 0;
 
-let lastExplorerFile: File | null = null;
-
-/** Copies the explorer creative onto a campaign that has none yet (after a booking). */
-export function adoptExplorerCreative(campaignId: number, campaignHasCreative: boolean): void {
-  if (campaignHasCreative || !lastExplorerFile || campaignId <= 0) return;
-  setLocalCreative(campaignId, lastExplorerFile);
+export interface StudioCreative {
+  url: string;
+  kind: "image" | "video";
+  name: string;
+  /** Local previews only (uploaded media are summarised by the campaign). */
+  size: number | null;
 }
 
 /**
- * Creative shown on the studio screen: the chosen campaign's preview (e.g. picked in the wizard)
- * wins, otherwise the one imported in the explorer.
+ * Creative shown on the studio screen: the chosen campaign's uploaded media (served from
+ * /uploads) wins; otherwise a local preview imported in the explorer (never uploaded).
  */
 export interface StudioCreativeState {
-  creative: LocalCreative | null;
-  campaignCreative: LocalCreative | null;
+  creative: StudioCreative | null;
   source: "campaign" | "explorer" | null;
-  storeKey: number;
+  campaignId: number | null;
 }
 
-export function useStudioCreative(campaignId: number | null): StudioCreativeState {
-  const campaignCreative = useLocalCreative(campaignId);
-  const explorerCreative = useLocalCreative(EXPLORER_CREATIVE_KEY);
-  const creative = campaignCreative ?? explorerCreative;
-  return {
-    creative,
-    campaignCreative,
-    source: campaignCreative ? "campaign" : explorerCreative ? "explorer" : null,
-    storeKey: campaignCreative && campaignId !== null ? campaignId : EXPLORER_CREATIVE_KEY,
-  };
+export function studioCreativeOf(
+  campaign: Pick<CampaignResponse, "id" | "name" | "mediaUrl" | "mediaType"> | null,
+  local: StudioCreative | null,
+): StudioCreativeState {
+  if (campaign?.mediaUrl) {
+    return {
+      creative: {
+        url: campaign.mediaUrl,
+        kind: campaign.mediaType === "VIDEO" ? "video" : "image",
+        name: `Visuel de « ${campaign.name} »`,
+        size: null,
+      },
+      source: "campaign",
+      campaignId: campaign.id,
+    };
+  }
+  return { creative: local, source: local ? "explorer" : null, campaignId: campaign?.id ?? null };
+}
+
+export function useStudioCreative(
+  campaign: Pick<CampaignResponse, "id" | "name" | "mediaUrl" | "mediaType"> | null,
+): StudioCreativeState {
+  const local = useLocalCreative(EXPLORER_CREATIVE_KEY);
+  return studioCreativeOf(campaign, local);
 }
 
 export interface CreativePreviewImportProps {
-  creative: LocalCreative | null;
+  creative: StudioCreative | null;
   source: "campaign" | "explorer" | null;
-  /** Store key to write/clear (campaign id when the preview comes from it). */
-  storeKey: number;
+  /** Chosen campaign (link to its « Contenu » step). */
+  campaignId?: number | null;
   className?: string;
 }
 
-/** Compact « Importer un visuel » control. Local preview only, nothing is uploaded. */
+/**
+ * Compact « Importer un visuel » control for the 3D preview. A local preview never leaves the
+ * browser; the media actually diffused are uploaded in the campaign's « Contenu » step.
+ */
 export function CreativePreviewImport({
   creative,
   source,
-  storeKey,
+  campaignId = null,
   className,
 }: CreativePreviewImportProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,8 +95,7 @@ export function CreativePreviewImport({
       return;
     }
     setError(null);
-    if (storeKey === EXPLORER_CREATIVE_KEY) lastExplorerFile = file;
-    const saved = setLocalCreative(storeKey, file);
+    const saved = setLocalCreative(EXPLORER_CREATIVE_KEY, file);
     setAnnounce(`Visuel appliqué sur l'écran du Porteur : ${saved.name}.`);
   };
 
@@ -133,8 +147,9 @@ export function CreativePreviewImport({
                 {creative.name}
               </p>
               <p className="text-[0.75rem] text-muted">
-                {creative.kind === "video" ? "Vidéo" : "Image"} · {formatFileSize(creative.size)}
-                {source === "campaign" ? " · visuel de la campagne" : " · aperçu local"}
+                {creative.kind === "video" ? "Vidéo" : "Image"}
+                {creative.size !== null ? ` · ${formatFileSize(creative.size)}` : ""}
+                {source === "campaign" ? " · média de la campagne" : " · aperçu local"}
               </p>
             </>
           ) : (
@@ -147,22 +162,27 @@ export function CreativePreviewImport({
           )}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => inputRef.current?.click()}
-            aria-describedby={error ? errorId : undefined}
-          >
-            {creative ? "Remplacer" : "Importer un visuel"}
-          </Button>
-          {creative ? (
+          {source === "campaign" && campaignId !== null ? (
+            <Button asChild variant="secondary" size="sm">
+              <Link href={routes.espace.wizard(campaignId, "contenu")}>Gérer les médias</Link>
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => inputRef.current?.click()}
+              aria-describedby={error ? errorId : undefined}
+            >
+              {creative ? "Remplacer" : "Importer un visuel"}
+            </Button>
+          )}
+          {source === "explorer" ? (
             <Button
               variant="ghost"
               size="sm"
               iconLeft={<Trash2 aria-hidden="true" />}
               onClick={() => {
-                clearLocalCreative(storeKey);
-                if (storeKey === EXPLORER_CREATIVE_KEY) lastExplorerFile = null;
+                clearLocalCreative(EXPLORER_CREATIVE_KEY);
                 setAnnounce("Visuel retiré de l'aperçu.");
               }}
             >
@@ -177,8 +197,9 @@ export function CreativePreviewImport({
         </p>
       ) : null}
       <p className="mt-2 text-[0.75rem] leading-relaxed text-muted">
-        Aperçu local : le fichier ne quitte pas votre navigateur. Le dépôt de fichiers sera activé
-        prochainement — votre conseiller TPUB récupère le visuel après validation.
+        {source === "campaign"
+          ? "Aperçu du premier média déposé sur la campagne choisie."
+          : "Aperçu local : le fichier ne quitte pas votre navigateur. Pour le diffuser, déposez-le dans l'étape « Contenu » de votre campagne."}
       </p>
       <p className="sr-only" role="status" aria-live="polite">
         {announce}

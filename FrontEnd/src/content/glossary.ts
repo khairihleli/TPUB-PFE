@@ -76,7 +76,7 @@ export const RESERVATION_LABEL_LONG: Record<ReservationStatus, string> = {
 
 export const RESERVATION_HINT: Record<ReservationStatus, string> = {
   TEMPORAIRE:
-    "Le créneau est retenu pour cette campagne jusqu'à la décision de TPUB. Il n'est pas libérable en ligne.",
+    "Le créneau est retenu pour cette campagne jusqu'à la décision de TPUB. Tant que la campagne est en brouillon, vous pouvez l'annuler.",
   CONFIRMEE: "Le créneau est confirmé pour la période de la campagne.",
   ANNULEE: "Le créneau a été libéré.",
   EXPIREE: "La période réservée est passée.",
@@ -84,10 +84,11 @@ export const RESERVATION_HINT: Record<ReservationStatus, string> = {
 
 /** Default rule shown by EstimateTag (UX-PLAN §3.6, api-contract §7.17). */
 export const ESTIMATE_RULE =
-  "Estimation provisoire, non issue d'une mesure : 10 % du budget de la campagne par créneau, fixé à la réservation ; 1 000 vues estimées par créneau.";
+  "Estimation calculée par TPUB, non issue d'une mesure : audience horaire du type de Porteur × visibilité × heures × jours, puis coût pour mille affichages.";
 export const ESTIMATE_COST_RULE =
-  "Estimation provisoire : 10 % du budget de la campagne par créneau, fixée au moment de la réservation.";
-export const ESTIMATE_VIEWS_RULE = "Estimation provisoire : 1 000 vues par créneau, non mesurées.";
+  "Estimation : affichages estimés × coût pour mille du type de Porteur. Rien n'est facturé.";
+export const ESTIMATE_VIEWS_RULE =
+  "Estimation : audience horaire du type de Porteur, visibilité, heures et jours du créneau ; pas une mesure.";
 export const ESTIMATE_LABEL = "Estimation";
 
 /**
@@ -101,5 +102,5 @@ export const REVIEW_WAIT_SENTENCE = `Examen par l'équipe TPUB en jours ouvrés 
 
 /** Consequence lines reused by booking surfaces. */
 export const BOOKING_CONSEQUENCE =
-  "Bloquer verrouille la période de ce brouillon. Un créneau n'est pas libérable en ligne.";
+  "Les Porteurs sont bloqués jusqu'à la décision de TPUB ; annulables tant que la campagne est en brouillon.";
 export const SUBMIT_CONSEQUENCE = "Après envoi, la campagne n'est plus modifiable.";

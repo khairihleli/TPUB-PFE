@@ -142,8 +142,10 @@ export function DataTableView<T>({
           Trié par : {sortCaption}
         </p>
       ) : null}
-      {/* md+ table */}
-      <div className="hidden overflow-x-auto rounded-card border border-line bg-surface/60 md:block">
+      {/* md+ table. `relative` makes this scroller the containing block of the absolutely
+          positioned sr-only header labels; without it they escape the horizontal clip and widen
+          the whole page when the table is wider than its column. */}
+      <div className="relative hidden overflow-x-auto rounded-card border border-line bg-surface/60 md:block">
         <table className="w-full border-collapse text-sm">
           <caption
             className={

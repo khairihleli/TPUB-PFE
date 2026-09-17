@@ -4,7 +4,6 @@ import { ArrowRight, CalendarDays, Clock3, Megaphone, RotateCcw, Wallet } from "
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { activeReservations } from "@/components/campaign/campaign-data";
 import {
   CAMPAIGN_SORT_OPTIONS,
   countByFilter,
@@ -19,12 +18,13 @@ import { useDemoteTopbarCta } from "@/components/shell/topbar-cta";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { Field, Input, Select } from "@/components/ui/field";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { campaignsApi, reservationsApi } from "@/lib/api/endpoints";
-import type { CampaignResponse } from "@/lib/api/types";
+import { campaignsApi } from "@/lib/api/endpoints";
+import type { CampaignAiStatus, CampaignMineFilters, CampaignResponse } from "@/lib/api/types";
 import {
   CAMPAIGN_FILTERS,
   type CampaignFilterValue,
@@ -34,7 +34,7 @@ import {
 } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { formatCount, formatDateRange, formatTimeRange, formatTND, todayISO } from "@/lib/format";
-import { fetchCached, resourceKeys } from "@/lib/resource-cache";
+import { resourceKeys } from "@/lib/resource-cache";
 import { routes } from "@/lib/routes";
 import { param, useUrlState } from "@/lib/url-state";
 import { useResource } from "@/lib/use-resource";
@@ -45,62 +45,42 @@ const URL_SCHEMA = {
   statut: param.enum<CampaignFilterValue>(FILTER_VALUES, "toutes", LEGACY_CAMPAIGN_FILTERS),
   q: param.string(),
   tri: param.string(),
+  ia: param.optionalEnum<CampaignAiStatus>(["APPROVED", "REVIEW_REQUIRED", "REJECTED"]),
+  du: param.string(),
+  au: param.string(),
 };
 
-/**
- * Active créneaux per draft, read through the shared cache (same key as the nav badge, so no
- * extra request when the badge already loaded them). Failures leave the draft unknown.
- */
-function useDraftCreneaux(draftIds: readonly number[]): ReadonlyMap<number, number> {
-  const key = draftIds.join(",");
-  const [counts, setCounts] = useState<ReadonlyMap<number, number>>(() => new Map());
+const AI_FILTER_OPTIONS: readonly { value: CampaignAiStatus; label: string }[] = [
+  { value: "APPROVED", label: "Analyse favorable" },
+  { value: "REVIEW_REQUIRED", label: "Revue manuelle" },
+  { value: "REJECTED", label: "À corriger" },
+];
 
-  useEffect(() => {
-    if (!key) return;
-    const controller = new AbortController();
-    const ids = key.split(",").map(Number);
-    const out = new Map<number, number>();
-    let next = 0;
-    const worker = async () => {
-      while (next < ids.length) {
-        const id = ids[next++] as number;
-        try {
-          const list = await fetchCached(
-            resourceKeys.reservationsByCampaign(id),
-            (s) => reservationsApi.byCampaign(id, { signal: s }),
-            { signal: controller.signal },
-          );
-          out.set(id, activeReservations(list).length);
-        } catch {
-          /* unknown for this draft: generic « Finaliser » */
-        }
-      }
-    };
-    void Promise.all([worker(), worker(), worker(), worker()]).then(() => {
-      if (!controller.signal.aborted) setCounts(new Map(out));
-    });
-    return () => controller.abort();
-  }, [key]);
+const ISO_DATE = /^d{4}-d{2}-d{2}$/;
 
-  return counts;
+/** Server filters of GET /campaigns/mine from the URL (invalid dates are ignored). */
+export function mineFiltersFromUrl(url: {
+  q: string;
+  ia: CampaignAiStatus | null;
+  du: string;
+  au: string;
+}): CampaignMineFilters {
+  return {
+    q: url.q.trim() || undefined,
+    aiStatus: url.ia ? [url.ia] : undefined,
+    from: ISO_DATE.test(url.du) ? url.du : undefined,
+    to: ISO_DATE.test(url.au) ? url.au : undefined,
+  };
 }
 
-function CampaignRow({
-  campaign,
-  today,
-  creneaux,
-}: {
-  campaign: CampaignResponse;
-  today: string;
-  /** Active créneaux of a draft (undefined when unknown or not a draft). */
-  creneaux: number | undefined;
-}) {
+function CampaignRow({ campaign, today }: { campaign: CampaignResponse; today: string }) {
+  const creneaux = campaign.reservationsCount;
   const meta = getCampaignStatusMeta(campaign, { audience: "annonceur", today });
   const cue = getCampaignTimeCue(campaign, today);
   const isDraft = campaign.status === "BROUILLON";
   const finaliseHref = routes.espace.wizard(
     campaign.id,
-    creneaux !== undefined && creneaux > 0 ? "verification" : "porteurs",
+    creneaux !== undefined && creneaux > 0 ? "verification" : "contenu",
   );
 
   return (
@@ -193,7 +173,7 @@ function CampaignRow({
               {creneaux !== undefined ? (
                 <p className="text-[0.8125rem] leading-snug text-muted">
                   {creneaux > 0
-                    ? formatCount(creneaux, "créneau bloqué", "créneaux bloqués")
+                    ? formatCount(creneaux, "Porteur réservé", "Porteurs réservés")
                     : "Aucun Porteur réservé"}
                 </p>
               ) : null}
@@ -293,10 +273,18 @@ export function CampaignList() {
     return () => window.clearTimeout(timer);
   }, [query, url.q, setUrl]);
 
+  // Server-side filters (contract §2.1 GET /campaigns/mine): name, AI status, period.
+  const serverFilters = useMemo(
+    () => mineFiltersFromUrl({ q: url.q, ia: url.ia, du: url.du, au: url.au }),
+    [url.q, url.ia, url.du, url.au],
+  );
+  const filtered = Boolean(
+    serverFilters.q || serverFilters.aiStatus || serverFilters.from || serverFilters.to,
+  );
   const { data, error, loading, reload, slow } = useResource(
-    "campaigns-mine",
-    (signal) => campaignsApi.mine({ signal }),
-    { cacheKey: resourceKeys.campaignsMine },
+    filtered ? `campaigns-mine:${JSON.stringify(serverFilters)}` : "campaigns-mine",
+    (signal) => campaignsApi.mine({ ...serverFilters, signal }),
+    filtered ? {} : { cacheKey: resourceKeys.campaignsMine },
   );
 
   const campaigns = useMemo(() => data ?? [], [data]);
@@ -305,23 +293,18 @@ export function CampaignList() {
     () => sortCampaigns(filterCampaigns(campaigns, filter, query, today), sort),
     [campaigns, filter, query, today, sort],
   );
-  const draftIds = useMemo(
-    () => campaigns.filter((c) => c.status === "BROUILLON").map((c) => c.id),
-    [campaigns],
-  );
-  const creneaux = useDraftCreneaux(draftIds);
   // The empty state carries the page's primary « Créer une campagne »: the topbar CTA steps back.
-  useDemoteTopbarCta(Boolean(data) && campaigns.length === 0);
+  useDemoteTopbarCta(Boolean(data) && campaigns.length === 0 && !filtered);
 
   const resetAll = () => {
     setFilterState("toutes");
     setQuery("");
     setTri("");
-    setUrl({ statut: "toutes", q: "", tri: "" });
+    setUrl({ statut: "toutes", q: "", tri: "", ia: null, du: "", au: "" });
   };
   const resetFilters = () => {
     setQuery("");
-    setUrl({ q: "" });
+    setUrl({ q: "", ia: null, du: "", au: "" });
     if (filter !== "toutes") setFilter("toutes");
   };
 
@@ -333,7 +316,7 @@ export function CampaignList() {
     return <CampaignListSkeleton slow={slow} onRetry={reload} />;
   }
 
-  if (campaigns.length === 0) {
+  if (campaigns.length === 0 && !filtered && !query.trim()) {
     return (
       <EmptyState
         icon={<Megaphone />}
@@ -349,8 +332,13 @@ export function CampaignList() {
   }
 
   const sortValue = sort.dir === "desc" ? `-${sort.key}` : sort.key;
-  const searching = query.trim().length > 0;
-  const activeCount = (filter !== "toutes" ? 1 : 0) + (tri ? 1 : 0);
+  const searching = query.trim().length > 0 || filtered;
+  const activeCount =
+    (filter !== "toutes" ? 1 : 0) +
+    (tri ? 1 : 0) +
+    (url.ia ? 1 : 0) +
+    (url.du ? 1 : 0) +
+    (url.au ? 1 : 0);
 
   return (
     <Tabs value={filter} onValueChange={(v) => setFilter(parseFilter(v))}>
@@ -379,7 +367,32 @@ export function CampaignList() {
           resultCount={formatCount(visible.length, "campagne", "campagnes")}
           activeCount={activeCount}
           onReset={resetAll}
-        />
+        >
+          <Field label="Analyse IA" className="min-w-[12rem]">
+            <Select
+              value={url.ia ?? ""}
+              onChange={(e) => setUrl({ ia: (e.target.value || null) as CampaignAiStatus | null })}
+            >
+              <option value="">Toutes</option>
+              {AI_FILTER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Diffusée à partir du">
+            <Input type="date" value={url.du} onChange={(e) => setUrl({ du: e.target.value })} />
+          </Field>
+          <Field label="Jusqu'au">
+            <Input
+              type="date"
+              value={url.au}
+              min={url.du || undefined}
+              onChange={(e) => setUrl({ au: e.target.value })}
+            />
+          </Field>
+        </FilterBar>
       </div>
 
       {CAMPAIGN_FILTERS.map((f) => (
@@ -387,7 +400,7 @@ export function CampaignList() {
           {visible.length > 0 ? (
             <ul className="flex flex-col gap-3">
               {visible.map((c) => (
-                <CampaignRow key={c.id} campaign={c} today={today} creneaux={creneaux.get(c.id)} />
+                <CampaignRow key={c.id} campaign={c} today={today} />
               ))}
             </ul>
           ) : searching ? (

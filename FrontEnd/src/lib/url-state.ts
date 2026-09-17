@@ -6,7 +6,7 @@
  * Consumers must render under a <Suspense> boundary (useSearchParams).
  */
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 export interface ParamCodec<V> {
   /** Raw query value (null when absent) → typed value. Never throws. */
@@ -105,6 +105,55 @@ export function hrefWithParams(pathname: string, params: URLSearchParams): strin
 }
 
 /**
+ * A URL write not yet committed by the router: `search` is what was written, `uncommitted` the
+ * query strings the address bar may still show while it is pending (the one before the first
+ * write of the chain, then each intermediate write).
+ */
+export interface PendingUrlWrite {
+  pathname: string;
+  search: string;
+  uncommitted: readonly string[];
+}
+
+/**
+ * Pure: the query string a new write must start from. `router.push/replace` commit
+ * asynchronously, so two writes in quick succession (e.g. « Examiner » then a debounced search)
+ * would otherwise both start from the stale address bar and the second would drop the first.
+ * The pending write wins only while the address bar still shows a state from before it; once the
+ * router committed it, or anything else navigated, the live URL is the truth.
+ */
+export function baseSearchForWrite(
+  pathname: string,
+  liveSearch: string,
+  pending: PendingUrlWrite | null,
+): string {
+  const live = new URLSearchParams(liveSearch).toString();
+  if (pending && pending.pathname === pathname && pending.uncommitted.includes(live)) {
+    return pending.search;
+  }
+  return live;
+}
+
+/** Pure: pending state after writing `next` on top of `base`. */
+export function nextPendingWrite(
+  pathname: string,
+  liveSearch: string,
+  base: string,
+  next: string,
+  pending: PendingUrlWrite | null,
+): PendingUrlWrite {
+  const live = new URLSearchParams(liveSearch).toString();
+  const chained = pending !== null && pending.pathname === pathname && base === pending.search;
+  return {
+    pathname,
+    search: next,
+    uncommitted: chained ? [...pending.uncommitted, pending.search] : [live],
+  };
+}
+
+let pendingUrlWrite: PendingUrlWrite | null = null;
+
+/**
  * `const [state, setState] = useUrlState({ statut: param.enum(VALUES, "toutes"), q: param.string() });`
  * `setState({ q: "marsa" })` replaces the URL; `setState({ examen: 3 }, { history: "push" })` pushes.
  */
@@ -122,15 +171,20 @@ export function useUrlState<S extends UrlSchema>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const state = useMemo(() => readUrlState(schema, new URLSearchParams(qs)), [qs]);
 
+  useEffect(() => {
+    if (pendingUrlWrite?.search === qs) pendingUrlWrite = null;
+  }, [qs]);
+
   const setState = useCallback(
     (partial: Partial<UrlStateOf<S>>, o: { history?: HistoryMode } = {}) => {
-      // Read the live URL so consecutive updates in one tick don't overwrite each other.
-      const current =
-        typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search)
-          : new URLSearchParams(qs);
-      const next = writeUrlState(schema, current, partial);
-      const href = hrefWithParams(pathname ?? "", next);
+      // Start from the live URL, or from a write the router has not committed yet, so
+      // consecutive updates don't overwrite each other.
+      const path = pathname ?? "";
+      const live = typeof window !== "undefined" ? window.location.search : qs;
+      const base = baseSearchForWrite(path, live, pendingUrlWrite);
+      const next = writeUrlState(schema, new URLSearchParams(base), partial);
+      pendingUrlWrite = nextPendingWrite(path, live, base, next.toString(), pendingUrlWrite);
+      const href = hrefWithParams(path, next);
       if ((o.history ?? defaultHistory) === "push") router.push(href, { scroll: false });
       else router.replace(href, { scroll: false });
     },

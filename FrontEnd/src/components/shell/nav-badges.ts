@@ -17,6 +17,7 @@ import {
 import type {
   CampaignResponse,
   EmergencyResponse,
+  ReservationConflict,
   ReservationResponse,
   RoleCode,
 } from "@/lib/api/types";
@@ -55,10 +56,20 @@ export function countModerationQueue(
     .length;
 }
 
+/** Messages still able to reach a screen: v2 `state` (PROGRAMME | EN_COURS) wins over `isActive`. */
 export function countActiveEmergencies(
-  messages: readonly Pick<EmergencyResponse, "isActive">[],
+  messages: readonly Pick<EmergencyResponse, "isActive" | "state">[],
 ): number {
-  return messages.filter((m) => m.isActive).length;
+  return messages.filter((m) =>
+    m.state ? m.state === "PROGRAMME" || m.state === "EN_COURS" : m.isActive,
+  ).length;
+}
+
+/** Réservations badge: CONFLIT groups only (SATURE is full capacity, not an error). */
+export function countConflicts(
+  conflicts: readonly Pick<ReservationConflict, "severity">[],
+): number {
+  return conflicts.filter((c) => c.severity === "CONFLIT").length;
 }
 
 /** Roles allowed to list every campaign (api-contract: ADMINISTRATEUR, SUPERVISEUR). */
@@ -106,6 +117,17 @@ async function loadAdminBadges(role: RoleCode, signal: AbortSignal): Promise<Nav
       fetchCached(resourceKeys.campaignsAll, (s) => campaignsApi.all({ signal: s }), { signal })
         .then((list) => {
           out.moderation = countModerationQueue(list);
+        })
+        .catch(() => undefined),
+    );
+    tasks.push(
+      fetchCached(
+        resourceKeys.reservationConflicts,
+        (s) => reservationsApi.conflicts({ signal: s }),
+        { signal },
+      )
+        .then((list) => {
+          out.conflicts = countConflicts(list);
         })
         .catch(() => undefined),
     );
@@ -197,5 +219,7 @@ export function badgeAriaLabel(key: NavBadgeKey, count: number): string {
       return `${count} ${count >= 2 ? "incohérences" : "incohérence"} réseau`;
     case "emergencies":
       return `${count} ${count >= 2 ? "messages actifs" : "message actif"}`;
+    case "conflicts":
+      return `${count} ${count >= 2 ? "conflits de réservation" : "conflit de réservation"}`;
   }
 }

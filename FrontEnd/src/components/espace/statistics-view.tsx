@@ -1,449 +1,374 @@
 "use client";
 
-import { CalendarRange, ChartColumn, Mail, Plus, ScrollText, Wallet } from "lucide-react";
+import { ChartColumn, Plus } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useMemo } from "react";
+import { useMemo, useState } from "react";
 
+import { BarList, ChartTable, DailyColumns, dayLabel } from "@/components/espace/charts";
+import { CsvExportButton } from "@/components/espace/csv-export-button";
+import { PanelHeading } from "@/components/espace/espace-ui";
+import { KpiTiles } from "@/components/espace/kpi-tiles";
+import { mineKpis } from "@/components/espace/kpis";
 import {
-  BarList,
-  ChartTable,
-  DonutChart,
-  PairedBars,
-  type ChartDatum,
-} from "@/components/espace/charts";
-import { Amount, EstimateTag, PanelHeading } from "@/components/espace/espace-ui";
-import {
-  bucketSummary,
-  budgetByCampaign,
-  CAMPAIGN_BUCKETS,
-  computeAdvertiserKpis,
-} from "@/components/espace/kpis";
-import { type AdvertiserData, useAdvertiserData } from "@/components/espace/use-advertiser-data";
+  campaignRows,
+  EMPTY_TOTALS,
+  formatRate,
+  parsePeriodPreset,
+  PERIOD_PRESETS,
+  periodRange,
+} from "@/components/espace/statistics-model";
+import { useAdvertiserData } from "@/components/espace/use-advertiser-data";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { Field, Input } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
-import { PartialNotice } from "@/components/ui/partial-notice";
 import { LoadingRegion, Skeleton, SkeletonCard } from "@/components/ui/skeleton";
-import { CONTACT } from "@/content/site";
-import type { CampaignResponse, ReservationStatus } from "@/lib/api/types";
-import { RESERVATION_STATUS } from "@/lib/campaign-status";
-import { formatCount, formatNumber, formatTND, todayISO } from "@/lib/format";
+import { StatusPill } from "@/components/ui/status-pill";
+import type { StatisticsMineResponse } from "@/lib/api/types";
+import { cx } from "@/lib/cx";
+import { formatDateRange, formatNumber, formatTND, todayISO } from "@/lib/format";
 import { routes } from "@/lib/routes";
+import { param, useUrlState } from "@/lib/url-state";
 
-const RESERVATION_ORDER: readonly ReservationStatus[] = [
-  "TEMPORAIRE",
-  "CONFIRMEE",
-  "ANNULEE",
-  "EXPIREE",
+type Metric = "views" | "clicks" | "interactions";
+
+const METRICS: { key: Metric; label: string }[] = [
+  { key: "views", label: "Affichages" },
+  { key: "clicks", label: "Clics" },
+  { key: "interactions", label: "Interactions" },
 ];
 
-/** One-line definitions (glossary, UX-PLAN §3.6). */
-const BUDGET_DECLARED_DEFINITION =
-  "Somme des budgets saisis pour vos campagnes, hors campagnes refusées ou à corriger.";
-const ESTIMATED_COST_DEFINITION =
-  "10 % du budget de la campagne par créneau actif, fixé à la réservation. Ni un prix ni une facture.";
+const URL_SCHEMA = {
+  periode: param.string("30"),
+  du: param.string(),
+  au: param.string(),
+};
 
+/** /espace/statistiques — GET /statistics/mine for a period, charts, tables and CSV export. */
 export function StatisticsView() {
-  const data = useAdvertiserData();
+  const [url, setUrl] = useUrlState(URL_SCHEMA);
+  const [today] = useState(() => todayISO());
+  const preset = parsePeriodPreset(url.periode);
+  const result = periodRange(preset, { from: url.du, to: url.au }, today);
+  const fallback = periodRange("30", { from: "", to: "" }, today);
+  // An incomplete custom period keeps showing the last 30 days until it becomes valid.
+  const effective = result.ok
+    ? result.range
+    : fallback.ok
+      ? fallback.range
+      : { from: today, to: today };
+  const data = useAdvertiserData(effective);
 
   return (
     <>
       <PageHeader
         title="Statistiques"
-        description="Indicateurs calculés uniquement à partir de vos campagnes et de vos réservations."
+        description="Affichages, clics et interactions mesurés sur les Porteurs, et estimations de vos réservations."
+        secondaryActions={
+          result.ok ? (
+            <CsvExportButton
+              query={{ type: "mine", from: effective.from, to: effective.to }}
+              size="md"
+            />
+          ) : undefined
+        }
       />
-      {data.campaigns ? (
-        data.campaigns.length === 0 ? (
-          <EmptyState
-            icon={<ChartColumn />}
-            title="Pas encore de données."
-            description="Créez une campagne pour voir ses indicateurs ici."
-            action={
-              <Button asChild variant="primary">
-                <Link href={routes.espace.wizard(null)}>
-                  <Plus aria-hidden="true" />
-                  Créer une campagne
-                </Link>
-              </Button>
-            }
-          />
-        ) : (
-          <StatisticsContent campaigns={data.campaigns} data={data} />
-        )
-      ) : data.error ? (
-        <ErrorState error={data.error} onRetry={data.reload} />
-      ) : (
-        <LoadingRegion
-          label="Chargement des statistiques…"
-          slow={data.slow}
-          onRetry={data.reload}
-          className="flex flex-col gap-6"
-        >
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <SkeletonCard />
+
+      <section aria-label="Période" className="mb-6 flex flex-wrap items-end gap-3">
+        <div role="group" aria-label="Période analysée" className="flex flex-wrap gap-1.5">
+          {PERIOD_PRESETS.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              aria-pressed={preset === p.value}
+              onClick={() => setUrl({ periode: p.value })}
+              className={cx(
+                "inline-flex min-h-touch items-center rounded-full border px-4 font-label text-[0.8125rem] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text",
+                preset === p.value
+                  ? "border-brand-blue-text bg-blue-soft text-ink-strong"
+                  : "border-line-strong text-ink-soft hover:border-muted-2",
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {preset === "perso" ? (
+          <>
+            <Field label="Du">
+              <Input
+                type="date"
+                value={url.du}
+                max={today}
+                onChange={(e) => setUrl({ du: e.target.value })}
+              />
+            </Field>
+            <Field label="Au">
+              <Input
+                type="date"
+                value={url.au}
+                min={url.du || undefined}
+                onChange={(e) => setUrl({ au: e.target.value })}
+              />
+            </Field>
+          </>
+        ) : null}
+        <p className="text-[0.8125rem] text-muted" aria-live="polite">
+          {result.ok ? formatDateRange(effective.from, effective.to, "medium") : result.message}
+        </p>
+      </section>
+
+      {data.campaigns && data.campaigns.length === 0 ? (
+        <EmptyState
+          icon={<ChartColumn />}
+          title="Pas encore de données."
+          description="Créez une campagne pour voir ses indicateurs ici."
+          action={
+            <Button asChild variant="primary">
+              <Link href={routes.espace.wizard(null)}>
+                <Plus aria-hidden="true" />
+                Créer une campagne
+              </Link>
+            </Button>
+          }
+        />
+      ) : data.statsError ? (
+        <ErrorState error={data.statsError} onRetry={data.reloadStats} />
+      ) : !data.stats ? (
+        <LoadingRegion label="Chargement des statistiques…" className="flex flex-col gap-6">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-3">
             <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
-            <Skeleton className="h-80 rounded-card" />
-            <Skeleton className="h-80 rounded-card" />
-          </div>
+          <Skeleton className="h-64 rounded-card" />
         </LoadingRegion>
+      ) : (
+        <StatisticsContent stats={data.stats} refreshing={data.refreshing} />
       )}
     </>
   );
 }
 
-function KpiTile({
-  label,
-  value,
-  definition,
-  aside,
-  footer,
-}: {
-  label: string;
-  value: ReactNode;
-  definition: string;
-  aside?: ReactNode;
-  footer?: ReactNode;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-2 rounded-card border border-line bg-grad-card p-5">
-      <dt className="font-label text-[0.8125rem] font-medium text-muted">{label}</dt>
-      {/* The tag sits beside the value so every tile keeps its value on the same line. */}
-      <dd className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-display text-[1.75rem] leading-none font-semibold tracking-tight text-ink-strong tabular">
-        {value}
-        {aside ? (
-          <span className="font-sans text-[0.8125rem] leading-normal font-normal tracking-normal">
-            {aside}
-          </span>
-        ) : null}
-      </dd>
-      <dd className="text-[0.8125rem] leading-snug text-muted">{definition}</dd>
-      {footer ? <dd>{footer}</dd> : null}
-    </div>
-  );
-}
-
 function StatisticsContent({
-  campaigns,
-  data,
+  stats,
+  refreshing,
 }: {
-  campaigns: CampaignResponse[];
-  data: AdvertiserData;
+  stats: StatisticsMineResponse;
+  refreshing: boolean;
 }) {
-  const today = todayISO();
-  const reservations = useMemo(() => data.reservations ?? [], [data.reservations]);
-  const loadingResa = data.reservationsLoading;
-  const kpis = useMemo(
-    () => computeAdvertiserKpis(campaigns, reservations, today),
-    [campaigns, reservations, today],
-  );
-  const budgetRows = useMemo(
-    () => budgetByCampaign(campaigns, reservations, 8),
-    [campaigns, reservations],
-  );
-
-  const bucketData: ChartDatum[] = CAMPAIGN_BUCKETS.map((b) => ({
-    key: b.key,
-    label: b.label,
-    value: kpis.byBucket[b.key],
-    tone: b.tone,
-    href: routes.espace.campaigns({ statut: b.filter }),
-    linkLabel: `${b.label} : ${formatCount(kpis.byBucket[b.key], "campagne", "campagnes")}, voir la liste`,
-  }));
-  const reservationData: ChartDatum[] = RESERVATION_ORDER.map((s) => ({
-    key: s,
-    label: RESERVATION_STATUS[s].label,
-    value: kpis.reservationsByStatus[s],
-    tone: RESERVATION_STATUS[s].tone,
-    href: routes.espace.reservations({ statut: s }),
-    linkLabel: `${RESERVATION_STATUS[s].label} : ${formatCount(kpis.reservationsByStatus[s], "créneau", "créneaux")}, voir les réservations`,
-  }));
-  const eligibleCount = campaigns.filter(
-    (c) => c.status !== "BLOCKED" && c.status !== "REJECTED_BY_AI",
-  ).length;
-  const partial = data.partial ? <PartialNotice onRetry={data.retryReservations} /> : null;
+  const [metric, setMetric] = useState<Metric>("views");
+  const metricLabel = METRICS.find((m) => m.key === metric)?.label ?? "";
+  const tiles = mineKpis(stats ?? { totals: EMPTY_TOTALS });
+  const campaigns = useMemo(() => campaignRows(stats), [stats]);
 
   return (
-    <div className="flex flex-col gap-6" aria-busy={data.refreshing || undefined}>
+    <div className="flex flex-col gap-6" aria-busy={refreshing || undefined}>
       <section aria-labelledby="stats-kpis">
         <h2 id="stats-kpis" className="sr-only">
           Indicateurs clés
         </h2>
-        <dl className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiTile
-            label="Campagnes"
-            value={formatNumber(kpis.campaignCount)}
-            definition={bucketSummary(kpis.byBucket).join(" · ")}
-          />
-          <KpiTile
-            label="Budget déclaré"
-            value={<Amount value={kpis.totalBudget} />}
-            definition={BUDGET_DECLARED_DEFINITION}
-          />
-          <KpiTile
-            label="Coût estimé des créneaux"
-            aside={<EstimateTag />}
-            value={
-              loadingResa ? (
-                <Skeleton className="h-7 w-28" />
-              ) : (
-                <Amount value={kpis.estimatedCost} />
-              )
-            }
-            definition={ESTIMATED_COST_DEFINITION}
-            footer={partial}
-          />
-          <KpiTile
-            label="Créneaux actifs"
-            value={
-              loadingResa ? (
-                <Skeleton className="h-7 w-12" />
-              ) : (
-                formatNumber(kpis.holdingReservationCount)
-              )
-            }
-            definition={
-              loadingResa
-                ? "Bloqués ou confirmés"
-                : `Bloqués ou confirmés · ${formatCount(kpis.reservedZones, "zone couverte", "zones couvertes")}`
-            }
-            footer={partial}
-          />
-        </dl>
-        <p className="mt-3 flex items-start gap-2 text-[0.8125rem] text-muted">
-          <Wallet aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          Suivi de consommation : pas encore disponible. Aucun montant n&apos;est débité en ligne.
+        <KpiTiles tiles={tiles} labelledBy="stats-kpis" />
+        <p className="mt-3 text-[0.8125rem] text-muted">
+          « Mesuré » : compté à chaque passage sur un Porteur. « Estimation » : calculée à la
+          réservation à partir de l&apos;audience du type de Porteur ; ce n&apos;est pas une mesure.
         </p>
       </section>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
-        <Card as="section" aria-labelledby="chart-status">
-          <PanelHeading
-            id="chart-status"
-            title="Campagnes par statut"
-            description="Répartition de toutes vos campagnes. Chaque ligne ouvre la liste filtrée."
-            className="mb-6"
-          />
-          <DonutChart
-            data={bucketData}
-            label="Campagnes par statut"
-            centerValue={formatNumber(kpis.campaignCount)}
-            centerLabel={kpis.campaignCount > 1 ? "campagnes" : "campagne"}
-          />
-          <ChartTable
-            className="mt-6"
-            caption="Campagnes par statut"
-            headers={["Statut", "Campagnes"]}
-            rows={bucketData.map((d) => [d.label, formatNumber(d.value)])}
-          />
-        </Card>
+      <Card as="section" aria-labelledby="stats-daily">
+        <PanelHeading
+          id="stats-daily"
+          title="Historique journalier"
+          description="Une mesure à la fois : chaque graphique garde sa propre échelle."
+          className="mb-4"
+          actions={
+            <div role="group" aria-label="Mesure affichée" className="flex flex-wrap gap-1.5">
+              {METRICS.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  aria-pressed={metric === m.key}
+                  onClick={() => setMetric(m.key)}
+                  className={cx(
+                    "inline-flex min-h-9 items-center rounded-full border px-3 text-[0.8125rem] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text",
+                    metric === m.key
+                      ? "border-brand-blue-text bg-blue-soft text-ink-strong"
+                      : "border-line-strong text-ink-soft hover:border-muted-2",
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          }
+        />
+        <DailyColumns
+          data={stats.daily.map((d) => ({ date: d.date, value: d[metric] }))}
+          label={`${metricLabel} par jour`}
+        />
+        <ChartTable
+          className="mt-4"
+          caption="Historique journalier"
+          headers={["Jour", "Affichages", "Clics", "Interactions", "Coût (TND)"]}
+          rows={stats.daily.map((d) => [
+            dayLabel(d.date),
+            formatNumber(d.views),
+            formatNumber(d.clicks),
+            formatNumber(d.interactions),
+            formatTND(d.cost),
+          ])}
+        />
+      </Card>
 
-        <Card as="section" aria-labelledby="chart-resa">
+      <Card as="section" aria-labelledby="stats-campaigns" padding="none">
+        <div className="p-5 pb-3 sm:p-6 sm:pb-3">
           <PanelHeading
-            id="chart-resa"
-            title="Créneaux par statut"
-            description={
-              loadingResa
-                ? "Chargement des créneaux…"
-                : formatCount(kpis.reservationCount, "créneau au total", "créneaux au total")
-            }
-            className="mb-6"
+            id="stats-campaigns"
+            title="Par campagne"
+            description="Affichages, clics et interactions mesurés ; affichages et coût estimés à la réservation."
           />
-          {partial ? <div className="-mt-3 mb-4">{partial}</div> : null}
-          {loadingResa ? (
-            <LoadingRegion label="Chargement des créneaux…" className="flex flex-col gap-3">
-              <Skeleton className="h-6" />
-              <Skeleton className="h-6" />
-              <Skeleton className="h-6" />
-            </LoadingRegion>
-          ) : kpis.reservationCount === 0 ? (
-            <EmptyState
-              compact
-              icon={<CalendarRange />}
-              title={data.partial ? "Aucun créneau chargé." : "Aucun créneau réservé."}
-              description="Les créneaux se réservent depuis une campagne : choisissez vos Porteurs sur sa période."
-              action={
-                <Button asChild variant="secondary">
-                  <Link href={routes.espace.campaigns()}>Voir mes campagnes</Link>
-                </Button>
-              }
-            />
+        </div>
+        {campaigns.length === 0 ? (
+          <p className="px-5 pb-5 text-sm text-muted sm:px-6">Aucune campagne sur cette période.</p>
+        ) : (
+          <div className="relative overflow-x-auto">
+            <table className="w-full min-w-[46rem] border-collapse text-sm">
+              <caption className="sr-only">Statistiques par campagne</caption>
+              <thead>
+                <tr className="border-t border-line bg-surface-2/60 text-left font-label text-[0.75rem] text-muted">
+                  <th scope="col" className="px-5 py-2.5 font-semibold">
+                    Campagne
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">
+                    Affichages
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">
+                    Clics
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">
+                    Taux de clic
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">
+                    Interactions
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">
+                    Affichages estimés
+                  </th>
+                  <th scope="col" className="px-3 py-2.5 text-right font-semibold">
+                    Coût estimé
+                  </th>
+                  <th scope="col" className="px-5 py-2.5 text-right font-semibold">
+                    Budget consommé
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {campaigns.map((c) => (
+                  <tr key={c.campaignId} className="border-t border-line">
+                    <th scope="row" className="px-5 py-3 text-left font-normal">
+                      <Link
+                        href={routes.espace.campaign(c.campaignId)}
+                        className="font-semibold text-ink-strong hover:text-brand-blue-text hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                      <span className="mt-1 block">
+                        <StatusPill
+                          type="campaign-status"
+                          status={c.status}
+                          audience="annonceur"
+                          size="sm"
+                        />
+                      </span>
+                    </th>
+                    <td className="px-3 py-3 text-right tabular">{formatNumber(c.views)}</td>
+                    <td className="px-3 py-3 text-right tabular">{formatNumber(c.clicks)}</td>
+                    <td className="px-3 py-3 text-right tabular">
+                      {formatRate(c.views, c.clicks)}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular">{formatNumber(c.interactions)}</td>
+                    <td className="px-3 py-3 text-right text-muted tabular">
+                      {formatNumber(c.estimatedViews)}
+                    </td>
+                    <td className="px-3 py-3 text-right text-muted tabular">
+                      {formatTND(c.estimatedCost)}
+                    </td>
+                    <td className="px-5 py-3 text-right whitespace-nowrap tabular">
+                      {formatTND(c.consumedBudget)}
+                      <span className="block text-[0.75rem] text-muted">
+                        sur {formatTND(c.budget)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2">
+        <Card as="section" aria-labelledby="stats-supports">
+          <PanelHeading
+            id="stats-supports"
+            title="Par Porteur"
+            description="Affichages mesurés."
+            className="mb-5"
+          />
+          {stats.bySupport.length === 0 ? (
+            <p className="text-sm text-muted">Aucun affichage sur cette période.</p>
           ) : (
             <>
-              <BarList data={reservationData} label="Créneaux par statut" />
+              <BarList
+                label="Affichages par Porteur"
+                data={stats.bySupport.slice(0, 10).map((s) => ({
+                  key: String(s.supportId),
+                  label: `${s.name} · ${s.zoneName}`,
+                  value: s.views,
+                  tone: "info",
+                }))}
+              />
               <ChartTable
-                className="mt-6"
-                caption="Créneaux par statut"
-                headers={["Statut", "Créneaux"]}
-                rows={reservationData.map((d) => [d.label, formatNumber(d.value)])}
+                className="mt-5"
+                caption="Affichages par Porteur"
+                headers={["Porteur", "Zone", "Affichages"]}
+                rows={stats.bySupport.map((s) => [s.name, s.zoneName, formatNumber(s.views)])}
+              />
+            </>
+          )}
+        </Card>
+        <Card as="section" aria-labelledby="stats-zones">
+          <PanelHeading
+            id="stats-zones"
+            title="Par zone"
+            description="Comparaison des zones, affichages mesurés."
+            className="mb-5"
+          />
+          {stats.byZone.length === 0 ? (
+            <p className="text-sm text-muted">Aucun affichage sur cette période.</p>
+          ) : (
+            <>
+              <BarList
+                label="Affichages par zone"
+                data={stats.byZone.map((z) => ({
+                  key: String(z.zoneId),
+                  label: z.name,
+                  value: z.views,
+                  tone: "violet",
+                }))}
+              />
+              <ChartTable
+                className="mt-5"
+                caption="Affichages par zone"
+                headers={["Zone", "Affichages"]}
+                rows={stats.byZone.map((z) => [z.name, formatNumber(z.views)])}
               />
             </>
           )}
         </Card>
       </div>
-
-      <Card as="section" aria-labelledby="chart-budget">
-        <PanelHeading
-          id="chart-budget"
-          title="Budget déclaré et coût estimé des créneaux, par campagne"
-          description={
-            eligibleCount > budgetRows.length
-              ? `Les ${formatNumber(budgetRows.length)} campagnes au budget le plus élevé, hors campagnes refusées. Montants en dinars (TND).`
-              : "Hors campagnes refusées. Montants en dinars (TND)."
-          }
-          className="mb-6"
-        />
-        {partial ? <div className="-mt-3 mb-4">{partial}</div> : null}
-        {budgetRows.length === 0 ? (
-          <EmptyState
-            compact
-            title="Aucune campagne à afficher."
-            description="Vos campagnes refusées ne sont pas comptées dans ce graphique."
-          />
-        ) : (
-          <>
-            <PairedBars
-              label="Budget déclaré et coût estimé des créneaux par campagne"
-              rows={budgetRows.map((r) => ({
-                key: String(r.id),
-                label: (
-                  <Link
-                    href={routes.espace.campaign(r.id)}
-                    title={r.name}
-                    className="hover:text-brand-blue-text hover:underline"
-                  >
-                    {r.name}
-                  </Link>
-                ),
-                text: r.name,
-                a: r.budget,
-                b: r.estimatedCost,
-              }))}
-              seriesA={{
-                label: "Budget déclaré",
-                fillClass: "fill-cat-2",
-                swatchClass: "bg-cat-2",
-              }}
-              seriesB={{
-                label: "Coût estimé des créneaux",
-                fillClass: "fill-cat-4",
-                swatchClass: "bg-cat-4",
-                note: <EstimateTag className="ml-1" />,
-              }}
-              format={formatTND}
-              formatTick={(n) => `${formatNumber(n)} DT`}
-            />
-            <ChartTable
-              className="mt-6"
-              caption="Budget déclaré et coût estimé des créneaux par campagne"
-              headers={[
-                "Campagne",
-                "Budget déclaré",
-                "Coût estimé des créneaux",
-                "Créneaux actifs",
-              ]}
-              rows={budgetRows.map((r) => [
-                r.name,
-                formatTND(r.budget),
-                formatTND(r.estimatedCost),
-                formatNumber(r.reservationCount),
-              ])}
-            />
-          </>
-        )}
-      </Card>
-
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-        <section
-          aria-labelledby="stats-estimates"
-          className="@container rounded-card border border-dashed border-line-strong bg-overlay-subtle p-5 sm:p-6"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2
-              id="stats-estimates"
-              className="font-display text-title font-semibold text-ink-strong"
-            >
-              Estimations
-            </h2>
-            <EstimateTag />
-          </div>
-          <dl className="mt-5 grid grid-cols-1 gap-5 @[18rem]:grid-cols-2">
-            <div className="min-w-0">
-              <dt className="font-label text-[0.8125rem] font-medium text-muted">Vues estimées</dt>
-              <dd className="mt-1 font-display text-[1.5rem] leading-tight font-semibold whitespace-nowrap text-ink-strong tabular">
-                {formatNumber(kpis.estimatedViews)}
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="font-label text-[0.8125rem] font-medium text-muted">
-                Coût estimé des créneaux
-              </dt>
-              <dd className="mt-1 font-display text-[1.5rem] leading-tight font-semibold text-ink-strong">
-                {loadingResa ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <Amount value={kpis.estimatedCost} />
-                )}
-              </dd>
-            </div>
-          </dl>
-          <p className="mt-5 text-[0.8125rem] leading-relaxed text-muted">
-            Ces valeurs sont fixées par la plateforme à chaque réservation. Elles ne mesurent ni une
-            audience ni une dépense réelle, et ne doivent pas être lues comme telles.
-          </p>
-        </section>
-
-        <DiffusionLogNote />
-      </div>
     </div>
-  );
-}
-
-/** Honest proof-of-broadcast status (UX-PLAN §6.8, VD-15): nothing claimed as delivered. */
-function DiffusionLogNote() {
-  return (
-    <section
-      aria-labelledby="stats-diffusion"
-      className="rounded-card border border-line bg-grad-card p-5 sm:p-6"
-    >
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden="true"
-          className="inline-flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-surface-2 text-ink-soft"
-        >
-          <ScrollText className="size-[18px]" />
-        </span>
-        <div className="min-w-0">
-          <h2
-            id="stats-diffusion"
-            className="font-display text-title leading-snug font-semibold text-ink-strong"
-          >
-            Journal de diffusion par campagne — mise en service progressive
-          </h2>
-          <p className="mt-2 max-w-[60ch] text-sm leading-relaxed text-ink-soft">
-            Les diffusions sont journalisées côté TPUB ; le rapport annonceur n&apos;est pas encore
-            ouvert. Aucun indicateur de diffusion n&apos;est affiché ici tant qu&apos;il ne
-            l&apos;est pas.
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted">
-            Une question sur la diffusion d&apos;une campagne validée ? Écrivez à votre
-            interlocuteur TPUB.
-          </p>
-          <Button asChild variant="secondary" className="mt-4">
-            <a
-              href={`mailto:${CONTACT.email}?subject=${encodeURIComponent("Diffusion de ma campagne")}`}
-            >
-              <Mail aria-hidden="true" />
-              Contacter TPUB
-            </a>
-          </Button>
-        </div>
-      </div>
-    </section>
   );
 }

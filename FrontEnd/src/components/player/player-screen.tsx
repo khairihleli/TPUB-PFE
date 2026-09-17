@@ -10,6 +10,8 @@ import {
   planAfterSuccess,
   type PlayerErrorInfo,
   secondsUntil,
+  shouldSendClick,
+  simulatedDateTime,
   slideKey,
 } from "@/components/player/player-schedule";
 import {
@@ -57,13 +59,24 @@ const INITIAL: PlayerState = {
  * Polls GET /api/diffusion/next with the local Tunis date-time, waits `duration` seconds,
  * backs off on errors, pauses while the tab is hidden, retries as soon as the browser is online.
  */
-export function PlayerScreen({ supportId }: { supportId: number }) {
+export function PlayerScreen({
+  supportId,
+  simulatedAt = null,
+}: {
+  supportId: number;
+  /** `?datetime=` base (normalised local "YYYY-MM-DDTHH:mm:ss"): the clock starts there. */
+  simulatedAt?: string | null;
+}) {
   const reduce = useReducedMotion();
   const animate = !reduce;
   const [state, setState] = useState<PlayerState>(INITIAL);
   const [announcement, setAnnouncement] = useState("");
   const [retryNonce, setRetryNonce] = useState(0);
   const lastRef = useRef<Diffusion | null>(null);
+  /** Asks for the next content now (a video ended before its planned duration). */
+  const advanceRef = useRef<(() => void) | null>(null);
+  const clickedRef = useRef<Set<number>>(new Set());
+  const [clickedLogs, setClickedLogs] = useState<ReadonlySet<number>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +84,10 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
     let controller: AbortController | null = null;
     let attempt = 0;
     let dueWhileHidden = false;
+    const startedAt = Date.now();
+    let inFlight = false;
+    const clock = () =>
+      simulatedAt ? simulatedDateTime(simulatedAt, Date.now() - startedAt) : toLocalIsoDateTime();
 
     const schedule = (ms: number) => {
       window.clearTimeout(timer);
@@ -82,9 +99,10 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
       const current = new AbortController();
       controller = current;
       setState((s) => ({ ...s, pending: true, paused: false }));
+      inFlight = true;
       try {
         const d = await diffusionApi.next(
-          { supportId, datetime: toLocalIsoDateTime() },
+          { supportId, datetime: clock() },
           { signal: current.signal },
         );
         if (cancelled) return;
@@ -118,6 +136,8 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
           pending: false,
         }));
         schedule(plan.delayMs);
+      } finally {
+        if (controller === current) inFlight = false;
       }
     };
 
@@ -143,6 +163,12 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
       }
     };
 
+    advanceRef.current = () => {
+      if (cancelled || inFlight) return;
+      window.clearTimeout(timer);
+      fire();
+    };
+
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
     // Macrotask start: React StrictMode's mount → unmount → mount never fires two calls.
@@ -150,16 +176,32 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
 
     return () => {
       cancelled = true;
+      advanceRef.current = null;
       window.clearTimeout(timer);
       controller?.abort();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
     };
-  }, [supportId, retryNonce]);
+  }, [supportId, retryNonce, simulatedAt]);
 
   const retryNow = useCallback(() => {
     setState((s) => ({ ...s, pending: true }));
     setRetryNonce((n) => n + 1);
+  }, []);
+
+  const onVideoEnded = useCallback((logId: number | undefined) => {
+    // Only the video still on screen may advance the loop (a late `ended` event is ignored).
+    if (lastRef.current?.diffusionLogId === logId) advanceRef.current?.();
+  }, []);
+
+  const sendClick = useCallback((d: Diffusion) => {
+    if (!shouldSendClick(d, clickedRef.current) || typeof d.diffusionLogId !== "number") return;
+    const logId = d.diffusionLogId;
+    clickedRef.current.add(logId);
+    setClickedLogs(new Set(clickedRef.current));
+    void diffusionApi.interaction({ diffusionLogId: logId, type: "CLIC" }).catch(() => {
+      // Expired or unknown log: nothing to show on a street screen.
+    });
   }, []);
 
   const { diffusion, error } = state;
@@ -204,10 +246,25 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
         cycle={state.cycle}
         durationMs={contentDelayMs(diffusion.duration)}
         animate={animate}
+        onMediaEnded={() => onVideoEnded(diffusion.diffusionLogId)}
+        onActivate={
+          typeof diffusion.diffusionLogId === "number" ? () => sendClick(diffusion) : undefined
+        }
+        clicked={
+          typeof diffusion.diffusionLogId === "number" && clickedLogs.has(diffusion.diffusionLogId)
+        }
       />
     );
   } else {
-    slide = <DefaultSlide key="default" zone={diffusion.zone} animate={animate} />;
+    slide = (
+      <DefaultSlide
+        key="default"
+        zone={diffusion.zone}
+        title={diffusion.title}
+        content={diffusion.content}
+        animate={animate}
+      />
+    );
   }
 
   return (
@@ -223,7 +280,12 @@ export function PlayerScreen({ supportId }: { supportId: number }) {
 
       {slide}
 
-      <PlayerOverlay supportId={supportId} state={state} onRetry={retryNow} />
+      <PlayerOverlay
+        supportId={supportId}
+        state={state}
+        onRetry={retryNow}
+        simulated={simulatedAt !== null}
+      />
     </div>
   );
 }

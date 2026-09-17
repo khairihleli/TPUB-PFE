@@ -138,6 +138,7 @@ export function MapLibreView(props: EngineProps) {
     onFatalError,
     dispatch,
     chrome = "full",
+    availability,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -625,6 +626,7 @@ export function MapLibreView(props: EngineProps) {
                 >
                   <PorteurMarker
                     support={s}
+                    availability={availability?.get(s.id)}
                     compact={spider.compact}
                     selected={selected}
                     highlighted={highlightSupportId === s.id}

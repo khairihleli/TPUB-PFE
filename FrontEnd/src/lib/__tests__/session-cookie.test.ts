@@ -108,6 +108,33 @@ describe("auth response → session", () => {
     );
     expect(noExp.exp).toBe(nowS + 86400);
   });
+  it("uses the v2 session expiresAt when it is earlier than the JWT exp", () => {
+    const early = sessionUserFromAuth(
+      {
+        token: jwt({ exp: nowS + 1000 }),
+        email: "a",
+        nom: "b",
+        role: "ANNONCEUR",
+        userId: 1,
+        sessionId: "3f0c",
+        expiresAt: new Date((nowS + 600) * 1000).toISOString(),
+      },
+      NOW,
+    );
+    expect(early.exp).toBe(nowS + 600);
+    const opaque = sessionUserFromAuth(
+      {
+        token: "opaque",
+        email: "a",
+        nom: "b",
+        role: "ANNONCEUR",
+        userId: 1,
+        expiresAt: new Date((nowS + 7200) * 1000).toISOString(),
+      },
+      NOW,
+    );
+    expect(opaque.exp).toBe(nowS + 7200);
+  });
   it("computes max-age", () => {
     expect(sessionMaxAge(nowS + 100, NOW)).toBe(100);
     expect(sessionMaxAge(nowS - 100, NOW)).toBe(0);

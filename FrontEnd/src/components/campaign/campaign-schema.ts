@@ -1,7 +1,7 @@
 /**
  * Campaign form (wizard step 1 + edit page): zod schema aligned with the backend rules
- * (contract §5.2) plus the client-side checks the backend does not do:
- * startDate ≥ today, endDate ≥ startDate, endTime > startTime, times sent as HH:mm:ss.
+ * (contract §2.1: INVALID_PERIOD, INVALID_TIME_RANGE, START_DATE_IN_PAST) plus budget > 0 (required
+ * for submission). Times are sent as HH:mm:ss.
  */
 import { z } from "zod";
 
@@ -31,13 +31,13 @@ export const EMPTY_CAMPAIGN_FORM: CampaignFormValues = {
   budget: "",
   startDate: "",
   endDate: "",
-  startTime: "08:00",
-  endTime: "22:00",
+  startTime: "07:00",
+  endTime: "23:00",
 };
 
 export const NAME_MAX = 200;
 export const OBJECTIVE_MIN = 10;
-export const OBJECTIVE_MAX = 2000;
+export const OBJECTIVE_MAX = 5000;
 /** NUMERIC(14,2) → 12 integer digits. */
 export const BUDGET_MAX = 999_999_999_999.99;
 
@@ -71,13 +71,13 @@ export interface CampaignSchemaOptions {
   /** Today's date in Africa/Tunis ("YYYY-MM-DD"). */
   today: string;
   /**
-   * Screens are already booked for the current period (no reservation update endpoint):
-   * the period and time range are read-only and are not re-validated against today.
+   * The saved start date (edit): an unchanged past start date is accepted, like the backend
+   * (START_DATE_IN_PAST only when the date changed).
    */
-  lockSchedule?: boolean;
+  savedStartDate?: string | null;
 }
 
-export function createCampaignSchema({ today, lockSchedule = false }: CampaignSchemaOptions) {
+export function createCampaignSchema({ today, savedStartDate = null }: CampaignSchemaOptions) {
   return z
     .object({
       name: z
@@ -96,13 +96,13 @@ export function createCampaignSchema({ today, lockSchedule = false }: CampaignSc
       budget: z
         .string()
         .trim()
-        .min(1, { error: "Indiquez un budget en dinars (0 accepté)." })
+        .min(1, { error: "Indiquez un budget en dinars." })
         .refine((v) => !Number.isNaN(parseBudget(v)), {
           error:
             "Budget invalide : saisissez un montant en dinars (deux décimales au plus), par exemple 2500.",
         })
-        .refine((v) => Number.isNaN(parseBudget(v)) || parseBudget(v) >= 0, {
-          error: "Le budget ne peut pas être négatif.",
+        .refine((v) => Number.isNaN(parseBudget(v)) || parseBudget(v) > 0, {
+          error: "Le budget doit être supérieur à 0 TND.",
         })
         .refine((v) => Number.isNaN(parseBudget(v)) || parseBudget(v) <= BUDGET_MAX, {
           error: "Montant trop élevé.",
@@ -125,8 +125,8 @@ export function createCampaignSchema({ today, lockSchedule = false }: CampaignSc
         .refine((v) => timeToMinutes(v) !== null, { error: "Heure invalide." }),
     })
     .superRefine((v, ctx) => {
-      if (lockSchedule) return;
-      if (isRealDate(v.startDate) && v.startDate < today) {
+      const unchangedStart = savedStartDate !== null && v.startDate === savedStartDate;
+      if (isRealDate(v.startDate) && v.startDate < today && !unchangedStart) {
         ctx.addIssue({
           code: "custom",
           path: ["startDate"],

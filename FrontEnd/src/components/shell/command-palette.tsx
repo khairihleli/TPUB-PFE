@@ -10,6 +10,7 @@ import {
   CornerDownLeft,
   FileClock,
   Gauge,
+  ListChecks,
   Keyboard,
   LayoutDashboard,
   LogOut,
@@ -21,6 +22,7 @@ import {
   ShieldCheck,
   Siren,
   UserRound,
+  UsersRound,
 } from "lucide-react";
 import { Dialog as RadixDialog } from "radix-ui";
 import {
@@ -40,7 +42,7 @@ import { useSession } from "@/components/shell/session-provider";
 import { useShortcut, useShortcutsHelp } from "@/components/shell/shortcuts";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ACCOUNT_NAV, ADMIN_NAV, type AppNavIcon, ESPACE_NAV } from "@/content/nav";
+import { ACCOUNT_NAV, ADMIN_NAV, type AppNavIcon, ESPACE_NAV, navForRole } from "@/content/nav";
 import { campaignsApi, supportsApi, zonesApi } from "@/lib/api/endpoints";
 import type { CampaignResponse, RoleCode, SupportResponse, ZoneResponse } from "@/lib/api/types";
 import { campaignStatusFor, getCampaignDisplayStatus } from "@/lib/campaign-status";
@@ -207,6 +209,9 @@ const NAV_ICONS: Record<AppNavIcon, typeof LayoutDashboard> = {
   overview: Gauge,
   moderation: ShieldCheck,
   emergency: Siren,
+  users: UsersRound,
+  journal: FileClock,
+  rules: ListChecks,
 };
 
 const SEQUENCE_OF: Record<string, string> = {
@@ -219,6 +224,11 @@ const SEQUENCE_OF: Record<string, string> = {
   "/admin/moderation": "g m",
   "/admin/reseau": "g r",
   "/admin/urgences": "g u",
+  "/admin/reservations": "g v",
+  "/admin/statistiques": "g s",
+  "/admin/journal": "g j",
+  "/admin/utilisateurs": "g e",
+  "/admin/regles-ia": "g i",
 };
 
 export interface BuildCommandsInput {
@@ -240,7 +250,7 @@ export function buildCommands({
   moderationCount,
 }: BuildCommandsInput): Command[] {
   const staff = role !== "ANNONCEUR";
-  const nav = staff ? ADMIN_NAV : [...ESPACE_NAV, ...ACCOUNT_NAV];
+  const nav = staff ? navForRole(ADMIN_NAV, role) : [...ESPACE_NAV, ...ACCOUNT_NAV];
   const out: Command[] = nav.map((item) => {
     const Icon = NAV_ICONS[item.icon];
     return {
@@ -297,7 +307,43 @@ export function buildCommands({
         icon: <Siren aria-hidden="true" />,
         keywords: ["urgence", "alerte"],
       });
+      out.push(
+        {
+          id: "action:new-staff",
+          label: "Créer un compte d'équipe",
+          group: "Actions",
+          href: routes.admin.users({ onglet: "equipe" }),
+          icon: <UsersRound aria-hidden="true" />,
+          keywords: ["utilisateur", "opérateur", "superviseur"],
+        },
+        {
+          id: "action:ai-rules",
+          label: "Gérer les règles IA",
+          group: "Actions",
+          href: routes.admin.aiRules(),
+          icon: <ListChecks aria-hidden="true" />,
+          keywords: ["mots interdits", "modération"],
+        },
+      );
     }
+    if (canListAllCampaigns(role)) {
+      out.push({
+        id: "action:conflicts",
+        label: "Voir les réservations en conflit",
+        group: "Actions",
+        href: routes.admin.reservations({ onglet: "conflits" }),
+        icon: <CalendarRange aria-hidden="true" />,
+        keywords: ["saturé", "capacité", "créneau"],
+      });
+    }
+    out.push({
+      id: "action:journal-diffusions",
+      label: "Journal des diffusions",
+      group: "Actions",
+      href: routes.admin.journal({ onglet: "diffusions" }),
+      icon: <FileClock aria-hidden="true" />,
+      keywords: ["logs", "historique", "diffusion"],
+    });
   }
   out.push(
     {

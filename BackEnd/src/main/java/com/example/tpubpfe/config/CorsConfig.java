@@ -22,13 +22,14 @@ public class CorsConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         List<String> origins = tpubProperties.getCors().getAllowedOrigins();
         if (origins == null || origins.isEmpty()) {
-            origins = List.of("http://localhost:4200");
+            origins = List.of("http://localhost:3000", "http://localhost:4200");
         } else if (origins.size() == 1 && origins.get(0).contains(",")) {
             origins = List.of(origins.get(0).split(","));
         }
-        configuration.setAllowedOrigins(origins);
+        configuration.setAllowedOrigins(origins.stream().map(String::trim).filter(o -> !o.isEmpty()).toList());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
+        configuration.setExposedHeaders(List.of("Content-Disposition"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

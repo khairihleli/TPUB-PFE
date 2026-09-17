@@ -2,12 +2,9 @@
 
 import { useMemo } from "react";
 
-import {
-  loadMyCampaigns,
-  loadReservationsSettled,
-  type ReservationsSettled,
-} from "@/components/espace/espace-data";
-import type { CampaignResponse, ReservationResponse } from "@/lib/api/types";
+import { loadMyCampaigns } from "@/components/espace/espace-data";
+import { statisticsApi } from "@/lib/api/endpoints";
+import type { CampaignResponse, StatisticsMineResponse, StatisticsRange } from "@/lib/api/types";
 import { resourceKeys } from "@/lib/resource-cache";
 import { useResource } from "@/lib/use-resource";
 
@@ -18,68 +15,57 @@ export interface AdvertiserData {
   error: unknown;
   loading: boolean;
   slow: boolean;
-  /** Reloads `/mine` (and, when the ids change, the reservations). */
+  /** Reloads `/mine`. */
   reload: () => void;
-  /** Loaded reservations; undefined while the reservation calls are in flight. */
-  reservations: ReservationResponse[] | undefined;
-  reservationsByCampaign: ReadonlyMap<number, ReservationResponse[]> | undefined;
-  failedCampaignIds: readonly number[];
-  reservationsLoading: boolean;
-  /** Some reservation calls failed: dependent tiles show a PartialNotice. */
-  partial: boolean;
-  /** Refetches the failed reservation calls only (successful lists stay cached). */
-  retryReservations: () => void;
+  /** `/statistics/mine` for `range` (undefined while loading or failed). */
+  stats: StatisticsMineResponse | undefined;
+  statsError: unknown;
+  statsLoading: boolean;
+  reloadStats: () => void;
   refreshing: boolean;
 }
 
-const NO_FAILURES: readonly number[] = [];
-
 /**
- * Two-stage advertiser data (FFA-05, FLOW-12): campaigns render as soon as `/mine` resolves;
- * reservations follow with allSettled semantics, so one failing call only degrades the tiles
- * that depend on it.
+ * Advertiser data in two independent halves (FFA-05): campaigns render as soon as `/mine`
+ * resolves; figures come from `GET /statistics/mine` (a failure only degrades the figures).
+ * Without a range, the backend default applies (last 30 days) and the result is shared cache.
  */
-export function useAdvertiserData(): AdvertiserData {
+export function useAdvertiserData(range: StatisticsRange = {}): AdvertiserData {
   const mine = useResource("espace:campagnes", (signal) => loadMyCampaigns(signal), {
     cacheKey: resourceKeys.campaignsMine,
   });
-  const campaigns = mine.data;
-  const idsKey = campaigns ? campaigns.map((c) => c.id).join(",") : null;
-  const resa = useResource<ReservationsSettled>(
-    idsKey === null ? null : `espace:reservations:${idsKey}`,
-    (signal) => loadReservationsSettled(campaigns ?? [], signal),
+  const rangeKey = `${range.from ?? ""}_${range.to ?? ""}`;
+  const custom = Boolean(range.from || range.to);
+  const stats = useResource(
+    `espace:statistiques:${rangeKey}`,
+    (signal) => statisticsApi.mine({ from: range.from, to: range.to, signal }),
+    custom ? {} : { cacheKey: resourceKeys.statisticsMine },
   );
-
-  const failedCampaignIds = resa.data?.failedCampaignIds ?? NO_FAILURES;
-  const reservationsError = resa.data === undefined && !resa.loading && Boolean(resa.error);
 
   return useMemo(
     () => ({
-      campaigns,
-      error: campaigns === undefined ? mine.error : null,
+      campaigns: mine.data,
+      error: mine.data === undefined ? mine.error : null,
       loading: mine.loading,
       slow: mine.slow ?? false,
       reload: mine.reload,
-      reservations: resa.data?.reservations,
-      reservationsByCampaign: resa.data?.reservationsByCampaign,
-      failedCampaignIds,
-      reservationsLoading: campaigns !== undefined && resa.data === undefined && !reservationsError,
-      partial: failedCampaignIds.length > 0 || reservationsError,
-      retryReservations: resa.reload,
+      stats: stats.data,
+      statsError: stats.data === undefined ? stats.error : null,
+      statsLoading: stats.data === undefined && !stats.error,
+      reloadStats: stats.reload,
       refreshing:
-        (mine.loading && campaigns !== undefined) || (resa.loading && resa.data !== undefined),
+        (mine.loading && mine.data !== undefined) || (stats.loading && stats.data !== undefined),
     }),
     [
-      campaigns,
+      mine.data,
       mine.error,
       mine.loading,
       mine.slow,
       mine.reload,
-      resa.data,
-      resa.loading,
-      resa.reload,
-      failedCampaignIds,
-      reservationsError,
+      stats.data,
+      stats.error,
+      stats.loading,
+      stats.reload,
     ],
   );
 }

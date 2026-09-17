@@ -24,8 +24,8 @@ const valid: CampaignFormValues = {
   endTime: "22:00",
 };
 
-function errorsFor(values: Partial<CampaignFormValues>, lockSchedule = false) {
-  return validateCampaignForm({ ...valid, ...values }, { today: TODAY, lockSchedule }).errors;
+function errorsFor(values: Partial<CampaignFormValues>, savedStartDate: string | null = null) {
+  return validateCampaignForm({ ...valid, ...values }, { today: TODAY, savedStartDate }).errors;
 }
 
 describe("validateCampaignForm", () => {
@@ -58,11 +58,11 @@ describe("validateCampaignForm", () => {
     expect(errorsFor({ name: "x".repeat(201) }).name).toBe("200 caractères maximum.");
   });
 
-  it("validates the budget: number, ≥ 0, two decimals at most", () => {
+  it("validates the budget: number, > 0 (submit rule), two decimals at most", () => {
     expect(errorsFor({ budget: "abc" }).budget).toMatch(/Budget invalide/);
-    expect(errorsFor({ budget: "-10" }).budget).toBe("Le budget ne peut pas être négatif.");
+    expect(errorsFor({ budget: "-10" }).budget).toBe("Le budget doit être supérieur à 0 TND.");
     expect(errorsFor({ budget: "10,123" }).budget).toMatch(/deux décimales/);
-    expect(errorsFor({ budget: "0" }).budget).toBeUndefined();
+    expect(errorsFor({ budget: "0" }).budget).toBe("Le budget doit être supérieur à 0 TND.");
     expect(errorsFor({ budget: "1 500,50" }).budget).toBeUndefined();
   });
 
@@ -100,10 +100,11 @@ describe("validateCampaignForm", () => {
     expect(errors.endTime).toBeDefined();
   });
 
-  it("does not re-check a locked schedule against today", () => {
+  it("accepts an unchanged past start date on edit (START_DATE_IN_PAST only when changed)", () => {
     const past = { startDate: "2026-09-01", endDate: "2026-09-30" };
     expect(errorsFor(past).startDate).toBeDefined();
-    expect(errorsFor(past, true).startDate).toBeUndefined();
+    expect(errorsFor(past, "2026-09-01").startDate).toBeUndefined();
+    expect(errorsFor(past, "2026-08-01").startDate).toBeDefined();
   });
 });
 

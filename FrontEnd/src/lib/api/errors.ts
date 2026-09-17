@@ -6,19 +6,31 @@ export type FieldErrors = Record<string, string>;
 export class ApiError extends Error {
   override readonly name = "ApiError";
   readonly status: number;
+  /** Stable machine-readable backend code (contract §2.0), null for legacy bodies. */
+  readonly code: string | null;
   /** Field → French message (from Spring `errors`). */
   readonly fieldErrors: FieldErrors;
   /** Original backend message, for branching/logs only — never display it. */
   readonly rawMessage: string | null;
+  /** Untranslated `errors` (e.g. BATCH_CONFLICT supportId → code): for branching only. */
+  readonly rawFieldErrors: Record<string, string>;
   readonly body: unknown;
 
   constructor(
     status: number,
     message: string,
-    options: { fieldErrors?: FieldErrors; rawMessage?: string | null; body?: unknown } = {},
+    options: {
+      fieldErrors?: FieldErrors;
+      rawMessage?: string | null;
+      body?: unknown;
+      code?: string | null;
+      rawFieldErrors?: Record<string, string>;
+    } = {},
   ) {
     super(message);
     this.status = status;
+    this.code = options.code ?? null;
+    this.rawFieldErrors = options.rawFieldErrors ?? {};
     this.fieldErrors = options.fieldErrors ?? {};
     this.rawMessage = options.rawMessage ?? null;
     this.body = options.body;
@@ -62,8 +74,17 @@ export function isAbortError(e: unknown): boolean {
   return typeof e === "object" && e !== null && (e as { name?: unknown }).name === "AbortError";
 }
 
-/** GET /ai/report answers 400 « No AI report found » when the campaign was never analysed. */
+/** True when `e` is an ApiError carrying one of `codes`. */
+export function hasErrorCode(e: unknown, ...codes: string[]): e is ApiError {
+  return e instanceof ApiError && e.code !== null && codes.includes(e.code);
+}
+
+/**
+ * The campaign was never analysed: 404 AI_REPORT_NOT_FOUND (v2), or the legacy
+ * 400 « No AI report found ».
+ */
 export function isNoAiReportError(e: unknown): boolean {
+  if (hasErrorCode(e, "AI_REPORT_NOT_FOUND")) return true;
   return (
     e instanceof ApiError &&
     e.status === 400 &&
@@ -71,14 +92,49 @@ export function isNoAiReportError(e: unknown): boolean {
   );
 }
 
-/** « Support already reserved for the selected period » (reservation conflict). */
+/** Codes meaning « this Porteur is not free on that window » (single or batch reservation). */
+export const RESERVATION_CONFLICT_CODES = [
+  "SUPPORT_ALREADY_RESERVED",
+  "SUPPORT_UNAVAILABLE",
+  "RESERVATION_DUPLICATE",
+  "BATCH_CONFLICT",
+] as const;
+
+/** Reservation conflict (v2 codes, or the legacy 400 « Support already reserved… »). */
 export function isReservationConflictError(e: unknown): boolean {
+  if (hasErrorCode(e, ...RESERVATION_CONFLICT_CODES)) return true;
   return (
     e instanceof ApiError &&
     e.status === 400 &&
     (e.rawMessage ?? "").startsWith("Support already reserved")
   );
 }
+
+/** 409 BATCH_CONFLICT: supportId → backend code, e.g. { "12": "SUPPORT_ALREADY_RESERVED" }. */
+export function batchConflicts(e: unknown): Record<number, string> {
+  if (!hasErrorCode(e, "BATCH_CONFLICT")) return {};
+  const out: Record<number, string> = {};
+  for (const [key, value] of Object.entries(e.rawFieldErrors)) {
+    const id = Number(key);
+    if (Number.isInteger(id)) out[id] = value;
+  }
+  return out;
+}
+
+/** 400 SUBMIT_INCOMPLETE: the missing parts (French messages keyed by period/times/…). */
+export function submitIncompleteErrors(e: unknown): FieldErrors | null {
+  return hasErrorCode(e, "SUBMIT_INCOMPLETE") ? e.fieldErrors : null;
+}
+
+/** Session codes answered by the security chain (JSON 401). */
+export const SESSION_ERROR_CODES = [
+  "UNAUTHENTICATED",
+  "TOKEN_INVALID",
+  "TOKEN_EXPIRED",
+  "SESSION_REVOKED",
+  "ACCOUNT_DISABLED",
+  "SESSION_EXPIRED",
+] as const;
 
 /** Coarse category the UI branches on (never on message text). */
 export type ErrorCategory =
@@ -155,12 +211,15 @@ export function presentError(e: unknown): PresentedError {
       ? e.message
       : "Un problème inattendu est survenu. Réessayez dans un instant.";
   if (category === "unreachable" && !(e instanceof ApiError)) message = UNREACHABLE_MESSAGE;
-  if (category === "unauthorized") message = SESSION_EXPIRED_MESSAGE;
+  // A login refusal is a 401 too, but not an expired session: keep its own message. (A user
+  // deactivated mid-session reaches the UI as the bridge SESSION_EXPIRED body instead.)
+  const loginRefused = hasErrorCode(e, "BAD_CREDENTIALS", "ACCOUNT_DISABLED");
+  if (category === "unauthorized" && !loginRefused) message = SESSION_EXPIRED_MESSAGE;
   if (category === "slow") message = SLOW_MESSAGE;
   if (category === "offline") message = OFFLINE_MESSAGE;
   return {
     category,
-    title: TITLES[category],
+    title: loginRefused ? "Connexion impossible" : TITLES[category],
     message,
     fieldErrors: e instanceof ApiError ? e.fieldErrors : {},
     retryable: category !== "forbidden" && category !== "not-found" && category !== "invalid",

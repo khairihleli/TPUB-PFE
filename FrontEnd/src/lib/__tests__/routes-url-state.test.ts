@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseWizardStepParam, routes, sectionOf, withQuery } from "@/lib/routes";
+import { parseWizardStepV2Param, routes, sectionOf, withQuery } from "@/lib/routes";
 import {
+  baseSearchForWrite,
+  nextPendingWrite,
   nextSort,
   param,
   parseSortParam,
@@ -26,14 +28,36 @@ describe("routes (UX-PLAN §3.5)", () => {
     expect(routes.espace.network({ porteur: 12 })).toBe("/espace/reseau?porteur=12");
   });
 
-  it("maps wizard steps details=1 porteurs=2 verification=3 (legacy 4 → 3)", () => {
+  it("maps wizard steps details=1 contenu=2 porteurs=3 verification=4", () => {
     expect(routes.espace.wizard(null)).toBe("/espace/campagnes/nouvelle");
     expect(routes.espace.wizard(7, "details")).toBe("/espace/campagnes/nouvelle?id=7&etape=1");
-    expect(routes.espace.wizard(7, "porteurs")).toBe("/espace/campagnes/nouvelle?id=7&etape=2");
-    expect(routes.espace.wizard(7, "verification")).toBe("/espace/campagnes/nouvelle?id=7&etape=3");
-    expect(routes.espace.wizard(7, 4)).toBe("/espace/campagnes/nouvelle?id=7&etape=3");
-    expect(parseWizardStepParam("4")).toBe("verification");
-    expect(parseWizardStepParam(null)).toBe("details");
+    expect(routes.espace.wizard(7, "porteurs")).toBe("/espace/campagnes/nouvelle?id=7&etape=3");
+    expect(routes.espace.wizard(7, "verification")).toBe("/espace/campagnes/nouvelle?id=7&etape=4");
+    expect(routes.espace.wizard(7, 4)).toBe("/espace/campagnes/nouvelle?id=7&etape=4");
+  });
+
+  it("maps the v2 wizard details=1 contenu=2 porteurs=3 verification=4", () => {
+    expect(routes.espace.campaignWizard(7, "contenu")).toBe(
+      "/espace/campagnes/nouvelle?id=7&etape=2",
+    );
+    expect(routes.espace.campaignWizard(null)).toBe("/espace/campagnes/nouvelle");
+    expect(parseWizardStepV2Param("3")).toBe("porteurs");
+    expect(parseWizardStepV2Param(4)).toBe("verification");
+    expect(parseWizardStepV2Param("contenu")).toBe("contenu");
+    expect(parseWizardStepV2Param("9")).toBe("details");
+  });
+
+  it("builds the v2 back-office hrefs", () => {
+    expect(routes.admin.users()).toBe("/admin/utilisateurs");
+    expect(routes.admin.users({ onglet: "equipe" })).toBe("/admin/utilisateurs?onglet=equipe");
+    expect(routes.admin.journal({ onglet: "decisions-ia", campagne: 3 })).toBe(
+      "/admin/journal?onglet=decisions-ia&campagne=3",
+    );
+    expect(routes.admin.reservations({ onglet: "conflits" })).toBe(
+      "/admin/reservations?onglet=conflits",
+    );
+    expect(routes.admin.aiRules()).toBe("/admin/regles-ia");
+    expect(routes.admin.statistics()).toBe("/admin/statistiques");
   });
 
   it("builds admin hrefs", () => {
@@ -102,5 +126,39 @@ describe("table sort param", () => {
     expect(nextSort(null, "nom")).toEqual({ key: "nom", dir: "asc" });
     expect(nextSort({ key: "nom", dir: "asc" }, "nom")).toEqual({ key: "nom", dir: "desc" });
     expect(nextSort({ key: "nom", dir: "desc" }, "cout")).toEqual({ key: "cout", dir: "asc" });
+  });
+});
+
+describe("url writes not yet committed by the router", () => {
+  const path = "/admin/moderation";
+
+  it("chains a second write on top of an uncommitted one (examen kept by a debounced search)", () => {
+    // « Examiner » pushes ?examen=3 while the address bar still shows ?onglet=a-traiter.
+    const live = "?onglet=a-traiter";
+    const base1 = baseSearchForWrite(path, live, null);
+    expect(base1).toBe("onglet=a-traiter");
+    const first = "onglet=a-traiter&examen=3";
+    const pending1 = nextPendingWrite(path, live, base1, first, null);
+
+    // The debounced search commits before the router: it must start from the pending write.
+    const base2 = baseSearchForWrite(path, live, pending1);
+    expect(base2).toBe(first);
+    const second = "onglet=a-traiter&examen=3&q=Ouverture";
+    const pending2 = nextPendingWrite(path, live, base2, second, pending1);
+    expect(pending2.uncommitted).toEqual(["onglet=a-traiter", first]);
+
+    // The router commits the first write only: a third write still sees the second.
+    expect(baseSearchForWrite(path, `?${first}`, pending2)).toBe(second);
+  });
+
+  it("uses the live URL once committed, after another navigation or on another page", () => {
+    const pending = nextPendingWrite(path, "", "", "q=marsa", null);
+    expect(baseSearchForWrite(path, "?q=marsa", pending)).toBe("q=marsa");
+    expect(baseSearchForWrite(path, "?onglet=toutes", pending)).toBe("onglet=toutes");
+    expect(baseSearchForWrite("/admin/journal", "", pending)).toBe("");
+    // A write starting from the live URL (not the pending one) starts a new chain.
+    expect(
+      nextPendingWrite(path, "?onglet=toutes", "onglet=toutes", "x=1", pending).uncommitted,
+    ).toEqual(["onglet=toutes"]);
   });
 });

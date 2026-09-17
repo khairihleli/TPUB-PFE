@@ -3,21 +3,28 @@ package com.example.tpubpfe.service;
 import com.example.tpubpfe.dto.SupportAvailabilitySlot;
 import com.example.tpubpfe.dto.SupportRequest;
 import com.example.tpubpfe.dto.SupportResponse;
-import com.example.tpubpfe.exception.BadRequestException;
-import com.example.tpubpfe.exception.ResourceNotFoundException;
 import com.example.tpubpfe.model.DiffusionSupport;
 import com.example.tpubpfe.model.PorteurType;
 import com.example.tpubpfe.model.Reservation;
 import com.example.tpubpfe.model.ReservationStatus;
+import com.example.tpubpfe.model.SupportAvailability;
+import com.example.tpubpfe.model.SupportType;
 import com.example.tpubpfe.model.TechnicalStatus;
 import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
+import com.example.tpubpfe.repository.SupportAvailabilityRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -31,7 +38,10 @@ public class SupportService {
 
     private final DiffusionSupportRepository supportRepository;
     private final ReservationRepository reservationRepository;
+    private final SupportAvailabilityRepository blockRepository;
     private final ZoneService zoneService;
+    private final AuditService auditService;
+    private final Clock clock;
 
     @Transactional
     public SupportResponse create(SupportRequest request) {
@@ -45,19 +55,38 @@ public class SupportService {
                         ? request.getTechnicalStatus() : TechnicalStatus.ACTIF)
                 .diffusionCapacity(request.getDiffusionCapacity() != null
                         ? request.getDiffusionCapacity() : (short) 1)
+                .visibilityScore(request.getVisibilityScore())
                 .build();
         applyPorteurFields(support, request);
-        return toResponse(supportRepository.save(support));
+        DiffusionSupport saved = supportRepository.save(support);
+        auditService.record("SUPPORT_CREATED", "SUPPORT", saved.getId(),
+                "Création du Porteur « " + saved.getName() + " »", details(saved));
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     public List<SupportResponse> getAll() {
-        return supportRepository.findAll().stream().map(this::toResponse).toList();
+        return getAll(List.of(), List.of(), List.of());
+    }
+
+    /** All supports, optionally filtered (empty list = no filter), sorted by name. */
+    @Transactional(readOnly = true)
+    public List<SupportResponse> getAll(List<Long> zoneIds, List<SupportType> supportTypes,
+                                        List<TechnicalStatus> technicalStatuses) {
+        return supportRepository.findAll().stream()
+                .filter(s -> zoneIds == null || zoneIds.isEmpty() || zoneIds.contains(s.getZone().getId()))
+                .filter(s -> supportTypes == null || supportTypes.isEmpty() || supportTypes.contains(s.getSupportType()))
+                .filter(s -> technicalStatuses == null || technicalStatuses.isEmpty()
+                        || technicalStatuses.contains(s.getTechnicalStatus()))
+                .sorted(Comparator.comparing(DiffusionSupport::getName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(DiffusionSupport::getId))
+                .map(SupportService::toResponse)
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public List<SupportResponse> getByZone(Long zoneId) {
-        return supportRepository.findByZoneId(zoneId).stream().map(this::toResponse).toList();
+        return supportRepository.findByZoneId(zoneId).stream().map(SupportService::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
@@ -79,32 +108,60 @@ public class SupportService {
         if (request.getDiffusionCapacity() != null) {
             support.setDiffusionCapacity(request.getDiffusionCapacity());
         }
+        if (request.getVisibilityScore() != null) {
+            support.setVisibilityScore(request.getVisibilityScore());
+        }
         applyPorteurFields(support, request);
-        return toResponse(supportRepository.save(support));
+        DiffusionSupport saved = supportRepository.save(support);
+        auditService.record("SUPPORT_UPDATED", "SUPPORT", saved.getId(),
+                "Modification du Porteur « " + saved.getName() + " »", details(saved));
+        return toResponse(saved);
     }
 
     /**
-     * Booked periods (TEMPORAIRE or CONFIRMEE reservations) on a support overlapping [from, to], sorted by start date.
-     * Defaults: from = today, to = from + 90 days. No campaign or client data is exposed.
+     * Booked periods (TEMPORAIRE or CONFIRMEE reservations) and unavailability blocks of a support overlapping
+     * [from, to], sorted by start. With both {@code startTime} and {@code endTime}, only periods whose daily times
+     * overlap [startTime, endTime) are kept. Defaults: from = today, to = from + 90 days. No campaign or client data.
      */
     @Transactional(readOnly = true)
-    public List<SupportAvailabilitySlot> getAvailability(Long id, LocalDate from, LocalDate to) {
+    public List<SupportAvailabilitySlot> getAvailability(Long id, LocalDate from, LocalDate to,
+                                                         LocalTime startTime, LocalTime endTime) {
         if (!supportRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Support not found: " + id);
+            throw NetworkErrors.supportNotFound();
         }
-        LocalDate start = from != null ? from : LocalDate.now();
+        LocalDate start = from != null ? from : LocalDate.now(clock);
         LocalDate end = to != null ? to : start.plusDays(DEFAULT_AVAILABILITY_DAYS);
         if (end.isBefore(start)) {
-            throw new BadRequestException("'to' must be on or after 'from'");
+            throw NetworkErrors.invalidRange("La date de fin doit être postérieure ou égale à la date de début.");
         }
-        return reservationRepository.findBookedPeriodsForSupport(id, start, end, BLOCKING_STATUSES).stream()
-                .map(SupportService::toSlot)
-                .toList();
+        boolean timeFilter = startTime != null && endTime != null;
+        if (timeFilter && !startTime.isBefore(endTime)) {
+            throw NetworkErrors.invalidTimeRange();
+        }
+        List<SupportAvailabilitySlot> slots = new ArrayList<>();
+        for (Reservation reservation : reservationRepository.findBookedPeriodsForSupport(id, start, end, BLOCKING_STATUSES)) {
+            if (!timeFilter || (reservation.getStartTime().isBefore(endTime) && startTime.isBefore(reservation.getEndTime()))) {
+                slots.add(toSlot(reservation));
+            }
+        }
+        for (SupportAvailability block : blockRepository
+                .findBySupportIdAndAvailabilityDateBetweenOrderByAvailabilityDateAscStartTimeAsc(id, start, end)) {
+            if (!AvailabilityRules.BLOCKING.contains(block.getAvailabilityStatus())) {
+                continue;
+            }
+            if (!timeFilter || (block.getStartTime().isBefore(endTime) && startTime.isBefore(block.getEndTime()))) {
+                slots.add(toSlot(block));
+            }
+        }
+        slots.sort(Comparator.comparing(SupportAvailabilitySlot::getStartDate)
+                .thenComparing(SupportAvailabilitySlot::getStartTime)
+                .thenComparing(SupportAvailabilitySlot::getEndDate));
+        return slots;
     }
 
     public DiffusionSupport findSupport(Long id) {
         return supportRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Support not found: " + id));
+                .orElseThrow(NetworkErrors::supportNotFound);
     }
 
     /** Porteur fields: null = unchanged (create: stays null). A blank address clears it. */
@@ -124,17 +181,32 @@ public class SupportService {
         }
     }
 
-    private static SupportAvailabilitySlot toSlot(Reservation reservation) {
+    static SupportAvailabilitySlot toSlot(Reservation reservation) {
         return SupportAvailabilitySlot.builder()
                 .startDate(reservation.getStartDate())
                 .endDate(reservation.getEndDate())
                 .startTime(reservation.getStartTime())
                 .endTime(reservation.getEndTime())
+                .kind("RESERVATION")
+                .availabilityStatus(reservation.getReservationStatus() == ReservationStatus.CONFIRMEE ? "OCCUPE" : "RESERVE")
                 .reservationStatus(reservation.getReservationStatus().name())
                 .build();
     }
 
-    private SupportResponse toResponse(DiffusionSupport support) {
+    static SupportAvailabilitySlot toSlot(SupportAvailability block) {
+        return SupportAvailabilitySlot.builder()
+                .startDate(block.getAvailabilityDate())
+                .endDate(block.getAvailabilityDate())
+                .startTime(block.getStartTime())
+                .endTime(block.getEndTime())
+                .kind("BLOCAGE")
+                .availabilityStatus(block.getAvailabilityStatus().name())
+                .reason(block.getReason())
+                .reservationStatus(null)
+                .build();
+    }
+
+    public static SupportResponse toResponse(DiffusionSupport support) {
         return SupportResponse.builder()
                 .id(support.getId())
                 .zoneId(support.getZone().getId())
@@ -149,6 +221,18 @@ public class SupportService {
                 .mastHeightM(support.getMastHeightM())
                 .headingDeg(support.getHeadingDeg())
                 .address(support.getAddress())
+                .visibilityScore(support.getVisibilityScore())
+                .distanceKm(null)
                 .build();
+    }
+
+    private static Map<String, Object> details(DiffusionSupport support) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("zoneId", support.getZone().getId());
+        details.put("supportType", support.getSupportType().name());
+        details.put("technicalStatus", support.getTechnicalStatus().name());
+        details.put("diffusionCapacity", support.getDiffusionCapacity());
+        details.put("visibilityScore", support.getVisibilityScore());
+        return details;
     }
 }

@@ -1,7 +1,8 @@
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
-import type { TechnicalStatus } from "@/lib/api/types";
+import type { AvailabilityStatus, TechnicalStatus } from "@/lib/api/types";
+import { AVAILABILITY_STATUS, AVAILABILITY_STATUS_ORDER } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { TECHNICAL_STATUS_CODES } from "@/lib/network/filters";
 import {
@@ -11,7 +12,12 @@ import {
   technicalStatusLabel,
 } from "@/lib/network/porteur";
 
-import { STATUS_RING, TONE_BG_SOFT, TONE_TEXT } from "@/components/map/porteur-visuals";
+import {
+  AVAILABILITY_RING,
+  STATUS_RING,
+  TONE_BG_SOFT,
+  TONE_TEXT,
+} from "@/components/map/porteur-visuals";
 
 function Row({ swatch, children }: { swatch: ReactNode; children: ReactNode }) {
   return (
@@ -199,5 +205,35 @@ export function MapLegend({
         {DESIGN_INTENTION_NOTICE}
       </p>
     </div>
+  );
+}
+
+/** Legend of the availability rings (campaign zone step): the 5 statuses of contract §2.7. */
+export function AvailabilityLegend({
+  counts,
+  className,
+}: {
+  /** Optional count per status, shown after each label. */
+  counts?: Partial<Record<AvailabilityStatus, number>>;
+  className?: string;
+}) {
+  return (
+    <ul
+      aria-label="Légende des disponibilités"
+      className={cx("flex flex-wrap gap-x-4 gap-y-1.5 text-[0.8125rem] text-ink-soft", className)}
+    >
+      {AVAILABILITY_STATUS_ORDER.map((status) => (
+        <li key={status} className="inline-flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cx("size-3 shrink-0 rounded-full border-2 bg-bg", AVAILABILITY_RING[status])}
+          />
+          {AVAILABILITY_STATUS[status].label}
+          {counts && counts[status] !== undefined ? (
+            <span className="text-muted tabular">{counts[status]}</span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }

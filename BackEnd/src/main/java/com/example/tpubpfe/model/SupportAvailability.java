@@ -53,6 +53,12 @@ public class SupportAvailability {
     @Builder.Default
     private AvailabilityStatus availabilityStatus = AvailabilityStatus.DISPONIBLE;
 
+    @Column(length = 255)
+    private String reason;
+
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

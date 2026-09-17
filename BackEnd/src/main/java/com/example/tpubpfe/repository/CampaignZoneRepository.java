@@ -9,5 +9,9 @@ public interface CampaignZoneRepository extends JpaRepository<CampaignZone, Long
 
     List<CampaignZone> findByCampaignId(Long campaignId);
 
+    List<CampaignZone> findByCampaignIdOrderByIdAsc(Long campaignId);
+
     List<CampaignZone> findByZoneId(Long zoneId);
+
+    long countByCampaignId(Long campaignId);
 }

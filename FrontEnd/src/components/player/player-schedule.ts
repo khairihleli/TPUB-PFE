@@ -111,9 +111,23 @@ export type NextStep =
   | { ok: true; delayMs: number; attempt: 0 }
   | { ok: false; delayMs: number; attempt: number; error: PlayerErrorInfo };
 
+/** A priority message is re-checked at least every 5 s so the takeover ends promptly. */
+export const URGENCE_POLL_MAX_S = 5;
+
+/**
+ * Delay before the next call for a content: its `duration`, except a priority message which is
+ * polled every `min(duration, 5)` s (contract §5 F3 player).
+ */
+export function pollDelayMs(d: Pick<Diffusion, "duration"> & { type?: Diffusion["type"] }): number {
+  const content = contentDelayMs(d.duration);
+  return d.type === "URGENCE" ? Math.min(content, URGENCE_POLL_MAX_S * 1000) : content;
+}
+
 /** Single place that decides what happens after a poll. */
-export function planAfterSuccess(d: Pick<Diffusion, "duration">): NextStep {
-  return { ok: true, delayMs: contentDelayMs(d.duration), attempt: 0 };
+export function planAfterSuccess(
+  d: Pick<Diffusion, "duration"> & { type?: Diffusion["type"] },
+): NextStep {
+  return { ok: true, delayMs: pollDelayMs(d), attempt: 0 };
 }
 
 export function planAfterError(
@@ -146,8 +160,11 @@ export function parseSupportId(raw: string | undefined | null): number | null {
 }
 
 /** Identity of what is on screen: same key → no entrance animation replay. */
-export function slideKey(d: Pick<Diffusion, "type" | "campaignId" | "title">): string {
-  return `${d.type}:${d.campaignId ?? "-"}:${d.title}`;
+export function slideKey(
+  d: Pick<Diffusion, "type" | "campaignId" | "title"> & { mediaUrl?: string | null },
+): string {
+  const base = `${d.type}:${d.campaignId ?? "-"}:${d.title}`;
+  return d.mediaUrl ? `${base}:${d.mediaUrl}` : base;
 }
 
 /**
@@ -160,6 +177,68 @@ export function isNewUrgence(
 ): boolean {
   if (next.type !== "URGENCE") return false;
   return previous === null || slideKey(previous) !== slideKey(next);
+}
+
+/** How a publicité is rendered: its media when the backend sent one, else a title card. */
+export type AdMediaKind = "image" | "video" | "none";
+
+export function adMediaKind(d: Pick<Diffusion, "mediaUrl" | "mediaType">): AdMediaKind {
+  const url = typeof d.mediaUrl === "string" ? d.mediaUrl.trim() : "";
+  if (!url) return "none";
+  if (d.mediaType === "VIDEO") return "video";
+  if (d.mediaType === "IMAGE" || d.mediaType === "BANNER") return "image";
+  // Unknown type (older payloads): guess from the extension, default to an image.
+  return /\.(mp4|webm)(\?|#|$)/i.test(url) ? "video" : "image";
+}
+
+/** A tap on a publicité counts one CLIC per diffusion log (never twice, never for other types). */
+export function shouldSendClick(
+  d: Pick<Diffusion, "type" | "diffusionLogId"> | null,
+  alreadySent: ReadonlySet<number>,
+): boolean {
+  return (
+    d !== null &&
+    d.type === "PUBLICITE" &&
+    typeof d.diffusionLogId === "number" &&
+    !alreadySent.has(d.diffusionLogId)
+  );
+}
+
+const SIMULATED_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+function simulatedParts(value: string): number[] | null {
+  const m = SIMULATED_RE.exec(value.trim());
+  if (!m) return null;
+  return [m[1], m[2], m[3], m[4], m[5], m[6] ?? "00"].map(Number);
+}
+
+/**
+ * `?datetime=2026-09-20T18:30` → the normalised local base "2026-09-20T18:30:00", or null when
+ * absent or invalid (the player then uses the real Tunis clock).
+ */
+export function parseSimulatedDateTime(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const p = simulatedParts(raw);
+  if (!p) return null;
+  const [y, mo, d, h, mi, s] = p as [number, number, number, number, number, number];
+  const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
+  const same =
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === mo - 1 &&
+    date.getUTCDate() === d &&
+    date.getUTCHours() === h &&
+    date.getUTCMinutes() === mi &&
+    date.getUTCSeconds() === s;
+  return same ? date.toISOString().slice(0, 19) : null;
+}
+
+/** Simulated local date-time: the base plus the real time elapsed since the player started. */
+export function simulatedDateTime(base: string, elapsedMs: number): string {
+  const p = simulatedParts(base);
+  if (!p) return base;
+  const [y, mo, d, h, mi, s] = p as [number, number, number, number, number, number];
+  const seconds = Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs / 1000)) : 0;
+  return new Date(Date.UTC(y, mo - 1, d, h, mi, s) + seconds * 1000).toISOString().slice(0, 19);
 }
 
 /** "12" → "0:12" · 75 → "1:15". */

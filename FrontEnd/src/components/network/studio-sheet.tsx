@@ -242,7 +242,9 @@ function StudioWorkspace({
   const [face, setFace] = useState<StudioFace>("all");
   const [viewRequest, setViewRequest] = useState(0);
   const [exploring, setExploring] = useState(false);
-  const creative = useStudioCreative(booking.campaignId);
+  const creative = useStudioCreative(
+    campaigns.data?.find((c) => c.id === booking.campaignId) ?? null,
+  );
   const selected = selectedIds.includes(support.id);
   const scrollRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);

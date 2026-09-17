@@ -161,6 +161,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
     onMapClick,
     focusZoneId = null,
     chrome = "full",
+    availability,
     height,
     className,
   } = props;
@@ -631,6 +632,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
     onFatalError,
     pickPoints: onMapClick !== undefined,
     chrome,
+    availability,
   };
   const compact = chrome === "compact";
 

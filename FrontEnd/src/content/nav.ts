@@ -1,5 +1,6 @@
 /** Navigation definitions (marketing header/footer, app shells). Icons are lucide names. */
 import { GROUP } from "@/content/site";
+import type { RoleCode } from "@/lib/api/types";
 
 export interface NavLink {
   label: string;
@@ -89,10 +90,13 @@ export type AppNavIcon =
   | "profile"
   | "overview"
   | "moderation"
-  | "emergency";
+  | "emergency"
+  | "users"
+  | "journal"
+  | "rules";
 
 /** Shell badge sources (computed by useNavBadges from the shared cache). */
-export type NavBadgeKey = "drafts" | "moderation" | "coherence" | "emergencies";
+export type NavBadgeKey = "drafts" | "moderation" | "coherence" | "emergencies" | "conflicts";
 
 export interface AppNavItem {
   label: string;
@@ -105,7 +109,11 @@ export interface AppNavItem {
   badgeKey?: NavBadgeKey;
   /** Mobile bottom tab bar slot (items without `tab` live under « Plus »). */
   tab?: { label: string; order: number };
+  /** Roles that see the entry (contract §5 F3 role visibility). Absent = every role of the shell. */
+  roles?: readonly RoleCode[];
 }
+
+const ADMIN_AND_SUPERVISOR: readonly RoleCode[] = ["ADMINISTRATEUR", "SUPERVISEUR"];
 
 export const ESPACE_NAV: readonly AppNavItem[] = [
   {
@@ -162,6 +170,15 @@ export const ADMIN_NAV: readonly AppNavItem[] = [
     group: "Opérer",
     badgeKey: "moderation",
     tab: { label: "Modération", order: 2 },
+    roles: ADMIN_AND_SUPERVISOR,
+  },
+  {
+    label: "Réservations",
+    href: "/admin/reservations",
+    icon: "reservations",
+    group: "Opérer",
+    badgeKey: "conflicts",
+    roles: ADMIN_AND_SUPERVISOR,
   },
   {
     label: "Réseau",
@@ -179,7 +196,37 @@ export const ADMIN_NAV: readonly AppNavItem[] = [
     badgeKey: "emergencies",
     tab: { label: "Urgences", order: 4 },
   },
+  { label: "Statistiques", href: "/admin/statistiques", icon: "stats", group: "Analyser" },
+  { label: "Journal", href: "/admin/journal", icon: "journal", group: "Analyser" },
+  {
+    label: "Utilisateurs",
+    href: "/admin/utilisateurs",
+    icon: "users",
+    group: "Administrer",
+    roles: ADMIN_AND_SUPERVISOR,
+  },
+  {
+    label: "Règles IA",
+    href: "/admin/regles-ia",
+    icon: "rules",
+    group: "Administrer",
+    roles: ADMIN_AND_SUPERVISOR,
+  },
 ];
+
+/** Entries visible to a role (items without `roles` are visible to every role of the shell). */
+export function navForRole(items: readonly AppNavItem[], role: RoleCode): AppNavItem[] {
+  return items.filter((i) => !i.roles || i.roles.includes(role));
+}
+
+/** True when `role` may open `href` (the most specific matching nav entry decides). */
+export function roleCanOpen(items: readonly AppNavItem[], role: RoleCode, href: string): boolean {
+  const path = href.split("?")[0] ?? href;
+  const match = items
+    .filter((i) => isNavActive(path, i))
+    .sort((a, b) => b.href.length - a.href.length)[0];
+  return !match?.roles || match.roles.includes(role);
+}
 
 export function isNavActive(pathname: string, item: Pick<AppNavItem, "href" | "exact">): boolean {
   if (item.exact) return pathname === item.href;

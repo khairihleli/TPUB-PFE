@@ -2,16 +2,22 @@
 
 import { RectangleHorizontal, RectangleVertical } from "lucide-react";
 
-import type { LocalCreative } from "@/components/campaign/creative-store";
 import { cx } from "@/lib/cx";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 
 export type ScreenOrientation = "landscape" | "portrait";
 
+/** A visual to preview: an uploaded media (/uploads URL) or a local object URL. */
+export interface PreviewCreative {
+  url: string;
+  kind: "image" | "video";
+  name: string;
+}
+
 export interface ScreenMockupProps {
-  creative: LocalCreative | null;
+  creative: PreviewCreative | null;
   orientation: ScreenOrientation;
-  /** Used for the typographic placeholder when no local file is chosen. */
+  /** Used for the typographic placeholder when no visual is available. */
   campaignName: string;
   objective?: string | null;
   /** Zone or screen name printed on the bezel. */
@@ -20,7 +26,7 @@ export interface ScreenMockupProps {
 }
 
 /**
- * A DOOH screen frame previewing the creative (local file only) or, without a file, a typographic
+ * A DOOH screen frame previewing the creative (uploaded media) or, without one, a typographic
  * mock-up of the campaign. Labelled « Aperçu » — never "live". Portrait = street totem with a foot.
  */
 export function ScreenMockup({
@@ -64,7 +70,7 @@ export function ScreenMockup({
           )}
         >
           {creative?.kind === "image" ? (
-            // Local object URL: next/image cannot optimise blob: sources.
+            // Same-origin /uploads media (or a blob: URL): shown as-is, never optimised.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={creative.url}
@@ -146,7 +152,7 @@ export function ScreenMockup({
 
       <figcaption className="mt-3 text-center text-[0.75rem] leading-snug text-muted">
         {creative
-          ? "Aperçu local : le fichier reste sur votre appareil."
+          ? "Rendu indicatif : le cadrage final dépend du Porteur."
           : "Maquette générée à partir du nom de la campagne."}
       </figcaption>
     </figure>

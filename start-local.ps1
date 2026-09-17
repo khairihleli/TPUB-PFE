@@ -43,7 +43,11 @@ function Wait-Http([string]$Url, [int]$Seconds) {
 if ($Stop) {
   Stop-Port 3000
   Stop-Port 8080
-  if (Test-Path $PgData) { & "$PgBin\pg_ctl.exe" -D $PgData stop -m fast 2>$null | Out-Null }
+  # pg_ctl writes to stderr when the server is already stopped (stale postmaster.pid): not an error here.
+  if ((Test-Path $PgData) -and (Test-Port 5432)) {
+    $ErrorActionPreference = "Continue"
+    & "$PgBin\pg_ctl.exe" -D $PgData stop -m fast 2>&1 | Out-Null
+  }
   Write-Host "TPUB arrêté."
   exit 0
 }
@@ -67,6 +71,14 @@ if (-not (Test-Port 5432)) {
   while (-not (Test-Port 5432) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
   if (-not (Test-Port 5432)) { throw "PostgreSQL ne démarre pas. Consultez $PgLog" }
 }
+# The port opens before recovery ends ("the database system is starting up"): wait for pg_isready.
+$deadline = (Get-Date).AddSeconds(60)
+do {
+  & "$PgBin\pg_isready.exe" -h localhost -p 5432 -q
+  $ready = ($LASTEXITCODE -eq 0)
+  if (-not $ready) { Start-Sleep -Milliseconds 500 }
+} while (-not $ready -and (Get-Date) -lt $deadline)
+if (-not $ready) { throw "PostgreSQL n'accepte pas les connexions. Consultez $PgLog" }
 $env:PGPASSWORD = $DbPassword
 $roleExists = & "$PgBin\psql.exe" -h localhost -U postgres -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DbUser'"
 if ($roleExists -ne "1") {

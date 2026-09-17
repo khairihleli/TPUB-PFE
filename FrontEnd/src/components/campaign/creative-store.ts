@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Local-only creative previews. There is NO upload endpoint (contract §7.1): the file never
- * leaves the browser. Previews live in memory (object URLs) for the current tab, so the wizard
- * and the detail page can show the same visual while navigating; a reload forgets them.
+ * Local « try it on the screen » previews of the network explorer's 3D studio: the file never
+ * leaves the browser (object URLs in memory, forgotten on reload). Campaign media are real
+ * uploads (`mediaApi.upload`, wizard step « Contenu ») and always win over these previews.
  */
 import { useSyncExternalStore } from "react";
 

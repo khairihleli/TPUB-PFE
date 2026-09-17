@@ -3,147 +3,100 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { aiApi, campaignsApi } from "@/lib/api/endpoints";
-import { ApiError } from "@/lib/api/errors";
-import type { AiReport, CampaignResponse } from "@/lib/api/types";
-
-function isAlreadySubmittedError(e: unknown): boolean {
-  return (
-    e instanceof ApiError &&
-    e.status === 400 &&
-    (e.rawMessage ?? "").startsWith("Only draft campaigns can be submitted")
-  );
-}
-
-/** Client-side wait for POST /ai/check-content before telling the advertiser it continues. */
-export const ANALYSIS_TIMEOUT_MS = 90_000;
-
-/** Thrown (never sent to the server) when the analysis exceeds the client wait. */
-export class AnalysisTimeoutError extends Error {
-  override readonly name = "AnalysisTimeoutError";
-  constructor() {
-    super("L'analyse continue côté serveur.");
-  }
-}
+import { isAbortError, submitIncompleteErrors } from "@/lib/api/errors";
+import type { AiReport, CampaignResponse, CampaignStatus } from "@/lib/api/types";
 
 /**
- * Submission chain (contract §7.12): POST /campaigns/{id}/submit does NOT run the AI, so the
- * UI fires POST /ai/check-content/{id} right after. If the check fails the campaign stays in
- * PENDING_AI_CHECK and the analysis can be run again (check-content accepts that status).
- * After ANALYSIS_TIMEOUT_MS the flow stops waiting (`timedOut`): the request is not aborted, the
- * server keeps analysing, and a late result still replaces the timeout message.
+ * Submission (contract §2.1): POST /campaigns/{id}/submit moves the draft to PENDING_AI_CHECK and
+ * runs the AI analysis in the same request (no client timeout). The answer carries the resulting
+ * status; the full report (issues, OCR, recommendations) is then read with GET /ai/report.
+ * A campaign left in PENDING_AI_CHECK (analysis failure) is retried with POST /ai/check-content.
  */
 export type SubmitFlowState =
   | { phase: "idle" }
   | { phase: "submitting"; startedAt: number }
-  | { phase: "analysing"; startedAt: number }
-  | { phase: "done"; report: AiReport }
+  | {
+      phase: "done";
+      campaign: CampaignResponse | null;
+      /** null when the report could not be read (the status is still known). */
+      report: AiReport | null;
+    }
   | {
       phase: "error";
       stage: "submit" | "analysis";
       error: unknown;
-      /** The analysis took longer than the client wait (it continues server-side). */
-      timedOut?: boolean;
-      campaignId?: number;
+      /** 400 SUBMIT_INCOMPLETE: missing parts keyed by period/times/budget/zones/reservations. */
+      incomplete: Record<string, string> | null;
+      campaignId: number;
     };
 
-export interface SubmitFlowOptions {
-  /** Default ANALYSIS_TIMEOUT_MS (90 s). */
-  analysisTimeoutMs?: number;
+/** AI outcome of a submitted campaign status (null while not analysed). */
+export function aiOutcomeOf(status: CampaignStatus): AiReport["aiStatus"] | null {
+  switch (status) {
+    case "APPROVED_BY_AI":
+      return "APPROVED";
+    case "REVIEW_REQUIRED":
+      return "REVIEW_REQUIRED";
+    case "REJECTED_BY_AI":
+      return "REJECTED";
+    default:
+      return null;
+  }
 }
 
-export function useSubmitFlow(
-  onSettled?: (campaignId: number) => void,
-  { analysisTimeoutMs = ANALYSIS_TIMEOUT_MS }: SubmitFlowOptions = {},
-) {
+export function useSubmitFlow(onSettled?: (campaignId: number) => void) {
   const [state, setState] = useState<SubmitFlowState>({ phase: "idle" });
   const busy = useRef(false);
-  const runId = useRef(0);
-  const last = useRef<{ id: number; submitted: boolean } | null>(null);
+  const last = useRef<Pick<CampaignResponse, "id" | "status"> | null>(null);
   const settledRef = useRef(onSettled);
   useEffect(() => {
     settledRef.current = onSettled;
   });
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
+
+  const start = useCallback(async (campaign: Pick<CampaignResponse, "id" | "status">) => {
+    if (busy.current) return;
+    busy.current = true;
+    last.current = campaign;
+    const draft = campaign.status === "BROUILLON";
+    setState({ phase: "submitting", startedAt: Date.now() });
+    try {
+      let result: CampaignResponse | null = null;
+      let report: AiReport | null = null;
+      if (draft) {
+        result = await campaignsApi.submit(campaign.id);
+        last.current = result;
+        if (aiOutcomeOf(result.status) !== null) {
+          report = await aiApi.report(campaign.id).catch((e: unknown) => {
+            if (isAbortError(e)) throw e;
+            return null;
+          });
+        }
+      } else {
+        report = await aiApi.checkContent(campaign.id);
+      }
+      setState({ phase: "done", campaign: result, report });
+    } catch (error) {
+      setState({
+        phase: "error",
+        stage: draft ? "submit" : "analysis",
+        error,
+        incomplete: submitIncompleteErrors(error),
+        campaignId: campaign.id,
+      });
+    } finally {
+      busy.current = false;
+      settledRef.current?.(campaign.id);
+    }
   }, []);
 
-  const run = useCallback(
-    async (campaignId: number, needsSubmit: boolean) => {
-      if (busy.current) return;
-      busy.current = true;
-      const token = ++runId.current;
-      const startedAt = Date.now();
-      last.current = { id: campaignId, submitted: !needsSubmit };
-      try {
-        if (needsSubmit) {
-          setState({ phase: "submitting", startedAt });
-          try {
-            await campaignsApi.submit(campaignId);
-          } catch (error) {
-            // Already submitted (e.g. a lost response on a previous attempt): go on with the AI.
-            if (!isAlreadySubmittedError(error)) {
-              setState({ phase: "error", stage: "submit", error, campaignId });
-              return;
-            }
-          }
-          last.current = { id: campaignId, submitted: true };
-        }
-        setState({ phase: "analysing", startedAt });
-        const analysis = aiApi.checkContent(campaignId);
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const timeout = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new AnalysisTimeoutError()), analysisTimeoutMs);
-        });
-        try {
-          const report = await Promise.race([analysis, timeout]);
-          setState({ phase: "done", report });
-        } catch (error) {
-          const timedOut = error instanceof AnalysisTimeoutError;
-          setState({ phase: "error", stage: "analysis", error, timedOut, campaignId });
-          if (timedOut) {
-            // Honest continuation: a late answer still shows the result on this page.
-            analysis.then(
-              (report) => {
-                if (mounted.current && runId.current === token) {
-                  setState({ phase: "done", report });
-                  settledRef.current?.(campaignId);
-                }
-              },
-              () => undefined,
-            );
-          }
-        } finally {
-          clearTimeout(timer);
-        }
-        settledRef.current?.(campaignId);
-      } finally {
-        busy.current = false;
-      }
-    },
-    [analysisTimeoutMs],
-  );
-
-  /** BROUILLON → submit then analyse · PENDING_AI_CHECK → analyse only. */
-  const start = useCallback(
-    (campaign: Pick<CampaignResponse, "id" | "status">) =>
-      run(campaign.id, campaign.status === "BROUILLON"),
-    [run],
-  );
-
-  /** Re-runs from the step that failed. */
+  /** Re-runs the last attempt (submit again, or the pending analysis). */
   const retry = useCallback(() => {
     const l = last.current;
-    if (!l) return Promise.resolve();
-    return run(l.id, !l.submitted);
-  }, [run]);
+    return l ? start(l) : Promise.resolve();
+  }, [start]);
 
   const reset = useCallback(() => {
     last.current = null;
-    runId.current++;
     setState({ phase: "idle" });
   }, []);
 

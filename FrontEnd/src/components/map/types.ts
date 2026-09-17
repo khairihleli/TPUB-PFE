@@ -1,4 +1,4 @@
-import type { SupportResponse, ZoneResponse } from "@/lib/api/types";
+import type { AvailabilityStatus, SupportResponse, ZoneResponse } from "@/lib/api/types";
 import type { SupportFilters } from "@/lib/network/filters";
 import type { BBox, LngLat } from "@/lib/network/geo";
 import type { BasemapId, ViewMode } from "@/lib/network/map-style";
@@ -73,6 +73,11 @@ export interface NetworkMapProps {
   focusZoneId?: number | null;
   /** "compact" = zoom/recentre only (no search, filters, panels, counters): mini-map pickers. */
   chrome?: "full" | "compact";
+  /**
+   * Availability of Porteurs for a campaign window (contract §2.7): the marker ring and its
+   * accessible name show this status instead of the technical status.
+   */
+  availability?: ReadonlyMap<number, AvailabilityStatus>;
 }
 
 /** Imperative camera API implemented by each engine. */
@@ -125,4 +130,5 @@ export interface EngineProps {
   pickPoints?: boolean;
   /** Map chrome (framing padding keeps Porteurs clear of the floating tools). */
   chrome?: "full" | "compact";
+  availability?: ReadonlyMap<number, AvailabilityStatus>;
 }

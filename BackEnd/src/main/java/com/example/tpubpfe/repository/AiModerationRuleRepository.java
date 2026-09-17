@@ -8,4 +8,8 @@ import java.util.List;
 public interface AiModerationRuleRepository extends JpaRepository<AiModerationRule, Long> {
 
     List<AiModerationRule> findByIsActiveTrue();
+
+    boolean existsByRuleNameIgnoreCase(String ruleName);
+
+    boolean existsByRuleNameIgnoreCaseAndIdNot(String ruleName, Long id);
 }
