@@ -48,6 +48,23 @@ class SecretsAndBootstrapTest {
         SecretsValidator.validate(properties);
     }
 
+    @Test
+    void placeholdersCopiedFromEnvExampleAreRefused() {
+        properties.getJwt().setSecret("<générez 64 caractères hexadécimaux>");
+        assertThatThrownBy(() -> SecretsValidator.validate(properties))
+                .hasMessageStartingWith("JWT_SECRET contient encore la valeur d'exemple");
+        properties.getJwt().setSecret("a-fresh-secret-with-more-than-32-bytes-0123456789");
+        properties.getMedia().setSigningSecret(" <générez 64 caractères hexadécimaux> ");
+        assertThatThrownBy(() -> SecretsValidator.validate(properties))
+                .hasMessageStartingWith("MEDIA_SIGNING_SECRET");
+        properties.getMedia().setSigningSecret("");
+        properties.getSecurity().getTotp().setEncryptionKey("<clé>");
+        assertThatThrownBy(() -> SecretsValidator.validate(properties))
+                .hasMessageStartingWith("TOTP_ENCRYPTION_KEY");
+        properties.getSecurity().getTotp().setEncryptionKey(null);
+        SecretsValidator.validate(properties);
+    }
+
     /** Rebuilt from pieces so that the compromised value never appears verbatim in the sources. */
     private static String historicalHexSecret() {
         return "b157b9619183d271ce6e8b0fc61739c6" + "032df14c30d297e2d80533db79b99b11";

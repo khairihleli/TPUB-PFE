@@ -20,6 +20,8 @@ public class SecretsValidator implements InitializingBean {
 
     static final String MISSING_MESSAGE = "JWT_SECRET manquant ou trop court (32 octets minimum). "
             + "Définissez la variable d'environnement JWT_SECRET (voir .env.example).";
+    static final String PLACEHOLDER_MESSAGE = "%s contient encore la valeur d'exemple de .env.example "
+            + "(<…>) : générez une vraie valeur.";
     static final String COMPROMISED_MESSAGE =
             "JWT_SECRET compromis (valeur publiée dans l'historique git) : générez-en un nouveau.";
 
@@ -49,14 +51,32 @@ public class SecretsValidator implements InitializingBean {
         }
     }
 
-    /** @throws IllegalStateException when the JWT secret is unusable */
+    /** An unedited {@code <…>} placeholder copied from .env.example (publicly known, never a secret). */
+    static boolean isPlaceholder(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        return trimmed.startsWith("<") && trimmed.endsWith(">");
+    }
+
+    /** @throws IllegalStateException when the JWT secret or a dedicated key is unusable */
     static void validate(TpubProperties properties) {
         String secret = properties.getJwt() == null ? null : properties.getJwt().getSecret();
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < SecretKeys.MIN_SECRET_BYTES) {
             throw new IllegalStateException(MISSING_MESSAGE);
         }
+        if (isPlaceholder(secret)) {
+            throw new IllegalStateException(PLACEHOLDER_MESSAGE.formatted("JWT_SECRET"));
+        }
         if (COMPROMISED_SHA256.contains(SecretKeys.sha256Hex(secret))) {
             throw new IllegalStateException(COMPROMISED_MESSAGE);
+        }
+        if (isPlaceholder(properties.getMedia().getSigningSecret())) {
+            throw new IllegalStateException(PLACEHOLDER_MESSAGE.formatted("MEDIA_SIGNING_SECRET"));
+        }
+        if (isPlaceholder(properties.getSecurity().getTotp().getEncryptionKey())) {
+            throw new IllegalStateException(PLACEHOLDER_MESSAGE.formatted("TOTP_ENCRYPTION_KEY"));
         }
     }
 }
