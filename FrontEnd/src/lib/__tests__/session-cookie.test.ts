@@ -29,6 +29,9 @@ const user: SessionUser = {
   role: "ANNONCEUR",
   userId: 7,
   exp: nowS + 3600,
+  // Round 2 flags: parseUserCookie always returns them (false for pre-round-2 cookies).
+  mustChangePassword: false,
+  twoFactorEnabled: false,
 };
 
 describe("base64url", () => {
