@@ -41,8 +41,10 @@ vi.mock("@/lib/api/endpoints", () => ({
 
 vi.mock("@/lib/api/endpoints-supervision", () => ({
   approvalsApi: {
-    validateCampaign: (id: number, body: unknown) =>
-      api.validate(id, body).then((campaign: unknown) => ({ kind: "validated", campaign })),
+    validateCampaign: async (id: number, body: unknown) => ({
+      kind: "validated" as const,
+      campaign: await (api.validate(id, body) as Promise<unknown>),
+    }),
     campaign: () => Promise.resolve({ campaignId: 0, required: false, reasons: [], riskScore: null,
       riskThreshold: 50, approvalsRequired: 1, approvalsRequiredConfigured: 1, approvals: [],
       cycleKey: null, canApprove: true }),
