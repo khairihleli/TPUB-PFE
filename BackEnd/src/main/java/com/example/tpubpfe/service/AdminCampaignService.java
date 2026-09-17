@@ -119,8 +119,8 @@ public class AdminCampaignService {
         int required = approvalPolicy.effective(configured);
         boolean needsDouble = configured >= 2 && !reasons.isEmpty() && required >= 2;
         String cycleKey = cycleKey(latestCheck);
-        User actor = currentUser();
-        Long actorId = actor == null ? null : actor.getId();
+        UserDetailsImpl principal = CampaignAccessGuard.currentUser();
+        Long actorId = principal == null ? null : principal.getId();
 
         List<Approval> cycleApprovals = ApprovalPolicy.approved(
                 approvalPolicy.approvals(ApprovalEntityType.CAMPAIGN, campaign.getId(), cycleKey));

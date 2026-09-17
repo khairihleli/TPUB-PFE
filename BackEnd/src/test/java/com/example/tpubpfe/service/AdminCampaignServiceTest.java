@@ -46,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -251,5 +252,143 @@ class AdminCampaignServiceTest {
 
         campaign.setStatus(CampaignStatus.TERMINATED);
         assertApiError(() -> service.setPriority(3L, 2), HttpStatus.CONFLICT, "PRIORITY_NOT_EDITABLE");
+    }
+    // --- multi-level approval (docs/round2-contract.md §5.4) ------------------------------------------------------
+
+    /** Makes the policy ask for two distinct administrators and keeps the recorded approvals in memory. */
+    private java.util.List<com.example.tpubpfe.model.Approval> requireTwoAdministrators() {
+        java.util.List<com.example.tpubpfe.model.Approval> recorded = new ArrayList<>();
+        when(approvalPolicy.configuredForCampaign()).thenReturn(2);
+        when(approvalPolicy.effective(anyInt())).thenReturn(2);
+        when(approvalPolicy.approvals(any(), any(Long.class), anyString())).thenReturn(recorded);
+        when(approvalPolicy.record(any(), any(), anyString(), any(), any(), any(), any())).thenAnswer(inv -> {
+            com.example.tpubpfe.model.Approval approval = com.example.tpubpfe.model.Approval.builder()
+                    .id((long) recorded.size() + 1)
+                    .entityType(inv.getArgument(0))
+                    .entityId(inv.getArgument(1))
+                    .cycleKey(inv.getArgument(2))
+                    .approverUserId(inv.getArgument(3))
+                    .decision(inv.getArgument(4))
+                    .comment(inv.getArgument(5))
+                    .details(inv.getArgument(6))
+                    .createdAt(java.time.Instant.parse("2026-09-16T08:30:00Z"))
+                    .build();
+            recorded.add(approval);
+            return approval;
+        });
+        when(approvalPolicy.toResponses(anyList())).thenAnswer(inv -> {
+            java.util.List<com.example.tpubpfe.model.Approval> list = inv.getArgument(0);
+            return list.stream().map(a -> com.example.tpubpfe.dto.ApprovalResponse.builder()
+                    .id(a.getId()).approverUserId(a.getApproverUserId())
+                    .approverName("Admin " + a.getApproverUserId())
+                    .decision(a.getDecision().name()).comment(a.getComment()).createdAt(a.getCreatedAt())
+                    .build()).toList();
+        });
+        return recorded;
+    }
+
+    @Test
+    void anOverrideNeedsTwoAdministrators() {
+        requireTwoAdministrators();
+        campaign.setStatus(CampaignStatus.REVIEW_REQUIRED);
+        campaign.setAiStatus(CampaignAiStatus.REVIEW_REQUIRED);
+
+        AdminCampaignService.ValidationOutcome first = service.validate(3L,
+                AdminValidateRequest.builder().overrideAi(true).priorityScore(8).build());
+
+        assertThat(first.isPending()).isTrue();
+        assertThat(first.campaign()).isNull();
+        assertThat(first.pending().isRequired()).isTrue();
+        assertThat(first.pending().getReasons()).containsExactly("DEROGATION_IA");
+        assertThat(first.pending().getApprovalsRequired()).isEqualTo(2);
+        assertThat(first.pending().getApprovalsRequiredConfigured()).isEqualTo(2);
+        assertThat(first.pending().getApprovals()).hasSize(1);
+        // Nothing of the validation happened yet.
+        assertThat(campaign.getStatus()).isEqualTo(CampaignStatus.REVIEW_REQUIRED);
+        assertThat(campaign.getAdminStatus()).isNotEqualTo(CampaignAdminStatus.VALIDATED);
+        verify(paymentRepository, never()).save(any());
+        verify(decisionLogRepository, never()).save(any());
+        verify(alertService).openIfAbsent(eq(com.example.tpubpfe.model.SupervisionAlertType.CAMPAIGN_PENDING_APPROVAL),
+                any(), anyString(), anyString(), any());
+        verify(notificationService).notifyRoles(anySet(),
+                eq(com.example.tpubpfe.model.NotificationType.CAMPAIGN_APPROVAL_REQUIRED), any(), anyString(),
+                anyString(), anyString(), anyString(), anyString(), anySet());
+        verify(auditService).record(eq("CAMPAIGN_APPROVAL_RECORDED"), eq("APPROVAL"), eq(3L), anyString(), anyMap());
+    }
+
+    @Test
+    void theSameAdministratorCannotApproveTwice() {
+        requireTwoAdministrators();
+        campaign.setStatus(CampaignStatus.REVIEW_REQUIRED);
+        campaign.setAiStatus(CampaignAiStatus.REVIEW_REQUIRED);
+        service.validate(3L, AdminValidateRequest.builder().overrideAi(true).build());
+
+        assertApiError(() -> service.validate(3L, AdminValidateRequest.builder().overrideAi(true).build()),
+                HttpStatus.CONFLICT, "APPROVAL_ALREADY_GIVEN");
+    }
+
+    @Test
+    void theSecondAdministratorCompletesTheValidation() {
+        requireTwoAdministrators();
+        campaign.setStatus(CampaignStatus.REVIEW_REQUIRED);
+        campaign.setAiStatus(CampaignAiStatus.REVIEW_REQUIRED);
+        service.validate(3L, AdminValidateRequest.builder().overrideAi(true).priorityScore(8).build());
+
+        TestAuth.login(2L, "ADMINISTRATEUR");
+        AdminCampaignService.ValidationOutcome second = service.validate(3L,
+                AdminValidateRequest.builder().overrideAi(true).build());
+
+        assertThat(second.isPending()).isFalse();
+        assertThat(second.campaign().getStatus()).isEqualTo("ACTIVE");
+        assertThat(campaign.getAdminStatus()).isEqualTo(CampaignAdminStatus.VALIDATED);
+        // The priority of the first approval is kept when the last body carries none.
+        assertThat(campaign.getPriorityScore()).isEqualTo((short) 8);
+        ArgumentCaptor<AiDecisionLog> log = ArgumentCaptor.forClass(AiDecisionLog.class);
+        verify(decisionLogRepository).save(log.capture());
+        assertThat(log.getValue().getDecision()).isEqualTo("VALIDATED_OVERRIDE");
+        assertThat(log.getValue().getReason()).isEqualTo("Validée par Admin 1 et Admin 2");
+        verify(alertService).resolve(eq(com.example.tpubpfe.model.SupervisionAlertType.CAMPAIGN_PENDING_APPROVAL), any());
+        verify(auditService).record(eq("CAMPAIGN_VALIDATED_OVERRIDE"), eq("CAMPAIGN"), eq(3L), anyString(), anyMap());
+    }
+
+    @Test
+    void aRiskyCampaignAlsoNeedsTwoAdministrators() {
+        requireTwoAdministrators();
+        check.setRiskScore((short) 62);
+
+        AdminCampaignService.ValidationOutcome outcome = service.validate(3L, null);
+
+        assertThat(outcome.isPending()).isTrue();
+        assertThat(outcome.pending().getReasons()).containsExactly("RISQUE_ELEVE");
+        assertThat(outcome.pending().getRiskScore()).isEqualTo(62);
+        assertThat(outcome.pending().getRiskThreshold()).isEqualTo(50);
+    }
+
+    @Test
+    void aQuietCampaignIsValidatedByASingleAdministrator() {
+        requireTwoAdministrators();
+        check.setRiskScore((short) 12);
+
+        AdminCampaignService.ValidationOutcome outcome = service.validate(3L, null);
+
+        assertThat(outcome.isPending()).isFalse();
+        assertThat(outcome.campaign().getStatus()).isEqualTo("ACTIVE");
+        verify(alertService, never()).openIfAbsent(any(), any(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void approvalReasonsRule() {
+        assertThat(AdminCampaignService.approvalReasons(false, 10, 50)).isEmpty();
+        assertThat(AdminCampaignService.approvalReasons(true, 10, 50)).containsExactly("DEROGATION_IA");
+        assertThat(AdminCampaignService.approvalReasons(false, 50, 50)).containsExactly("RISQUE_ELEVE");
+        assertThat(AdminCampaignService.approvalReasons(true, 80, 50))
+                .containsExactly("DEROGATION_IA", "RISQUE_ELEVE");
+        assertThat(AdminCampaignService.approvalReasons(false, null, 50)).isEmpty();
+    }
+
+    @Test
+    void cycleKeyFollowsTheLatestCheck() {
+        assertThat(AdminCampaignService.cycleKey(null)).isEqualTo("check:0");
+        assertThat(AdminCampaignService.cycleKey(check)).isEqualTo("check:70");
     }
 }
