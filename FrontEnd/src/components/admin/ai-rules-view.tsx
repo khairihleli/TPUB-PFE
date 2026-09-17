@@ -297,7 +297,10 @@ function RulesContent({
               Poids appris de la calibration v{calibration.version} : revue à partir d&apos;un
               risque de {calibration.approveThreshold}, refus au-delà de{" "}
               {calibration.rejectThreshold}.{" "}
-              <Link href="/admin/ia-qualite" className="font-semibold text-brand-blue-text underline">
+              <Link
+                href="/admin/ia-qualite"
+                className="font-semibold text-brand-blue-text underline"
+              >
                 Qualité de l&apos;IA
               </Link>
             </p>

@@ -20,7 +20,10 @@ import { formatDayMonth, formatNumber, normalizeNumberSpaces } from "@/lib/forma
 export const FETCH_TESSDATA_HINT =
   "Exécutez BackEnd/scripts/fetch-tessdata.ps1 puis redémarrez le backend";
 
-export const OUTCOME_META: Record<AiFeedbackOutcome, { label: string; tone: Tone; description: string }> = {
+export const OUTCOME_META: Record<
+  AiFeedbackOutcome,
+  { label: string; tone: Tone; description: string }
+> = {
   FALSE_POSITIVE: {
     label: "Faux positif",
     tone: "warning",
@@ -61,6 +64,10 @@ export const PROVIDER_LABEL: Record<AiProviderKind, string> = {
   ANTHROPIC: "Claude (Anthropic)",
 };
 
+const weightFormatter = new Intl.NumberFormat("fr-TN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 const rateFormatter = new Intl.NumberFormat("fr-TN", { maximumFractionDigits: 1 });
 
 /** 0.1234 → "12,3 %", null → "—". */
@@ -127,7 +134,11 @@ export function weekLabel(weekStart: string): string {
 }
 
 export function weeklyDecisionPoints(q: Pick<AiQualityResponse, "weekly">): ChartPoint[] {
-  return q.weekly.map((w) => ({ key: w.weekStart, label: formatDayMonth(w.weekStart), value: w.feedback }));
+  return q.weekly.map((w) => ({
+    key: w.weekStart,
+    label: formatDayMonth(w.weekStart),
+    value: w.feedback,
+  }));
 }
 
 /** Errors of the AI per week: false positives + false negatives. */
@@ -140,7 +151,9 @@ export function weeklyErrorPoints(q: Pick<AiQualityResponse, "weekly">): ChartPo
 }
 
 /** « Revue à partir d'un risque de 31 », « Refus au-delà de 70 ». */
-export function thresholdTexts(c: Pick<AiCalibrationResponse, "approveThreshold" | "rejectThreshold">): {
+export function thresholdTexts(
+  c: Pick<AiCalibrationResponse, "approveThreshold" | "rejectThreshold">,
+): {
   review: string;
   reject: string;
 } {
@@ -151,7 +164,9 @@ export function thresholdTexts(c: Pick<AiCalibrationResponse, "approveThreshold"
 }
 
 /** Toast after « Recalibrer maintenant ». */
-export function recalibrationMessage(c: Pick<AiCalibrationResponse, "version" | "active" | "changed">): {
+export function recalibrationMessage(
+  c: Pick<AiCalibrationResponse, "version" | "active" | "changed">,
+): {
   title: string;
   description: string;
 } {
@@ -169,7 +184,8 @@ export function recalibrationMessage(c: Pick<AiCalibrationResponse, "version" | 
   }
   return {
     title: `Proposition v${c.version} enregistrée`,
-    description: "L'application automatique est désactivée : activez la version si elle vous convient.",
+    description:
+      "L'application automatique est désactivée : activez la version si elle vous convient.",
   };
 }
 
@@ -177,7 +193,7 @@ export function recalibrationMessage(c: Pick<AiCalibrationResponse, "version" | 
 export function weightSummary(c: Pick<AiCalibrationResponse, "ruleWeights">): string {
   if (c.ruleWeights.length === 0) return "Aucun poids ajusté";
   return c.ruleWeights
-    .map((w) => `${w.ruleName ?? `Règle #${w.ruleId}`} ×${rateFormatter.format(w.weight)}`)
+    .map((w) => `${w.ruleName ?? `Règle #${w.ruleId}`} ×${weightFormatter.format(w.weight)}`)
     .join(", ");
 }
 
@@ -258,7 +274,7 @@ export function rangeError(from: string, to: string): string | null {
 
 /** Outcome filter from the URL (`?resultat=FALSE_POSITIVE`), empty = every outcome. */
 export function parseOutcome(raw: string | null | undefined): AiFeedbackOutcome | "" {
-  return raw && raw in OUTCOME_META ? (raw as AiFeedbackOutcome) : "";
+  return raw && Object.hasOwn(OUTCOME_META, raw) ? (raw as AiFeedbackOutcome) : "";
 }
 
 /** Rule precision as a percentage, « — » without a match. */

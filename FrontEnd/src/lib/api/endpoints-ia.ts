@@ -24,7 +24,8 @@ function arrayOr<T>(value: T[] | null | undefined): T[] {
  * round 2, or served by an older backend, render safely.
  */
 export function asReportV2(report: AiReport): AiReportV2 {
-  const raw = report as AiReport & Partial<Pick<AiReportV2, "providerModel" | "calibrationVersion">>;
+  const raw = report as AiReport &
+    Partial<Pick<AiReportV2, "providerModel" | "calibrationVersion">>;
   const media = arrayOr(report.mediaAnalyses as Partial<AiMediaAnalysisV2>[] | undefined);
   return {
     ...report,
@@ -42,7 +43,9 @@ export function asReportV2(report: AiReport): AiReportV2 {
       issues: arrayOr(m.issues),
       ocrEngine: m.ocrEngine ?? "AUCUN",
       ocrConfidence: m.ocrConfidence ?? null,
-      metrics: m.metrics ? { ...m.metrics, dominantColors: arrayOr(m.metrics.dominantColors) } : null,
+      metrics: m.metrics
+        ? { ...m.metrics, dominantColors: arrayOr(m.metrics.dominantColors) }
+        : null,
       frames: arrayOr(m.frames),
       thumbnailUrl: m.thumbnailUrl ?? null,
       videoSupported: m.videoSupported ?? null,

@@ -89,10 +89,7 @@ export interface AiProvidersResponse {
 // Feedback, calibration, quality
 // ---------------------------------------------------------------------------
 export type AiFeedbackOutcome =
-  | "CONFIRMED_APPROVAL"
-  | "FALSE_NEGATIVE"
-  | "FALSE_POSITIVE"
-  | "CONFIRMED_FLAG";
+  "CONFIRMED_APPROVAL" | "FALSE_NEGATIVE" | "FALSE_POSITIVE" | "CONFIRMED_FLAG";
 export const AI_FEEDBACK_OUTCOMES: readonly AiFeedbackOutcome[] = [
   "FALSE_POSITIVE",
   "FALSE_NEGATIVE",

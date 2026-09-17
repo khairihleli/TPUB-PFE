@@ -92,7 +92,11 @@ export function textCoverageChip(value: number): MetricChip {
     key: "text",
     label: `Texte dans le visuel : ${formatShare(value)}`,
     tone:
-      value > TEXT_COVERAGE_OVERLOAD ? "danger" : value > TEXT_COVERAGE_HIGH ? "warning" : "neutral",
+      value > TEXT_COVERAGE_OVERLOAD
+        ? "danger"
+        : value > TEXT_COVERAGE_HIGH
+          ? "warning"
+          : "neutral",
     hint: `Surface couverte par le texte lu (trop présent au-delà de ${formatShare(TEXT_COVERAGE_HIGH)})`,
   };
 }
@@ -117,10 +121,16 @@ export function metricChips(m: ImageMetrics): MetricChip[] {
 }
 
 /** Valid swatches only, with their accessible label « Couleur #1f2937 : 34 % ». */
-export function colorSwatches(colors: readonly DominantColor[]): (DominantColor & { label: string })[] {
+export function colorSwatches(
+  colors: readonly DominantColor[],
+): (DominantColor & { label: string })[] {
   return colors
     .filter((c) => HEX.test(c.hex))
-    .map((c) => ({ ...c, hex: c.hex.toLowerCase(), label: `Couleur ${c.hex.toLowerCase()} : ${formatShare(c.share)}` }));
+    .map((c) => ({
+      ...c,
+      hex: c.hex.toLowerCase(),
+      label: `Couleur ${c.hex.toLowerCase()} : ${formatShare(c.share)}`,
+    }));
 }
 
 export function isNearlyUniform(colors: readonly DominantColor[]): boolean {

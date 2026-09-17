@@ -323,7 +323,13 @@ function SummarySection({ from, to, canManage }: { from: string; to: string; can
                 </div>
                 <ChartDataTable
                   caption="Détail hebdomadaire des décisions"
-                  headers={["Semaine", "Décisions", "Faux positifs", "Faux négatifs", "Dérogations"]}
+                  headers={[
+                    "Semaine",
+                    "Décisions",
+                    "Faux positifs",
+                    "Faux négatifs",
+                    "Dérogations",
+                  ]}
                   rows={weeklyTableRows(quality.data)}
                 />
               </div>
@@ -366,11 +372,7 @@ function SummarySection({ from, to, canManage }: { from: string; to: string; can
         )}
       </SectionCard>
 
-      <CalibrationSection
-        calibrations={calibrations}
-        canManage={canManage}
-        onChanged={reloadAll}
-      />
+      <CalibrationSection calibrations={calibrations} canManage={canManage} onChanged={reloadAll} />
     </>
   );
 }
@@ -454,7 +456,10 @@ function CalibrationSection({
       header: "Décisions",
       align: "right",
       cell: (c) => (
-        <span className="tabular" title={`${c.falsePositives} faux positifs, ${c.falseNegatives} faux négatifs`}>
+        <span
+          className="tabular"
+          title={`${c.falsePositives} faux positifs, ${c.falseNegatives} faux négatifs`}
+        >
           {formatNumber(c.feedbackCount)}
         </span>
       ),
@@ -482,7 +487,9 @@ function CalibrationSection({
       cell: (c) => (
         <span>
           {formatDateTime(c.createdAt)}
-          {c.createdByName ? <span className="block text-[0.75rem] text-muted">{c.createdByName}</span> : null}
+          {c.createdByName ? (
+            <span className="block text-[0.75rem] text-muted">{c.createdByName}</span>
+          ) : null}
         </span>
       ),
     },
@@ -518,7 +525,10 @@ function CalibrationSection({
           {active ? (
             <FactList
               items={[
-                { label: "Version active", value: `v${active.version} (${TRIGGER_LABEL[active.trigger].toLowerCase()})` },
+                {
+                  label: "Version active",
+                  value: `v${active.version} (${TRIGGER_LABEL[active.trigger].toLowerCase()})`,
+                },
                 { label: "Revue", value: thresholdTexts(active).review },
                 { label: "Refus", value: thresholdTexts(active).reject },
                 { label: "Poids des règles", value: weightSummary(active), wide: true },
@@ -526,7 +536,8 @@ function CalibrationSection({
             />
           ) : (
             <Alert tone="warning" title="Aucune version active">
-              Les seuils par défaut s&apos;appliquent (revue à partir d&apos;un risque de 31, refus au-delà de 70).
+              Les seuils par défaut s&apos;appliquent (revue à partir d&apos;un risque de 31, refus
+              au-delà de 70).
             </Alert>
           )}
           <div>
@@ -597,7 +608,9 @@ function CalibrationSection({
 // Moteurs
 // ---------------------------------------------------------------------------
 function EnginesSection() {
-  const providers = useResource("admin:ai-providers", (signal) => aiQualityApi.providers({ signal }));
+  const providers = useResource("admin:ai-providers", (signal) =>
+    aiQualityApi.providers({ signal }),
+  );
   const hint = providers.data ? ocrHint(providers.data) : null;
   return (
     <SectionCard
@@ -609,8 +622,13 @@ function EnginesSection() {
         <div className="flex flex-col gap-4">
           <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
             {engineFacts(providers.data).map((f) => (
-              <li key={f.label} className="rounded-control border border-line bg-overlay-inset px-4 py-3">
-                <p className="text-[0.75rem] font-semibold tracking-wide text-muted uppercase">{f.label}</p>
+              <li
+                key={f.label}
+                className="rounded-control border border-line bg-overlay-inset px-4 py-3"
+              >
+                <p className="text-[0.75rem] font-semibold tracking-wide text-muted uppercase">
+                  {f.label}
+                </p>
                 <p className="mt-1 flex flex-wrap items-center gap-2 text-[0.875rem] text-ink-strong">
                   <Badge tone={f.tone} size="sm">
                     {f.tone === "success" ? "Actif" : f.tone === "warning" ? "Dégradé" : "Local"}
@@ -688,7 +706,11 @@ function FeedbackSection({
       header: "Résultat",
       mobileMeta: true,
       cell: (f) => (
-        <Badge tone={OUTCOME_META[f.outcome].tone} size="sm" title={OUTCOME_META[f.outcome].description}>
+        <Badge
+          tone={OUTCOME_META[f.outcome].tone}
+          size="sm"
+          title={OUTCOME_META[f.outcome].description}
+        >
           {OUTCOME_META[f.outcome].label}
         </Badge>
       ),
@@ -699,7 +721,9 @@ function FeedbackSection({
       cell: (f) => (
         <span>
           {ADMIN_DECISION_LABEL[f.adminDecision]}
-          {f.decidedByName ? <span className="block text-[0.75rem] text-muted">{f.decidedByName}</span> : null}
+          {f.decidedByName ? (
+            <span className="block text-[0.75rem] text-muted">{f.decidedByName}</span>
+          ) : null}
         </span>
       ),
     },

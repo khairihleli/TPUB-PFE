@@ -49,7 +49,11 @@ export function AiMediaInsights({
             </Badge>
           ) : null}
           {v2.calibrationVersion !== null ? (
-            <Badge tone="muted" size="sm" title="Seuils et poids des règles appliqués à cette analyse">
+            <Badge
+              tone="muted"
+              size="sm"
+              title="Seuils et poids des règles appliqués à cette analyse"
+            >
               Calibration v{v2.calibrationVersion}
             </Badge>
           ) : null}
@@ -98,8 +102,8 @@ function MediaCard({ media }: { media: AiMediaAnalysisV2 }) {
 
       {media.videoSupported === false ? (
         <p className="mt-2 text-[0.8125rem] text-muted">
-          Analyse vidéo impossible pour ce format (WebM) : préférez le MP4 pour une analyse image par
-          image.
+          Analyse vidéo impossible pour ce format (WebM) : préférez le MP4 pour une analyse image
+          par image.
         </p>
       ) : null}
 
@@ -123,7 +127,10 @@ function MediaCard({ media }: { media: AiMediaAnalysisV2 }) {
           <p className="text-[0.75rem] font-semibold tracking-wide text-muted uppercase">
             Images extraites
           </p>
-          <ol aria-label="Images extraites de la vidéo" className="mt-2 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-3">
+          <ol
+            aria-label="Images extraites de la vidéo"
+            className="mt-2 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-3"
+          >
             {media.frames.map((frame) => (
               <li
                 key={frame.label}
@@ -132,7 +139,12 @@ function MediaCard({ media }: { media: AiMediaAnalysisV2 }) {
                 <p className="font-label font-semibold text-ink-soft tabular">
                   {frameCaption(frame.label, frame.positionSeconds)}
                 </p>
-                <p className={cx("mt-1 break-words", frame.extractedText ? "text-ink" : "text-muted")}>
+                <p
+                  className={cx(
+                    "mt-1 break-words",
+                    frame.extractedText ? "text-ink" : "text-muted",
+                  )}
+                >
                   {frame.extractedText?.trim() || "Aucun texte lu"}
                 </p>
               </li>
