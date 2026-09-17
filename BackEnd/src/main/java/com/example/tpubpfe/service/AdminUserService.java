@@ -20,6 +20,7 @@ import com.example.tpubpfe.repository.RoleRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.repository.UserSessionRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
+import com.example.tpubpfe.security.totp.TotpPolicy;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
@@ -69,6 +70,8 @@ public class AdminUserService {
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
     private final Clock clock;
+    private final TotpPolicy totpPolicy;
+    private final TwoFactorService twoFactorService;
 
     /** Filters of {@code GET /api/admin/users}; empty lists and nulls mean "any". */
     public record Filter(String q, List<RoleCode> roles, Boolean active, List<ClientValidationStatus> validationStatuses) {
@@ -233,6 +236,39 @@ public class AdminUserService {
         return RevokedCountResponse.builder().revoked(revoked).build();
     }
 
+    /** Round 2: forces a new password at next request and closes every session. Never on self. */
+    @Transactional
+    public AdminUserResponse requirePasswordChange(Long id) {
+        User user = find(id);
+        ensureNotSelf(user, "Vous ne pouvez pas exiger ce changement sur votre propre compte.");
+        user.setMustChangePassword(true);
+        userRepository.save(user);
+        int revoked = sessionService.revokeAll(user.getId(), null, SessionRevokeReason.REVOKED_BY_ADMIN);
+        auditService.record("USER_PASSWORD_CHANGE_REQUIRED", "USER", user.getId(),
+                "Changement de mot de passe exigé pour « " + user.getEmail() + " »", Map.of("revokedSessions", revoked));
+        return toResponse(user);
+    }
+
+    /** Round 2: disables TOTP, deletes recovery codes and closes every session. Never on self. */
+    @Transactional
+    public AdminUserResponse resetTwoFactor(Long id) {
+        User user = find(id);
+        ensureNotSelf(user, "Vous ne pouvez pas réinitialiser votre propre double authentification.");
+        twoFactorService.reset(user);
+        int revoked = sessionService.revokeAll(user.getId(), null, SessionRevokeReason.REVOKED_BY_ADMIN);
+        auditService.record("USER_2FA_RESET", "USER", user.getId(),
+                "Réinitialisation de la double authentification de « " + user.getEmail() + " »",
+                Map.of("revokedSessions", revoked));
+        return toResponse(user);
+    }
+
+    private static void ensureNotSelf(User user, String message) {
+        UserDetailsImpl principal = SecurityUtils.currentUserOrNull();
+        if (principal != null && Objects.equals(principal.getId(), user.getId())) {
+            throw AccountErrors.roleNotAllowed(message);
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<RoleResponse> roles() {
         return roleRepository.findAllByOrderByIdAsc().stream()
@@ -280,7 +316,7 @@ public class AdminUserService {
         List<AdminUserResponse> responses = new ArrayList<>(users.size());
         for (User user : users) {
             Client client = clientsByUser.get(user.getId());
-            responses.add(MeService.fill(AdminUserResponse.builder(), user, client, fileStorageService)
+            responses.add(MeService.fill(AdminUserResponse.builder(), user, client, fileStorageService, totpPolicy)
                     .activeSessions(sessions.getOrDefault(user.getId(), 0L))
                     .campaignsCount(client == null ? 0L : campaigns.getOrDefault(client.getId(), 0L))
                     .clientNotes(client == null ? null : client.getNotes())

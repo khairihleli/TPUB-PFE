@@ -21,7 +21,8 @@ import java.util.Set;
 /**
  * Bearer-token authentication bound to a server-side session.
  * <ul>
- *   <li>The {@code Authorization} header is ignored on {@code /api/auth/login} and {@code /api/auth/register}.</li>
+ *   <li>The {@code Authorization} header is ignored on {@code /api/auth/register}, {@code /api/auth/login*} and
+ *       {@code /api/auth/2fa/*}.</li>
  *   <li>On a public route a rejected token is ignored (the request continues anonymously).</li>
  *   <li>On a protected route a rejected token ends the request with a JSON 401 carrying
  *       {@code TOKEN_INVALID | TOKEN_EXPIRED | SESSION_REVOKED | ACCOUNT_DISABLED}.</li>
@@ -47,7 +48,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.regionMatches(true, 0, "Bearer ", 0, 7)
-                || CREDENTIAL_ROUTES.contains(path)
+                || isCredentialRoute(path)
                 || SecurityContextHolder.getContext().getAuthentication() != null) {
             filterChain.doFilter(request, response);
             return;
@@ -68,6 +69,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    /** {@code /api/auth/register}, every {@code /api/auth/login*} route and {@code /api/auth/2fa/*}. */
+    static boolean isCredentialRoute(String path) {
+        return CREDENTIAL_ROUTES.contains(path) || path.startsWith("/api/auth/login")
+                || MATCHER.match("/api/auth/2fa/*", path);
     }
 
     static boolean isPublic(String path) {

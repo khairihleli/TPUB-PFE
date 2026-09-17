@@ -1,5 +1,6 @@
 package com.example.tpubpfe.controller;
 
+import com.example.tpubpfe.config.TpubProperties;
 import com.example.tpubpfe.dto.DiffusionLogResponse;
 import com.example.tpubpfe.dto.DiffusionResponse;
 import com.example.tpubpfe.dto.InteractionRequest;
@@ -33,21 +34,26 @@ public class DiffusionController {
     private final DiffusionService diffusionService;
     private final InteractionService interactionService;
     private final DiffusionLogQueryService diffusionLogQueryService;
+    private final TpubProperties properties;
 
-    @Operation(summary = "Get next content to display on a support (public endpoint for devices; datetime defaults to now)")
+    @Operation(summary = "Next content of a paired player (header X-TPUB-Device-Key; datetime honoured only when "
+            + "tpub.diffusion.simulated-time-enabled is true, otherwise the server clock is used)")
     @GetMapping("/next")
     public ResponseEntity<DiffusionResponse> getNext(
             @RequestParam(required = false) Long supportId,
             @RequestParam(required = false) String zone,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime datetime
     ) {
-        return ResponseEntity.ok(diffusionService.getNextAd(supportId, zone, datetime));
+        LocalDateTime effective = properties.getDiffusion().isSimulatedTimeEnabled() ? datetime : null;
+        DiffusionResponse response = diffusionService.getNextAd(supportId, zone, effective);
+        response.setSimulatedTime(effective != null);
+        return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "Record a click or interaction on a diffused ad (public, idempotent)")
+    @Operation(summary = "Record a click or interaction of a paired player on its own diffusion (idempotent)")
     @PostMapping("/interactions")
-    public ResponseEntity<Void> interaction(@Valid @RequestBody InteractionRequest request) {
-        interactionService.record(request);
+    public ResponseEntity<Void> interaction(@RequestParam Long supportId, @Valid @RequestBody InteractionRequest request) {
+        interactionService.record(request, supportId);
         return ResponseEntity.noContent().build();
     }
 

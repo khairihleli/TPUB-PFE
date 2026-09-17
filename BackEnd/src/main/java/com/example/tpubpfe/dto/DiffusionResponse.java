@@ -27,4 +27,6 @@ public class DiffusionResponse {
     private String urgencyLevel;
     /** Local date-time used for the selection, {@code YYYY-MM-DDTHH:mm:ss}. */
     private String datetime;
+    /** Round 2: true when a requested {@code datetime} was honoured (tpub.diffusion.simulated-time-enabled). */
+    private boolean simulatedTime;
 }

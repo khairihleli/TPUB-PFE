@@ -1085,6 +1085,7 @@ export const LOGIN_FAILURE_LABEL: Record<LoginFailureReason, string> = {
   BAD_CREDENTIALS: "Mot de passe incorrect",
   ACCOUNT_DISABLED: "Compte désactivé",
   UNKNOWN_USER: "Compte inconnu",
+  TOTP_INVALID: "Code de vérification incorrect",
 };
 
 // ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ import { presentError } from "@/lib/api/errors";
 import type { MediaFileResponse } from "@/lib/api/types";
 import { MEDIA_TYPE_LABEL } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
+import { useSignedMediaSrc } from "@/lib/use-signed-media";
 
 // ---------------------------------------------------------------------------
 // Upload queue
@@ -107,6 +108,54 @@ export function useMediaUploads(
 // ---------------------------------------------------------------------------
 // Gallery
 // ---------------------------------------------------------------------------
+/**
+ * One media preview. Round 2: the URL is signed and expires; a load error refreshes the media list
+ * once (fresh signature), a second failure shows « Aperçu indisponible ».
+ */
+export function GalleryMediaPreview({
+  media,
+  playable,
+}: {
+  media: MediaFileResponse;
+  playable: boolean;
+}) {
+  const { src, failed, onError } = useSignedMediaSrc(media.url);
+  if (failed || !src) {
+    return (
+      <div
+        role="img"
+        aria-label={`Aperçu indisponible : « ${media.fileName} »`}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-3 text-center text-muted"
+      >
+        <CircleAlert aria-hidden="true" className="size-5" />
+        <span className="text-[0.75rem] leading-snug">Aperçu indisponible. Rechargez la page.</span>
+      </div>
+    );
+  }
+  return media.fileType === "VIDEO" ? (
+    <video
+      src={src}
+      className="absolute inset-0 size-full object-contain"
+      controls={playable}
+      muted
+      playsInline
+      preload="metadata"
+      aria-label={`Vidéo « ${media.fileName} »`}
+      onError={onError}
+    />
+  ) : (
+    // Same-origin signed /uploads URL: next/image optimisation is not needed here.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={`Visuel « ${media.fileName} »`}
+      loading="lazy"
+      className="absolute inset-0 size-full object-contain"
+      onError={onError}
+    />
+  );
+}
+
 export interface MediaGalleryProps {
   campaignId: number;
   media: readonly MediaFileResponse[];
@@ -157,26 +206,7 @@ export function MediaGallery({
               )}
             >
               <div className="relative aspect-video bg-bg">
-                {video ? (
-                  <video
-                    src={m.url}
-                    className="absolute inset-0 size-full object-contain"
-                    controls={playable}
-                    muted
-                    playsInline
-                    preload="metadata"
-                    aria-label={`Vidéo « ${m.fileName} »`}
-                  />
-                ) : (
-                  // Same-origin /uploads URL: next/image optimisation is not needed here.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={m.url}
-                    alt={`Visuel « ${m.fileName} »`}
-                    loading="lazy"
-                    className="absolute inset-0 size-full object-contain"
-                  />
-                )}
+                <GalleryMediaPreview media={m} playable={playable} />
                 <Badge
                   tone={m.fileType === "BANNER" ? "cat-3" : video ? "cat-1" : "cat-2"}
                   size="sm"

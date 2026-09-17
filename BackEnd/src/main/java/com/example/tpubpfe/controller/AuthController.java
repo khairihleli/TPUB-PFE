@@ -2,7 +2,10 @@ package com.example.tpubpfe.controller;
 
 import com.example.tpubpfe.dto.AuthResponse;
 import com.example.tpubpfe.dto.LoginRequest;
+import com.example.tpubpfe.dto.LoginResponse;
 import com.example.tpubpfe.dto.RegisterRequest;
+import com.example.tpubpfe.dto.TotpSetupResponse;
+import com.example.tpubpfe.dto.TwoFactorRequests;
 import com.example.tpubpfe.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
@@ -27,9 +30,27 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
     }
 
-    @Operation(summary = "Login and receive JWT token")
+    @Operation(summary = "Login: AUTHENTICATED (token) or a TOTP challenge (TOTP_REQUIRED / TOTP_ENROLMENT_REQUIRED)")
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @Operation(summary = "Login second step: TOTP code or recovery code")
+    @PostMapping("/login/verify")
+    public ResponseEntity<AuthResponse> verify(@Valid @RequestBody TwoFactorRequests.ChallengeCode request) {
+        return ResponseEntity.ok(authService.verify(request.getChallengeToken(), request.getCode()));
+    }
+
+    @Operation(summary = "Mandatory 2FA enrolment during login: generate the secret")
+    @PostMapping("/2fa/setup")
+    public ResponseEntity<TotpSetupResponse> enrolmentSetup(@Valid @RequestBody TwoFactorRequests.Challenge request) {
+        return ResponseEntity.ok(authService.enrolmentSetup(request.getChallengeToken()));
+    }
+
+    @Operation(summary = "Mandatory 2FA enrolment during login: confirm the code and open the session")
+    @PostMapping("/2fa/enable")
+    public ResponseEntity<AuthResponse> enrolmentEnable(@Valid @RequestBody TwoFactorRequests.ChallengeCode request) {
+        return ResponseEntity.ok(authService.enrolmentEnable(request.getChallengeToken(), request.getCode()));
     }
 }

@@ -2,11 +2,11 @@
  * Post-authentication redirect: honour ?next= only for same-origin relative paths the role
  * may open, otherwise go to the role home (ANNONCEUR → /espace, staff → /admin).
  */
-import type { RoleCode } from "@/lib/api/types";
+import type { RoleCode, SessionUser } from "@/lib/api/types";
 import { canAccessPath, roleHome, safeNextPath } from "@/lib/session-cookie";
 
 /** Auth screens never make sense as a destination (avoids redirect loops). */
-const AUTH_PATHS = ["/connexion", "/inscription", "/mot-de-passe-oublie"];
+const AUTH_PATHS = ["/connexion", "/inscription", "/mot-de-passe-oublie", "/mot-de-passe-requis"];
 
 const ORIGIN = "https://tpub.invalid";
 
@@ -61,4 +61,22 @@ export function postAuthDestination(
 export function withNext(href: string, next: string | null | undefined): string {
   const safe = safeRedirectPath(next);
   return safe ? `${href}?next=${encodeURIComponent(safe)}` : href;
+}
+
+/** Round 2 §3.2: forced password change screen. */
+export const PASSWORD_REQUIRED_PATH = "/mot-de-passe-requis";
+/** Round 2 §3.7: second login step and mandatory 2FA enrolment. */
+export const VERIFICATION_PATH = "/connexion/verification";
+export const ENROLMENT_PATH = "/connexion/activer-2fa";
+
+/**
+ * Destination once a session is open: the forced password change first (keeping a valid
+ * ?next=), otherwise `postAuthDestination`.
+ */
+export function sessionDestination(
+  next: string | string[] | null | undefined,
+  user: Pick<SessionUser, "role" | "mustChangePassword">,
+): string {
+  if (user.mustChangePassword === true) return withNext(PASSWORD_REQUIRED_PATH, next);
+  return postAuthDestination(next, user.role);
 }

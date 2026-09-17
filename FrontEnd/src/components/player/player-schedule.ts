@@ -6,6 +6,7 @@
  */
 import { ApiError, ApiTransportError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
+import { mediaExtension } from "@/lib/media-url";
 
 export const DEFAULT_DURATION_S = 10;
 /** Floor: protects the diffusion log from a misconfigured duration (0, negative, NaN). */
@@ -187,8 +188,9 @@ export function adMediaKind(d: Pick<Diffusion, "mediaUrl" | "mediaType">): AdMed
   if (!url) return "none";
   if (d.mediaType === "VIDEO") return "video";
   if (d.mediaType === "IMAGE" || d.mediaType === "BANNER") return "image";
-  // Unknown type (older payloads): guess from the extension, default to an image.
-  return /\.(mp4|webm)(\?|#|$)/i.test(url) ? "video" : "image";
+  // Unknown type (older payloads): guess from the extension (signed query ignored), default image.
+  const ext = mediaExtension(url);
+  return ext === "mp4" || ext === "webm" ? "video" : "image";
 }
 
 /** A tap on a publicité counts one CLIC per diffusion log (never twice, never for other types). */

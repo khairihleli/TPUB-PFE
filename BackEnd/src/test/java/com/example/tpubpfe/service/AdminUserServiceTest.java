@@ -14,6 +14,7 @@ import com.example.tpubpfe.repository.ClientRepository;
 import com.example.tpubpfe.repository.RoleRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.repository.UserSessionRepository;
+import com.example.tpubpfe.security.totp.TotpPolicy;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import org.assertj.core.api.ThrowableAssert;
 import org.junit.jupiter.api.AfterEach;
@@ -50,6 +51,7 @@ class AdminUserServiceTest {
     private RoleRepository roleRepository;
     private SessionService sessionService;
     private AuditService auditService;
+    private TwoFactorService twoFactorService;
     private AdminUserService service;
 
     @BeforeEach
@@ -60,6 +62,7 @@ class AdminUserServiceTest {
         UserSessionRepository sessionRepository = mock(UserSessionRepository.class);
         sessionService = mock(SessionService.class);
         auditService = mock(AuditService.class);
+        twoFactorService = mock(TwoFactorService.class);
         PasswordEncoder encoder = mock(PasswordEncoder.class);
         when(encoder.encode(anyString())).thenAnswer(inv -> "hash:" + inv.getArgument(0));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> {
@@ -76,7 +79,7 @@ class AdminUserServiceTest {
         when(clientRepository.findByUserIdIn(anyCollection())).thenReturn(List.of());
         service = new AdminUserService(userRepository, clientRepository, roleRepository, sessionRepository,
                 sessionService, mock(LoginHistoryService.class), auditService, encoder,
-                mock(FileStorageService.class), CLOCK);
+                mock(FileStorageService.class), CLOCK, TotpPolicy.of(List.of("ADMINISTRATEUR")), twoFactorService);
         TestAuth.login(1L, "ADMINISTRATEUR");
     }
 
@@ -185,6 +188,37 @@ class AdminUserServiceTest {
         verify(auditService).record(eq("CLIENT_VALIDATION_CHANGED"), eq("CLIENT"), eq(60L), anyString(), anyMap());
         assertCode(() -> service.changeClientValidation(61L, ClientValidationRequest.builder()
                 .validationStatus(ClientValidationStatus.VALIDATED).build()), "CLIENT_NOT_FOUND");
+    }
+
+    @Test
+    void requirePasswordChangeFlagsRevokesAndAuditsButNeverOnSelf() {
+        user(1L, RoleCode.ADMINISTRATEUR, true);
+        assertCode(() -> service.requirePasswordChange(1L), "ROLE_NOT_ALLOWED");
+
+        User target = user(7L, RoleCode.OPERATEUR, true);
+        when(sessionService.revokeAll(7L, null, SessionRevokeReason.REVOKED_BY_ADMIN)).thenReturn(3);
+        var response = service.requirePasswordChange(7L);
+
+        assertThat(target.getMustChangePassword()).isTrue();
+        assertThat(response.isMustChangePassword()).isTrue();
+        verify(auditService).record(eq("USER_PASSWORD_CHANGE_REQUIRED"), eq("USER"), eq(7L), anyString(),
+                eq(Map.of("revokedSessions", 3)));
+    }
+
+    @Test
+    void resetTwoFactorDelegatesRevokesAndReportsRequiredRole() {
+        user(1L, RoleCode.ADMINISTRATEUR, true);
+        assertCode(() -> service.resetTwoFactor(1L), "ROLE_NOT_ALLOWED");
+        verify(twoFactorService, never()).reset(any());
+
+        User target = user(8L, RoleCode.ADMINISTRATEUR, true);
+        target.setTotpEnabled(true);
+        var response = service.resetTwoFactor(8L);
+
+        verify(twoFactorService).reset(target);
+        verify(sessionService).revokeAll(eq(8L), isNull(), eq(SessionRevokeReason.REVOKED_BY_ADMIN));
+        verify(auditService).record(eq("USER_2FA_RESET"), eq("USER"), eq(8L), anyString(), anyMap());
+        assertThat(response.isTwoFactorRequired()).isTrue();
     }
 
     private static AdminUserUpdateRequest update(RoleCode role) {

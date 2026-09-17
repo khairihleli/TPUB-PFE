@@ -2,7 +2,12 @@
  * Pure session cookie helpers, shared by route handlers, middleware (edge) and server
  * components. No Node-only APIs (no Buffer): works on every runtime.
  */
-import type { AuthResponse, RoleCode, SessionUser } from "@/lib/api/types";
+import type {
+  AuthResponse,
+  LoginChallengeResponse,
+  RoleCode,
+  SessionUser,
+} from "@/lib/api/types";
 
 export const TOKEN_COOKIE = "tpub_token";
 export const USER_COOKIE = "tpub_user";
@@ -84,7 +89,15 @@ export function sessionUserFromAuth(auth: AuthResponse, now: number = Date.now()
   );
   const exp =
     candidates.length > 0 ? Math.min(...candidates) : nowSeconds(now) + DEFAULT_SESSION_SECONDS;
-  return { email: auth.email, nom: auth.nom, role: auth.role, userId: auth.userId, exp };
+  return {
+    email: auth.email,
+    nom: auth.nom,
+    role: auth.role,
+    userId: auth.userId,
+    exp,
+    mustChangePassword: auth.mustChangePassword === true,
+    twoFactorEnabled: auth.twoFactorEnabled === true,
+  };
 }
 
 /** Cookie max-age in seconds (JWT exp − now, fallback 24 h, never negative). */
@@ -93,10 +106,15 @@ export function sessionMaxAge(exp: number | null, now: number = Date.now()): num
   return Math.max(0, exp - nowSeconds(now));
 }
 
+/**
+ * A completed authentication. Round 2: `status` must be "AUTHENTICATED" (absent only from
+ * pre-round-2 backends); a TOTP challenge is never a session.
+ */
 export function isAuthResponse(v: unknown): v is AuthResponse {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return (
+    (o.status === undefined || o.status === "AUTHENTICATED") &&
     typeof o.token === "string" &&
     o.token.length > 0 &&
     typeof o.email === "string" &&
@@ -126,10 +144,60 @@ export function parseUserCookie(value: string | null | undefined): SessionUser |
     ) {
       return null;
     }
-    return { email: o.email, nom: o.nom, role: o.role, userId: o.userId, exp: o.exp };
+    return {
+      email: o.email,
+      nom: o.nom,
+      role: o.role,
+      userId: o.userId,
+      exp: o.exp,
+      mustChangePassword: o.mustChangePassword === true,
+      twoFactorEnabled: o.twoFactorEnabled === true,
+    };
   } catch {
     return null;
   }
+}
+
+/** Round 2: second login step or mandatory enrolment in progress. */
+export function isLoginChallenge(v: unknown): v is LoginChallengeResponse {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return (
+    (o.status === "TOTP_REQUIRED" || o.status === "TOTP_ENROLMENT_REQUIRED") &&
+    typeof o.challengeToken === "string" &&
+    o.challengeToken.length > 0 &&
+    typeof o.expiresAt === "string" &&
+    typeof o.email === "string"
+  );
+}
+
+/** Cookie holding the challenge token (httpOnly, path /api/session): never readable by JS. */
+export const CHALLENGE_COOKIE = "tpub_challenge";
+/** The only path the challenge cookie is sent to. */
+export const CHALLENGE_COOKIE_PATH = "/api/session";
+/**
+ * Marker readable by the middleware on the verification pages (httpOnly, no token inside): the
+ * challenge cookie itself is scoped to /api/session and never reaches page requests.
+ */
+export const CHALLENGE_MARKER_COOKIE = "tpub_challenge_actif";
+
+/** Challenge cookie max-age: seconds until `expiresAt` (0 when past or invalid). */
+export function challengeMaxAge(expiresAt: string, now: number = Date.now()): number {
+  const exp = isoToEpochSeconds(expiresAt);
+  return exp === null ? 0 : Math.max(0, exp - nowSeconds(now));
+}
+
+/** `SessionUser` refreshed from `GET /api/me` (round 2: the forced password change is done). */
+export function withAccountFlags(
+  user: SessionUser,
+  me: { mustChangePassword?: unknown; twoFactorEnabled?: unknown; nom?: unknown },
+): SessionUser {
+  return {
+    ...user,
+    nom: typeof me.nom === "string" && me.nom ? me.nom : user.nom,
+    mustChangePassword: me.mustChangePassword === true,
+    twoFactorEnabled: me.twoFactorEnabled === true,
+  };
 }
 
 export function isSessionExpired(

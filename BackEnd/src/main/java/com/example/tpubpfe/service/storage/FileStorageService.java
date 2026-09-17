@@ -2,7 +2,9 @@ package com.example.tpubpfe.service.storage;
 
 import com.example.tpubpfe.config.TpubProperties;
 import com.example.tpubpfe.exception.ApiException;
+import com.example.tpubpfe.security.SecretKeys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,6 +19,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -34,9 +37,24 @@ public class FileStorageService {
     }
 
     private final TpubProperties properties;
+    private final Clock clock;
+    private final MediaUrlSigner signer;
 
+    /** Hand-built instances (unit tests): system clock, keys from the given properties. */
     public FileStorageService(TpubProperties properties) {
+        this(properties, Clock.systemUTC());
+    }
+
+    @Autowired
+    public FileStorageService(TpubProperties properties, Clock clock) {
         this.properties = properties;
+        this.clock = clock;
+        this.signer = new MediaUrlSigner(SecretKeys.mediaSigningKey(properties),
+                properties.getMedia().getSignedUrlTtlSeconds(), properties.getMedia().getBaseUrl());
+    }
+
+    public MediaUrlSigner signer() {
+        return signer;
     }
 
     public StoredFile store(MultipartFile file, String directory, String extension) {
@@ -67,13 +85,70 @@ public class FileStorageService {
         return resolved;
     }
 
+    /**
+     * URL of a stored file for an authorised viewer (docs/round2-contract.md §1.2, §3.5): null → null; blank → the
+     * unsigned base URL; an absolute {@code http(s)://} value unchanged; any other path → a signed, expiring URL.
+     */
     public String publicUrl(String relativePath) {
         if (relativePath == null) {
             return null;
         }
-        String base = properties.getMedia().getBaseUrl() == null ? "/uploads" : properties.getMedia().getBaseUrl();
-        base = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
-        return base + "/" + relativePath.replace('\\', '/').replaceFirst("^/+", "");
+        if (relativePath.isBlank()) {
+            return signer.baseUrl();
+        }
+        if (isAbsoluteUrl(relativePath)) {
+            return relativePath;
+        }
+        return MediaUrlSigner.normalise(relativePath)
+                .map(path -> signer.sign(path, clock.instant()))
+                .orElse(null);
+    }
+
+    /** Canonical unsigned {@code base/relativePath}, the only form stored in the database (e.g. diffusion logs). */
+    public String canonicalUrl(String relativePath) {
+        if (relativePath == null) {
+            return null;
+        }
+        if (relativePath.isBlank()) {
+            return signer.baseUrl();
+        }
+        if (isAbsoluteUrl(relativePath)) {
+            return relativePath;
+        }
+        return MediaUrlSigner.normalise(relativePath)
+                .map(signer::canonicalUrl)
+                .orElse(null);
+    }
+
+    /**
+     * Re-signs a stored canonical URL ({@code base/encodedPath}, query ignored). Other values (external URLs, legacy
+     * data) are returned unchanged.
+     */
+    public String resignStoredUrl(String storedUrl) {
+        if (storedUrl == null || storedUrl.isBlank() || isAbsoluteUrl(storedUrl)) {
+            return storedUrl;
+        }
+        String prefix = signer.baseUrl() + "/";
+        if (!storedUrl.startsWith(prefix)) {
+            return storedUrl;
+        }
+        int query = storedUrl.indexOf('?');
+        String encoded = storedUrl.substring(prefix.length(), query >= 0 ? query : storedUrl.length());
+        return MediaUrlSigner.decodePath(encoded)
+                .flatMap(MediaUrlSigner::normalise)
+                .map(path -> signer.sign(path, clock.instant()))
+                .orElse(storedUrl);
+    }
+
+    /** True when the normalised path resolves inside the upload root. */
+    public boolean isInsideRoot(String normalisedPath) {
+        Path root = root();
+        return root.resolve(normalisedPath).normalize().startsWith(root);
+    }
+
+    private static boolean isAbsoluteUrl(String value) {
+        String lower = value.trim().toLowerCase(java.util.Locale.ROOT);
+        return lower.startsWith("http://") || lower.startsWith("https://");
     }
 
     public void delete(String relativePath) {

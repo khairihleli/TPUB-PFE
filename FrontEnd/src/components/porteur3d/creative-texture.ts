@@ -25,6 +25,8 @@ import {
   type UvTransform,
 } from "@/components/porteur3d/texture-math";
 import type { StudioCreative, StudioFace } from "@/components/porteur3d/types";
+import { isSignedMediaUrl } from "@/lib/media-url";
+import { refreshSignedMediaUrl, type SignedUrlRefresher } from "@/lib/use-signed-media";
 
 export interface CreativeSurface {
   mesh: Mesh;
@@ -39,6 +41,8 @@ export interface CreativeControllerOptions {
   /** Something changed on a texture: the engine should render a frame. */
   onUpdate(): void;
   onError(message: string): void;
+  /** Fresh signed URL for an expired one (default: the owning resource is refetched). */
+  refreshUrl?: SignedUrlRefresher;
 }
 
 const DEFAULT_FPS = 20;
@@ -294,10 +298,7 @@ export class CreativeController {
       return;
     }
     try {
-      const loaded =
-        creative.kind === "video"
-          ? await this.loadVideo(creative.url)
-          : { texture: await this.loadImage(creative.url), video: null };
+      const loaded = await this.loadCreative(creative, token);
       const base = loaded.texture;
       if (token !== this.loadToken || this.disposed) {
         base.dispose();
@@ -327,6 +328,29 @@ export class CreativeController {
       this.options.onError("Le visuel n'a pas pu être lu : l'aperçu par défaut est affiché.");
       this.releaseMedia();
       this.useDefaults();
+    }
+  }
+
+  /**
+   * Loads the creative. Round 2: a signed media URL that fails (expired link) is refreshed once
+   * through the owning resource, then loaded again; a second failure is final.
+   */
+  private async loadCreative(
+    creative: StudioCreative,
+    token: number,
+  ): Promise<{ texture: Texture; video: HTMLVideoElement | null }> {
+    const load = (url: string) =>
+      creative.kind === "video"
+        ? this.loadVideo(url)
+        : this.loadImage(url).then((texture) => ({ texture, video: null }));
+    try {
+      return await load(creative.url);
+    } catch (first) {
+      if (!isSignedMediaUrl(creative.url) || token !== this.loadToken || this.disposed) throw first;
+      const refresh = this.options.refreshUrl ?? refreshSignedMediaUrl;
+      const fresh = await refresh(creative.url, new AbortController().signal);
+      if (!fresh || token !== this.loadToken || this.disposed) throw first;
+      return load(fresh);
     }
   }
 

@@ -12,6 +12,7 @@ import com.example.tpubpfe.model.User;
 import com.example.tpubpfe.repository.ClientRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
+import com.example.tpubpfe.security.totp.TotpPolicy;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,11 +45,12 @@ public class MeService {
     private final LoginHistoryService loginHistoryService;
     private final FileStorageService fileStorageService;
     private final Clock clock;
+    private final TotpPolicy totpPolicy;
 
     @Transactional(readOnly = true)
     public MeResponse get() {
         User user = currentUser();
-        return toResponse(user, clientRepository.findByUserId(user.getId()).orElse(null), fileStorageService);
+        return toResponse(user, clientRepository.findByUserId(user.getId()).orElse(null), fileStorageService, totpPolicy);
     }
 
     @Transactional
@@ -64,10 +66,13 @@ public class MeService {
             client.setCompanyName(user.getSociete());
             clientRepository.save(client);
         }
-        return toResponse(user, client, fileStorageService);
+        return toResponse(user, client, fileStorageService, totpPolicy);
     }
 
-    /** Changes the password and revokes every other session ({@code PASSWORD_CHANGED}); the current one stays. */
+    /**
+     * Changes the password, clears {@code must_change_password} and revokes every other session
+     * ({@code PASSWORD_CHANGED}); the current one stays.
+     */
     @Transactional
     public void changePassword(PasswordChangeRequest request) {
         User user = currentUser();
@@ -79,6 +84,7 @@ public class MeService {
         }
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         user.setPasswordChangedAt(clock.instant());
+        user.setMustChangePassword(false);
         userRepository.save(user);
         sessionService.revokeAll(user.getId(), SecurityUtils.currentSessionId(), SessionRevokeReason.PASSWORD_CHANGED);
     }
@@ -103,7 +109,7 @@ public class MeService {
         user.setLogoUrl(stored.relativePath());
         userRepository.save(user);
         deleteStoredLogo(previous);
-        return toResponse(user, clientRepository.findByUserId(user.getId()).orElse(null), fileStorageService);
+        return toResponse(user, clientRepository.findByUserId(user.getId()).orElse(null), fileStorageService, totpPolicy);
     }
 
     @Transactional
@@ -113,7 +119,7 @@ public class MeService {
         user.setLogoUrl(null);
         userRepository.save(user);
         deleteStoredLogo(previous);
-        return toResponse(user, clientRepository.findByUserId(user.getId()).orElse(null), fileStorageService);
+        return toResponse(user, clientRepository.findByUserId(user.getId()).orElse(null), fileStorageService, totpPolicy);
     }
 
     public List<SessionResponse> sessions() {
@@ -165,12 +171,15 @@ public class MeService {
     }
 
     /** Shared by the admin users API. */
-    static MeResponse toResponse(User user, Client client, FileStorageService storage) {
-        return fill(MeResponse.builder(), user, client, storage).build();
+    static MeResponse toResponse(User user, Client client, FileStorageService storage, TotpPolicy policy) {
+        return fill(MeResponse.builder(), user, client, storage, policy).build();
     }
 
     static <B extends MeResponse.MeResponseBuilder<?, ?>> B fill(B builder, User user, Client client,
-                                                                 FileStorageService storage) {
+                                                                 FileStorageService storage, TotpPolicy policy) {
+        builder.twoFactorEnabled(Boolean.TRUE.equals(user.getTotpEnabled()))
+                .twoFactorRequired(user.getRole() != null && policy.isRequired(user.getRole().getCode()))
+                .mustChangePassword(Boolean.TRUE.equals(user.getMustChangePassword()));
         builder.userId(user.getId())
                 .email(user.getEmail())
                 .nom(user.getNom())

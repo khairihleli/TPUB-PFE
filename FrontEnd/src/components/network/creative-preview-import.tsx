@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import type { CampaignResponse } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
 import { routes } from "@/lib/routes";
+import { useSignedMediaSrc } from "@/lib/use-signed-media";
 
 /** Key of the explorer's local « try it on the screen » preview in the creative store. */
 export const EXPLORER_CREATIVE_KEY = 0;
@@ -61,7 +62,13 @@ export function useStudioCreative(
   campaign: Pick<CampaignResponse, "id" | "name" | "mediaUrl" | "mediaType"> | null,
 ): StudioCreativeState {
   const local = useLocalCreative(EXPLORER_CREATIVE_KEY);
-  return studioCreativeOf(campaign, local);
+  // Round 2: the campaign media URL is signed; an expired one is refreshed before it is shown.
+  const media = useSignedMediaSrc(campaign?.mediaUrl);
+  const fresh =
+    campaign && campaign.mediaUrl && media.src !== campaign.mediaUrl
+      ? { ...campaign, mediaUrl: media.src }
+      : campaign;
+  return studioCreativeOf(fresh, local);
 }
 
 export interface CreativePreviewImportProps {

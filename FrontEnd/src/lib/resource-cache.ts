@@ -5,11 +5,21 @@
  * Client-only in practice (state lives per browser tab); harmless on the server.
  */
 
+import { earliestSignedUrlExpiry } from "@/lib/media-url";
+
 export const DEFAULT_STALE_TIME = 30_000;
+
+/**
+ * Round 2 (docs/round2-contract.md §3.5): an entry whose payload contains signed media URLs is
+ * dropped after this age, so a stale copy never serves links that are about to expire.
+ */
+export const SIGNED_MEDIA_TTL_MS = 30 * 60_000;
 
 interface Entry {
   data: unknown;
   updatedAt: number;
+  /** Epoch ms after which the entry is dropped (payload with signed media URLs), else null. */
+  expiresAt: number | null;
 }
 
 const entries = new Map<string, Entry>();
@@ -43,19 +53,34 @@ function notify(key: string): void {
   listeners.get(key)?.forEach((cb) => cb());
 }
 
-export function getCached<T>(key: string): { data: T; updatedAt: number } | undefined {
+/** The entry, unless its signed media URLs made it expire (then it is removed). */
+function liveEntry(key: string, now = Date.now()): Entry | undefined {
   const entry = entries.get(key);
+  if (entry && entry.expiresAt !== null && now >= entry.expiresAt) {
+    entries.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+/** Hard expiry of a payload: `updatedAt + SIGNED_MEDIA_TTL_MS` when it holds signed media URLs. */
+export function signedPayloadExpiry(data: unknown, updatedAt: number): number | null {
+  return earliestSignedUrlExpiry(data) === null ? null : updatedAt + SIGNED_MEDIA_TTL_MS;
+}
+
+export function getCached<T>(key: string): { data: T; updatedAt: number } | undefined {
+  const entry = liveEntry(key);
   return entry ? { data: entry.data as T, updatedAt: entry.updatedAt } : undefined;
 }
 
 export function isFresh(key: string, staleTime = DEFAULT_STALE_TIME, now = Date.now()): boolean {
-  const entry = entries.get(key);
+  const entry = liveEntry(key, now);
   return entry !== undefined && now - entry.updatedAt < staleTime;
 }
 
 /** Store a value (e.g. after a mutation or a fetch done elsewhere). */
 export function primeCache<T>(key: string, data: T, updatedAt = Date.now()): void {
-  entries.set(key, { data, updatedAt });
+  entries.set(key, { data, updatedAt, expiresAt: signedPayloadExpiry(data, updatedAt) });
   notify(key);
 }
 
@@ -113,7 +138,7 @@ export function fetchCached<T>(
   { staleTime = DEFAULT_STALE_TIME, force = false, signal }: FetchCachedOptions = {},
 ): Promise<T> {
   if (signal?.aborted) return Promise.reject(abortError());
-  const cached = entries.get(key);
+  const cached = liveEntry(key);
   if (!force && cached && Date.now() - cached.updatedAt < staleTime) {
     return Promise.resolve(cached.data as T);
   }

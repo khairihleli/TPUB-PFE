@@ -68,6 +68,40 @@ public final class AccountErrors {
                 "Format de logo non pris en charge : utilisez PNG, JPEG ou WEBP.");
     }
 
+    // --- Round 2 (L2): 2FA, forced password change -------------------------------------------------------------
+
+    public static ApiException passwordChangeRequired() {
+        return new ApiException(HttpStatus.FORBIDDEN, "PASSWORD_CHANGE_REQUIRED",
+                "Vous devez définir un nouveau mot de passe avant de continuer.");
+    }
+
+    public static ApiException challengeExpired() {
+        return new ApiException(HttpStatus.UNAUTHORIZED, "CHALLENGE_EXPIRED", "La vérification a expiré. Reconnectez-vous.");
+    }
+
+    /** 401 on the login second step, 400 on self-service routes. */
+    public static ApiException totpCodeInvalid(HttpStatus status) {
+        return new ApiException(status, "TOTP_CODE_INVALID", "Code de vérification incorrect.");
+    }
+
+    public static ApiException totpAlreadyEnabled() {
+        return new ApiException(HttpStatus.CONFLICT, "TOTP_ALREADY_ENABLED", "La double authentification est déjà active.");
+    }
+
+    public static ApiException totpSetupRequired() {
+        return new ApiException(HttpStatus.CONFLICT, "TOTP_SETUP_REQUIRED",
+                "Aucune configuration en cours ou configuration expirée : recommencez l'activation.");
+    }
+
+    public static ApiException totpNotEnabled() {
+        return new ApiException(HttpStatus.CONFLICT, "TOTP_NOT_ENABLED", "La double authentification n'est pas active.");
+    }
+
+    public static ApiException totpRequiredForRole() {
+        return new ApiException(HttpStatus.FORBIDDEN, "TOTP_REQUIRED_FOR_ROLE",
+                "La double authentification est obligatoire pour votre rôle : elle ne peut pas être désactivée.");
+    }
+
     public static ApiException logoTooLarge() {
         return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "MEDIA_TOO_LARGE", "Le logo ne doit pas dépasser 2 Mo.");
     }

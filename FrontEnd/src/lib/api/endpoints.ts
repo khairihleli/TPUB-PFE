@@ -10,6 +10,8 @@ import {
   type QueryValue,
   resetSessionExpiredGuard,
 } from "@/lib/api/client";
+import { ApiTransportError } from "@/lib/api/errors";
+import { DEVICE_KEY_HEADER } from "@/lib/player/device-key";
 import type {
   AdminRejectRequest,
   AdminUserCreateRequest,
@@ -40,6 +42,8 @@ import type {
   CampaignZonesUpdateResponse,
   ClientValidationRequest,
   DashboardResponse,
+  DeviceKeyIssuedResponse,
+  DeviceKeyStatusResponse,
   Diffusion,
   DiffusionLogQuery,
   DiffusionLogResponse,
@@ -61,6 +65,7 @@ import type {
   PageQuery,
   PageResponse,
   PasswordChangeRequest,
+  RecoveryCodesResponse,
   RegisterRequest,
   ReservationBatchRequest,
   ReservationConflict,
@@ -71,7 +76,10 @@ import type {
   ReservationSearchQuery,
   RevokedCountResponse,
   RoleResponse,
+  SessionEnrolmentResult,
+  SessionLoginResult,
   SessionResponse,
+  SessionVerifyResult,
   StatisticsCampaignResponse,
   StatisticsExportQuery,
   StatisticsHistoryRow,
@@ -86,6 +94,9 @@ import type {
   SupportFilters,
   SupportRequest,
   SupportResponse,
+  TotpSetupResponse,
+  TwoFactorDisableRequest,
+  TwoFactorStatusResponse,
   UserSessionResponse,
   ZoneRecommendation,
   ZoneRecommendationQuery,
@@ -194,12 +205,54 @@ async function fetchAllPages<T>(load: (page: number) => Promise<PageResponse<T>>
 // ---------------------------------------------------------------------------
 // Session (Next route handlers — cookies are httpOnly, the token never reaches JS)
 // ---------------------------------------------------------------------------
+/**
+ * A pre-round-2 bridge answers `{ user }` without `status`: that is an opened session.
+ */
+export function normalizeSessionLogin(
+  res: SessionLoginResult | SessionResponse | null | undefined,
+): SessionLoginResult {
+  if (res && "status" in res && res.status !== "AUTHENTICATED") return res;
+  if (res && "user" in res) return { status: "AUTHENTICATED", user: res.user };
+  throw new ApiTransportError("unexpected-response");
+}
+
 export const sessionApi = {
-  get: (o: CallOptions = {}) => apiFetch<SessionResponse>("/api/session", o),
-  login: async (body: LoginRequest, o: CallOptions = {}) => {
-    const res = await apiFetch<SessionResponse>("/api/session/login", {
+  /** `refresh: true` re-reads the account from the backend (round 2: after a forced password change). */
+  get: (o: CallOptions & { refresh?: boolean } = {}) =>
+    apiFetch<SessionResponse>("/api/session", {
+      query: { actualiser: o.refresh ? 1 : undefined },
+      signal: o.signal,
+    }),
+  /** Round 2: a session, or a second step (TOTP code / mandatory enrolment). */
+  login: async (body: LoginRequest, o: CallOptions = {}): Promise<SessionLoginResult> => {
+    const res = normalizeSessionLogin(
+      await apiFetch<SessionLoginResult | SessionResponse>("/api/session/login", {
+        method: "POST",
+        body,
+        ...o,
+      }),
+    );
+    if (res.status === "AUTHENTICATED") resetSessionExpiredGuard();
+    return res;
+  },
+  /** Second login step: 6-digit TOTP code or a recovery code `xxxxx-xxxxx`. */
+  verifyTotp: async (code: string, o: CallOptions = {}) => {
+    const res = await apiFetch<SessionVerifyResult>("/api/session/login/verify", {
       method: "POST",
-      body,
+      body: { code },
+      ...o,
+    });
+    resetSessionExpiredGuard();
+    return res;
+  },
+  /** Mandatory enrolment: the pending secret of the challenge's account. */
+  enrolmentSetup: (o: CallOptions = {}) =>
+    apiFetch<TotpSetupResponse>("/api/session/enrolment/setup", { method: "POST", ...o }),
+  /** Mandatory enrolment: confirms the first code, opens the session, returns the recovery codes. */
+  enrolmentEnable: async (code: string, o: CallOptions = {}) => {
+    const res = await apiFetch<SessionEnrolmentResult>("/api/session/enrolment/enable", {
+      method: "POST",
+      body: { code },
       ...o,
     });
     resetSessionExpiredGuard();
@@ -251,6 +304,24 @@ export const meApi = {
   /** Newest first; default 20, max 100. */
   loginHistory: (limit?: number, o: CallOptions = {}) =>
     apiFetch<LoginHistoryResponse[]>("/me/login-history", { query: { limit }, ...o }),
+  // Round 2 — self-service two-factor authentication (§3.3)
+  twoFactor: (o: CallOptions = {}) => apiFetch<TwoFactorStatusResponse>("/me/2fa", o),
+  /** Pending secret valid 10 minutes; a new setup replaces it. 409 TOTP_ALREADY_ENABLED. */
+  twoFactorSetup: (o: CallOptions = {}) =>
+    apiFetch<TotpSetupResponse>("/me/2fa/setup", { method: "POST", ...o }),
+  /** Returns the 10 recovery codes, shown once. */
+  twoFactorEnable: (code: string, o: CallOptions = {}) =>
+    apiFetch<RecoveryCodesResponse>("/me/2fa/enable", { method: "POST", body: { code }, ...o }),
+  /** 204. Closes the other sessions. 403 TOTP_REQUIRED_FOR_ROLE. */
+  twoFactorDisable: (body: TwoFactorDisableRequest, o: CallOptions = {}) =>
+    apiFetch<void>("/me/2fa/disable", { method: "POST", body, ...o }),
+  /** TOTP code only (not a recovery code). Replaces every previous code. */
+  regenerateRecoveryCodes: (code: string, o: CallOptions = {}) =>
+    apiFetch<RecoveryCodesResponse>("/me/2fa/recovery-codes", {
+      method: "POST",
+      body: { code },
+      ...o,
+    }),
 };
 
 function fileNameOf(file: Blob, fallback: string): string {
@@ -720,12 +791,22 @@ export const emergencyApi = {
 // ---------------------------------------------------------------------------
 // Diffusion — `next` writes a diffusion log on every call: only from /ecran
 // ---------------------------------------------------------------------------
+/** Player calls carry the device key of the paired screen (round 2 §1.1). */
+export interface DeviceCallOptions extends CallOptions {
+  deviceKey?: string | null;
+}
+
+function deviceHeaders(deviceKey: string | null | undefined): Record<string, string> | undefined {
+  return deviceKey ? { [DEVICE_KEY_HEADER]: deviceKey } : undefined;
+}
+
 export const diffusionApi = {
-  next: async (q: DiffusionQuery, o: CallOptions = {}) =>
+  next: async (q: DiffusionQuery, { deviceKey, signal }: DeviceCallOptions = {}) =>
     normalizeDiffusion(
       await apiFetch<DiffusionResponse>("/diffusion/next", {
         query: { supportId: q.supportId, datetime: q.datetime, zone: q.zone },
-        ...o,
+        headers: deviceHeaders(deviceKey),
+        signal,
       }),
     ),
   /** Staff — paginated diffusion journal. */
@@ -744,9 +825,37 @@ export const diffusionApi = {
         signal: signalOf(q, o),
       }),
     ),
-  /** Public, idempotent per (log, type). 204. */
-  interaction: (body: InteractionRequest, o: CallOptions = {}) =>
-    apiFetch<void>("/diffusion/interactions", { method: "POST", body, ...o }),
+  /** Paired player only, idempotent per (log, type). 204. The log must belong to `supportId`. */
+  interaction: (
+    body: InteractionRequest,
+    { supportId, deviceKey, signal }: DeviceCallOptions & { supportId: number },
+  ) =>
+    apiFetch<void>("/diffusion/interactions", {
+      method: "POST",
+      body,
+      query: { supportId },
+      headers: deviceHeaders(deviceKey),
+      signal,
+    }),
+};
+
+// ---------------------------------------------------------------------------
+// Player device keys (round 2 §3.4) — issue/revoke: ADMINISTRATEUR; read: staff
+// ---------------------------------------------------------------------------
+export const deviceKeysApi = {
+  /** 201. Rotates an existing key: the previous screen is disconnected. The key is shown once. */
+  issue: (supportId: number, o: CallOptions = {}) =>
+    apiFetch<DeviceKeyIssuedResponse>(`/supports/${supportId}/device-key`, {
+      method: "POST",
+      ...o,
+    }),
+  status: (supportId: number, o: CallOptions = {}) =>
+    apiFetch<DeviceKeyStatusResponse>(`/supports/${supportId}/device-key`, o),
+  /** Every Porteur, paired or not. */
+  list: (o: CallOptions = {}) => apiFetch<DeviceKeyStatusResponse[]>("/supports/device-keys", o),
+  /** 204, no-op without an active key. */
+  revoke: (supportId: number, o: CallOptions = {}) =>
+    apiFetch<void>(`/supports/${supportId}/device-key`, { method: "DELETE", ...o }),
 };
 
 // ---------------------------------------------------------------------------
@@ -792,6 +901,15 @@ export const adminUsersApi = {
       ...o,
     }),
   roles: (o: CallOptions = {}) => apiFetch<RoleResponse[]>("/admin/roles", o),
+  /** Round 2 — ADMINISTRATEUR, never on self: disables TOTP and closes the user's sessions. */
+  resetTwoFactor: (userId: number, o: CallOptions = {}) =>
+    apiFetch<AdminUserResponse>(`/admin/users/${userId}/2fa/reset`, { method: "POST", ...o }),
+  /** Round 2 — ADMINISTRATEUR, never on self: new password required, sessions closed. */
+  requirePasswordChange: (userId: number, o: CallOptions = {}) =>
+    apiFetch<AdminUserResponse>(`/admin/users/${userId}/require-password-change`, {
+      method: "POST",
+      ...o,
+    }),
 };
 
 // ---------------------------------------------------------------------------

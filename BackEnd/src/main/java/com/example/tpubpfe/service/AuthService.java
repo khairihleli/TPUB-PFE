@@ -1,10 +1,14 @@
 package com.example.tpubpfe.service;
 
 import com.example.tpubpfe.dto.AuthResponse;
+import com.example.tpubpfe.dto.LoginChallengeResponse;
 import com.example.tpubpfe.dto.LoginRequest;
+import com.example.tpubpfe.dto.LoginResponse;
 import com.example.tpubpfe.dto.RegisterRequest;
+import com.example.tpubpfe.dto.TotpSetupResponse;
 import com.example.tpubpfe.exception.ApiException;
 import com.example.tpubpfe.model.Client;
+import com.example.tpubpfe.model.LoginChallenge;
 import com.example.tpubpfe.model.LoginFailureReason;
 import com.example.tpubpfe.model.RoleCode;
 import com.example.tpubpfe.model.User;
@@ -38,6 +42,8 @@ public class AuthService {
     private final SessionService sessionService;
     private final LoginHistoryService loginHistoryService;
     private final Clock clock;
+    private final TwoFactorService twoFactorService;
+    private final LoginChallengeService challengeService;
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -76,10 +82,12 @@ public class AuthService {
 
     /**
      * Checks the password first, then the account status, so a disabled account is only revealed to someone who
-     * knows its password. Every attempt is written to {@code login_history}.
+     * knows its password. Every failed attempt is written to {@code login_history}. When TOTP is enabled (or
+     * mandatory for the role) a challenge is returned instead of a session: no session and no success row exist
+     * before the second step (docs/round2-contract.md §3.3).
      */
     @Transactional
-    public AuthResponse login(LoginRequest request) {
+    public LoginResponse login(LoginRequest request) {
         HttpServletRequest http = RequestInfo.currentRequest();
         String email = normalizeEmail(request.getEmail());
         Optional<User> found = findByEmail(email);
@@ -98,12 +106,91 @@ public class AuthService {
             throw AccountErrors.accountDisabled();
         }
 
+        if (Boolean.TRUE.equals(user.getTotpEnabled())) {
+            return challenge(user, LoginChallenge.Purpose.TOTP_LOGIN, LoginChallengeResponse.TOTP_REQUIRED, http);
+        }
+        if (twoFactorService.isRequired(user)) {
+            return challenge(user, LoginChallenge.Purpose.TOTP_ENROLMENT,
+                    LoginChallengeResponse.TOTP_ENROLMENT_REQUIRED, http);
+        }
+        return complete(user, http);
+    }
+
+    /** Second step: a TOTP code or a recovery code. Wrong code → 401 {@code TOTP_CODE_INVALID}, attempt counted. */
+    @Transactional(noRollbackFor = ApiException.class)
+    public AuthResponse verify(String challengeToken, String code) {
+        HttpServletRequest http = RequestInfo.currentRequest();
+        LoginChallenge challenge = challengeService.require(challengeToken, LoginChallenge.Purpose.TOTP_LOGIN);
+        User user = activeUser(challenge);
+        TwoFactorService.CodeCheck check = twoFactorService.verifyCode(user, code);
+        if (check == TwoFactorService.CodeCheck.INVALID) {
+            challengeService.recordFailedAttempt(challenge.getId());
+            loginHistoryService.recordFailure(user.getId(), user.getEmail(), LoginFailureReason.TOTP_INVALID, http);
+            throw AccountErrors.totpCodeInvalid(HttpStatus.UNAUTHORIZED);
+        }
+        challengeService.consume(challenge);
+        AuthResponse response = complete(user, http);
+        if (check == TwoFactorService.CodeCheck.RECOVERY) {
+            response.setRecoveryCodeUsed(true);
+        }
+        return response;
+    }
+
+    /** Mandatory enrolment, step 1: a pending secret for the challenge's user. */
+    @Transactional
+    public TotpSetupResponse enrolmentSetup(String challengeToken) {
+        LoginChallenge challenge = challengeService.require(challengeToken, LoginChallenge.Purpose.TOTP_ENROLMENT);
+        return twoFactorService.beginSetup(activeUser(challenge));
+    }
+
+    /** Mandatory enrolment, step 2: confirms the code, enables TOTP and opens the session. */
+    @Transactional(noRollbackFor = ApiException.class)
+    public AuthResponse enrolmentEnable(String challengeToken, String code) {
+        HttpServletRequest http = RequestInfo.currentRequest();
+        LoginChallenge challenge = challengeService.require(challengeToken, LoginChallenge.Purpose.TOTP_ENROLMENT);
+        User user = activeUser(challenge);
+        List<String> codes;
+        try {
+            codes = twoFactorService.enable(user, code, HttpStatus.UNAUTHORIZED);
+        } catch (ApiException ex) {
+            if ("TOTP_CODE_INVALID".equals(ex.getCode())) {
+                challengeService.recordFailedAttempt(challenge.getId());
+                loginHistoryService.recordFailure(user.getId(), user.getEmail(), LoginFailureReason.TOTP_INVALID, http);
+            }
+            throw ex;
+        }
+        challengeService.consume(challenge);
+        AuthResponse response = complete(user, http);
+        response.setRecoveryCodes(codes);
+        return response;
+    }
+
+    private LoginChallengeResponse challenge(User user, LoginChallenge.Purpose purpose, String status,
+                                             HttpServletRequest http) {
+        LoginChallengeService.Issued issued = challengeService.issue(user, purpose, http);
+        return LoginChallengeResponse.builder()
+                .status(status)
+                .challengeToken(issued.token())
+                .expiresAt(issued.challenge().getExpiresAt())
+                .email(user.getEmail())
+                .build();
+    }
+
+    private AuthResponse complete(User user, HttpServletRequest http) {
         user.setLastLoginAt(clock.instant());
         userRepository.save(user);
-
         SessionService.IssuedSession issued = sessionService.open(user, http);
         loginHistoryService.recordSuccess(user.getId(), user.getEmail(), issued.session().getId(), http);
         return toResponse(user, issued);
+    }
+
+    /** The challenge's user, still active (a deactivated account cannot finish its login). */
+    private User activeUser(LoginChallenge challenge) {
+        User user = userRepository.findById(challenge.getUserId()).orElseThrow(AccountErrors::challengeExpired);
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            throw AccountErrors.accountDisabled();
+        }
+        return user;
     }
 
     private String dummyHash() {
@@ -131,6 +218,8 @@ public class AuthService {
                 .userId(user.getId())
                 .sessionId(issued.session().getId())
                 .expiresAt(issued.session().getExpiresAt())
+                .mustChangePassword(Boolean.TRUE.equals(user.getMustChangePassword()))
+                .twoFactorEnabled(Boolean.TRUE.equals(user.getTotpEnabled()))
                 .build();
     }
 

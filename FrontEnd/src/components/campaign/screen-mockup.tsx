@@ -4,6 +4,7 @@ import { RectangleHorizontal, RectangleVertical } from "lucide-react";
 
 import { cx } from "@/lib/cx";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
+import { useSignedMediaSrc } from "@/lib/use-signed-media";
 
 export type ScreenOrientation = "landscape" | "portrait";
 
@@ -39,6 +40,9 @@ export function ScreenMockup({
 }: ScreenMockupProps) {
   const reduce = useReducedMotion();
   const portrait = orientation === "portrait";
+  // Round 2: an expired signed URL is refreshed once; a second failure falls back to the mock-up.
+  const media = useSignedMediaSrc(creative?.url);
+  const shown = creative && media.src && !media.failed ? { ...creative, url: media.src } : null;
 
   return (
     <figure
@@ -69,24 +73,26 @@ export function ScreenMockup({
             portrait ? "aspect-[9/16]" : "aspect-video",
           )}
         >
-          {creative?.kind === "image" ? (
+          {shown?.kind === "image" ? (
             // Same-origin /uploads media (or a blob: URL): shown as-is, never optimised.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={creative.url}
-              alt={`Aperçu du visuel « ${creative.name} »`}
+              src={shown.url}
+              alt={`Aperçu du visuel « ${shown.name} »`}
               className="absolute inset-0 size-full object-cover"
+              onError={media.onError}
             />
-          ) : creative?.kind === "video" ? (
+          ) : shown?.kind === "video" ? (
             <video
-              src={creative.url}
+              src={shown.url}
               className="absolute inset-0 size-full object-cover"
               muted
               loop
               playsInline
               autoPlay={!reduce}
               controls={reduce}
-              aria-label={`Aperçu de la vidéo « ${creative.name} »`}
+              aria-label={`Aperçu de la vidéo « ${shown.name} »`}
+              onError={media.onError}
             />
           ) : (
             <div
@@ -151,7 +157,7 @@ export function ScreenMockup({
       </div>
 
       <figcaption className="mt-3 text-center text-[0.75rem] leading-snug text-muted">
-        {creative
+        {shown
           ? "Rendu indicatif : le cadrage final dépend du Porteur."
           : "Maquette générée à partir du nom de la campagne."}
       </figcaption>

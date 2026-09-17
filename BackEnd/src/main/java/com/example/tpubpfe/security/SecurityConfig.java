@@ -29,6 +29,9 @@ public class SecurityConfig {
             "/api/auth/**",
             "/api/diffusion/next",
             "/api/diffusion/interactions",
+            // Device routes stay permitAll here: DeviceKeyInterceptor authenticates them (X-TPUB-Device-Key).
+            "/api/diffusion/heartbeat",
+            // Media access is controlled by SignedMediaFilter (exp/sig), not by a bearer token.
             "/uploads/**",
             "/actuator/health",
             "/v3/api-docs/**",

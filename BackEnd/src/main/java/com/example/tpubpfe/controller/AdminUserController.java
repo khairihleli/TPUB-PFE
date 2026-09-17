@@ -114,6 +114,20 @@ public class AdminUserController {
         return ResponseEntity.ok(adminUserService.revokeSessions(id));
     }
 
+    @Operation(summary = "Require a new password at next login (closes the user's sessions)")
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    @PostMapping("/users/{id}/require-password-change")
+    public ResponseEntity<AdminUserResponse> requirePasswordChange(@PathVariable Long id) {
+        return ResponseEntity.ok(adminUserService.requirePasswordChange(id));
+    }
+
+    @Operation(summary = "Reset the user's two-factor authentication (closes the user's sessions)")
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    @PostMapping("/users/{id}/2fa/reset")
+    public ResponseEntity<AdminUserResponse> resetTwoFactor(@PathVariable Long id) {
+        return ResponseEntity.ok(adminUserService.resetTwoFactor(id));
+    }
+
     @Operation(summary = "Validate, reject or suspend an advertiser account")
     @PreAuthorize("hasRole('ADMINISTRATEUR')")
     @PostMapping("/clients/{clientId}/validation")

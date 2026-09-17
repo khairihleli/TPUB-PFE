@@ -2,7 +2,13 @@
  * Browser fetch wrapper. Only ever calls same-origin `/api/...` (the Next bridge adds the
  * Bearer token from the httpOnly cookie). Throws French `ApiError` / `ApiTransportError`.
  */
-import { ApiError, ApiTransportError, isRetryableTransportError } from "@/lib/api/errors";
+import {
+  ApiError,
+  ApiTransportError,
+  isRetryableTransportError,
+  NON_SESSION_401_CODES,
+  parseRetryAfter,
+} from "@/lib/api/errors";
 import { translateFieldErrors, translateMessage } from "@/lib/api/messages";
 
 export const SESSION_EXPIRED_EVENT = "tpub:session-expired";
@@ -25,6 +31,29 @@ export interface ApiFetchOptions {
    * Default: true for GET, always false for POST/PUT/PATCH/DELETE (never replays a mutation).
    */
   retry?: boolean;
+  /**
+   * Extra request headers (round 2: `x-tpub-device-key` of the player). `Accept` and
+   * `Content-Type` stay managed by the client.
+   */
+  headers?: Record<string, string>;
+}
+
+/** Page shown while the account must set a new password (round 2 §3.2). */
+export const PASSWORD_CHANGE_PATH = "/mot-de-passe-requis";
+
+let passwordChangeRedirected = false;
+
+/** Test helper: allows the forced password change redirect to happen again. */
+export function resetPasswordChangeGuard(): void {
+  passwordChangeRedirected = false;
+}
+
+/** 403 PASSWORD_CHANGE_REQUIRED → the forced password change screen, once per page. */
+function redirectToPasswordChange(): void {
+  if (passwordChangeRedirected || typeof window === "undefined") return;
+  if (window.location.pathname === PASSWORD_CHANGE_PATH) return;
+  passwordChangeRedirected = true;
+  window.location.assign(PASSWORD_CHANGE_PATH);
 }
 
 /** Backoff before the single automatic GET retry. */
@@ -136,7 +165,7 @@ async function send(
   }
   const combined = combineSignals([signal, timeoutSignal].filter((s): s is AbortSignal => !!s));
 
-  const headers: Record<string, string> = { Accept: accept };
+  const headers: Record<string, string> = { ...options.headers, Accept: accept };
   if (body !== undefined && !multipart) headers["Content-Type"] = "application/json";
 
   try {
@@ -159,7 +188,6 @@ async function send(
 
 /** Builds the French ApiError of a non-2xx answer (and signals an expired session). */
 function apiErrorOf(res: Response, url: string, data: unknown): ApiError {
-  if (res.status === 401 && !NO_EXPIRY_EVENT.test(url)) dispatchSessionExpired();
   const b = (data && typeof data === "object" ? data : {}) as {
     message?: unknown;
     errors?: unknown;
@@ -167,12 +195,16 @@ function apiErrorOf(res: Response, url: string, data: unknown): ApiError {
   };
   const rawMessage = typeof b.message === "string" ? b.message : null;
   const code = typeof b.code === "string" && b.code ? b.code : null;
+  const ownCode = code !== null && (NON_SESSION_401_CODES as readonly string[]).includes(code);
+  if (res.status === 401 && !NO_EXPIRY_EVENT.test(url) && !ownCode) dispatchSessionExpired();
+  if (res.status === 403 && code === "PASSWORD_CHANGE_REQUIRED") redirectToPasswordChange();
   return new ApiError(res.status, translateMessage(rawMessage, res.status, code), {
     fieldErrors: translateFieldErrors(b.errors),
     rawFieldErrors: rawStringRecord(b.errors),
     rawMessage,
     code,
     body: data,
+    retryAfterSeconds: parseRetryAfter(res.headers.get("retry-after")),
   });
 }
 

@@ -26,6 +26,11 @@ public class MeResponse {
     private Boolean isActive;
     private Instant lastLoginAt;
     private Instant createdAt;
+    /** Round 2 (L2). */
+    private boolean twoFactorEnabled;
+    /** TOTP mandatory for this role ({@code tpub.security.totp.required-roles}). */
+    private boolean twoFactorRequired;
+    private boolean mustChangePassword;
     /** Null for staff accounts. */
     private ClientInfo client;
 

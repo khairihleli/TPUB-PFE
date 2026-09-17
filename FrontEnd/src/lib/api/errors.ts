@@ -15,6 +15,8 @@ export class ApiError extends Error {
   /** Untranslated `errors` (e.g. BATCH_CONFLICT supportId → code): for branching only. */
   readonly rawFieldErrors: Record<string, string>;
   readonly body: unknown;
+  /** `Retry-After` header in seconds (429 DEVICE_RATE_LIMITED…), null when absent or invalid. */
+  readonly retryAfterSeconds: number | null;
 
   constructor(
     status: number,
@@ -25,6 +27,7 @@ export class ApiError extends Error {
       body?: unknown;
       code?: string | null;
       rawFieldErrors?: Record<string, string>;
+      retryAfterSeconds?: number | null;
     } = {},
   ) {
     super(message);
@@ -34,7 +37,14 @@ export class ApiError extends Error {
     this.fieldErrors = options.fieldErrors ?? {};
     this.rawMessage = options.rawMessage ?? null;
     this.body = options.body;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
   }
+}
+
+/** `Retry-After: <seconds>` → seconds (0..3600). HTTP dates and garbage → null. */
+export function parseRetryAfter(value: string | null | undefined): number | null {
+  if (value === null || value === undefined || !/^\s*\d{1,6}\s*$/.test(value)) return null;
+  return Math.min(Number(value.trim()), 3600);
 }
 
 export type TransportErrorKind = "network" | "timeout" | "aborted" | "unexpected-response";
@@ -91,6 +101,27 @@ export function isNoAiReportError(e: unknown): boolean {
     (e.rawMessage ?? "").startsWith("No AI report found")
   );
 }
+
+/** Round 2: the second login step can no longer be completed (back to the login form). */
+export function isChallengeExpiredError(e: unknown): boolean {
+  return hasErrorCode(e, "CHALLENGE_EXPIRED");
+}
+
+/** Round 2 player codes: the screen is not (or no longer) paired. */
+export const DEVICE_KEY_ERROR_CODES = ["DEVICE_KEY_REQUIRED", "DEVICE_KEY_INVALID"] as const;
+
+export function isDeviceKeyError(e: unknown): boolean {
+  return hasErrorCode(e, ...DEVICE_KEY_ERROR_CODES);
+}
+
+/** Codes of a 401 that is NOT an expired session (credentials, 2FA step, player key). */
+export const NON_SESSION_401_CODES = [
+  "BAD_CREDENTIALS",
+  "ACCOUNT_DISABLED",
+  "TOTP_CODE_INVALID",
+  "CHALLENGE_EXPIRED",
+  ...DEVICE_KEY_ERROR_CODES,
+] as const;
 
 /** Codes meaning « this Porteur is not free on that window » (single or batch reservation). */
 export const RESERVATION_CONFLICT_CODES = [
@@ -214,12 +245,18 @@ export function presentError(e: unknown): PresentedError {
   // A login refusal is a 401 too, but not an expired session: keep its own message. (A user
   // deactivated mid-session reaches the UI as the bridge SESSION_EXPIRED body instead.)
   const loginRefused = hasErrorCode(e, "BAD_CREDENTIALS", "ACCOUNT_DISABLED");
-  if (category === "unauthorized" && !loginRefused) message = SESSION_EXPIRED_MESSAGE;
+  // Round 2: a wrong 2FA code, an expired challenge or a player key refusal is not a session end.
+  const ownMessage = loginRefused || hasErrorCode(e, ...NON_SESSION_401_CODES);
+  if (category === "unauthorized" && !ownMessage) message = SESSION_EXPIRED_MESSAGE;
   if (category === "slow") message = SLOW_MESSAGE;
   if (category === "offline") message = OFFLINE_MESSAGE;
   return {
     category,
-    title: loginRefused ? "Connexion impossible" : TITLES[category],
+    title: loginRefused
+      ? "Connexion impossible"
+      : ownMessage && category === "unauthorized"
+        ? "Vérification refusée"
+        : TITLES[category],
     message,
     fieldErrors: e instanceof ApiError ? e.fieldErrors : {},
     retryable: category !== "forbidden" && category !== "not-found" && category !== "invalid",

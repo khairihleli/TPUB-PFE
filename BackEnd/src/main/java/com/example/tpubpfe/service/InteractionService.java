@@ -29,7 +29,18 @@ public class InteractionService {
 
     @Transactional
     public void record(InteractionRequest request) {
+        record(request, null);
+    }
+
+    /**
+     * Round 2: {@code supportId} is the authenticated device's support; a log of another support is reported as
+     * 404 {@code DIFFUSION_LOG_NOT_FOUND} (no information leak). Null skips the check (internal callers).
+     */
+    @Transactional
+    public void record(InteractionRequest request, Long supportId) {
         DiffusionLog log = diffusionLogRepository.findById(request.getDiffusionLogId())
+                .filter(found -> supportId == null
+                        || (found.getSupport() != null && supportId.equals(found.getSupport().getId())))
                 .orElseThrow(NetworkErrors::diffusionLogNotFound);
         if (log.getContentType() != DiffusionContentType.PUBLICITE) {
             throw NetworkErrors.interactionNotAllowed();
