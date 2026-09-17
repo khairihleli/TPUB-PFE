@@ -29,4 +29,12 @@ public record MediaInput(
     public boolean isImage() {
         return fileType == MediaFileType.IMAGE || fileType == MediaFileType.BANNER;
     }
+
+    public MediaInput withDimensions(Integer width, Integer height) {
+        return new MediaInput(id, fileName, fileType, mimeType, sizeBytes, durationSeconds, width, height, checksum, path);
+    }
+
+    public MediaInput withDuration(Integer seconds) {
+        return new MediaInput(id, fileName, fileType, mimeType, sizeBytes, seconds, widthPx, heightPx, checksum, path);
+    }
 }

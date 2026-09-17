@@ -10,12 +10,25 @@ import com.example.tpubpfe.model.AiModerationSeverity;
 import com.example.tpubpfe.model.AiRuleType;
 import com.example.tpubpfe.model.AiSector;
 import com.example.tpubpfe.model.MediaFileType;
+import com.example.tpubpfe.model.AiProviderType;
 import com.example.tpubpfe.model.OcrEngine;
+import com.example.tpubpfe.service.ai.learning.CalibrationSnapshot;
+import com.example.tpubpfe.service.ai.media.ImageAnalyzer;
+import com.example.tpubpfe.service.ai.ocr.OcrBox;
+import com.example.tpubpfe.service.ai.provider.VisionModerationProvider;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -173,8 +186,9 @@ class ContentAnalysisPipelineTest {
 
         var outcome = pipeline.analyze(input("Collection", GOOD_OBJECTIVE, "500", List.of(small, smallToo, longVideo), List.of()));
 
-        // 85 - résolution 15 - format 5 - léger 10 - vidéo longue 10 = 45
-        assertThat(outcome.qualityScore()).isEqualTo(45);
+        // 85 - résolution 15 - carré 3 - format inadapté 5 - léger 10 - vidéo longue 10 = 42
+        assertThat(outcome.qualityScore()).isEqualTo(42);
+        assertThat(outcome.issueLabels()).contains(ImageAnalyzer.SQUARE_FORMAT, ImageAnalyzer.BAD_FORMAT);
         assertThat(outcome.contentType()).isEqualTo(AiContentType.VIDEO);
         assertThat(outcome.recommendations()).contains("Fournissez un visuel d'au moins 1280×720 px");
         assertThat(outcome.mediaAnalyses()).hasSize(3);
@@ -235,21 +249,140 @@ class ContentAnalysisPipelineTest {
     }
 
     @Test
-    void openAiMergeKeepsTheMostSevereOpinion() {
+    void providerMergeKeepsTheMostSevereOpinion() {
         var local = pipeline.analyze(input("Collection", GOOD_OBJECTIVE, "500", List.of(goodImage(1, "a.jpg")), List.of()));
-        var merged = pipeline.mergeOpenAi(local, new AiAnalysisResult(AiCheckStatus.REVIEW_REQUIRED, 45, 90,
-                List.of("promesse ambiguë"), "Précisez les conditions de l'offre", "doute"));
+        var verdict = new VisionModerationProvider.ProviderVerdict(AiCheckStatus.REVIEW_REQUIRED, 45, 90,
+                List.of("promesse ambiguë"), "Précisez les conditions de l'offre", "doute", "gpt-4o-mini");
+        var merged = pipeline.mergeProvider(local, verdict, AiProviderType.OPENAI);
 
         assertThat(merged.status()).isEqualTo(AiCheckStatus.REVIEW_REQUIRED);
         assertThat(merged.riskScore()).isEqualTo(45);
         assertThat(merged.qualityScore()).isEqualTo(85);
         assertThat(merged.engine()).isEqualTo(AiEngine.LOCAL_OPENAI);
+        assertThat(merged.providerModel()).isEqualTo("gpt-4o-mini");
         assertThat(merged.issues()).anySatisfy(issue -> assertThat(issue.getSource()).isEqualTo(AiIssueSource.OPENAI));
         assertThat(merged.recommendations()).contains("Précisez les conditions de l'offre");
         assertThat(merged.recommendation()).isEqualTo(ContentAnalysisPipeline.SUMMARY_REVIEW);
 
-        var fallback = pipeline.withFallbackReason(local, "OpenAI indisponible");
+        var claude = pipeline.mergeProvider(local, new VisionModerationProvider.ProviderVerdict(AiCheckStatus.REJECTED, 20,
+                30, List.of("symbole choquant"), null, null, "claude-opus-5"), AiProviderType.ANTHROPIC);
+        assertThat(claude.status()).isEqualTo(AiCheckStatus.REJECTED);
+        assertThat(claude.riskScore()).isEqualTo(20);
+        assertThat(claude.qualityScore()).isEqualTo(30);
+        assertThat(claude.engine()).isEqualTo(AiEngine.LOCAL_ANTHROPIC);
+        assertThat(claude.reason()).startsWith("Analyse locale + Anthropic");
+        assertThat(claude.issues()).anySatisfy(issue -> assertThat(issue.getSource()).isEqualTo(AiIssueSource.ANTHROPIC));
+
+        var fallback = pipeline.withFallbackReason(local, "Anthropic indisponible : analyse locale appliquée");
         assertThat(fallback.engine()).isEqualTo(AiEngine.LOCAL);
-        assertThat(fallback.reason()).contains("OpenAI indisponible");
+        assertThat(fallback.providerModel()).isNull();
+        assertThat(fallback.reason()).endsWith("(Anthropic indisponible : analyse locale appliquée)");
+    }
+
+    @Test
+    void calibrationWeightsRulePointsAndMovesThresholds() {
+        var rules = List.of(keyword(1, "jeux", "casino", AiModerationSeverity.MEDIUM));
+        var media = List.of(goodImage(1, "a.jpg"));
+
+        var neutral = pipeline.analyze(input("Soirée", GOOD_OBJECTIVE + " Casino ouvert.", "500", media, rules));
+        assertThat(neutral.riskScore()).isEqualTo(35);
+        assertThat(neutral.status()).isEqualTo(AiCheckStatus.REVIEW_REQUIRED);
+
+        var lowered = new CalibrationSnapshot(4, 31, 70, Map.of(1L, 0.5));
+        var weighted = pipeline.analyze(new ContentAnalysisPipeline.AnalysisInput("Soirée", GOOD_OBJECTIVE + " Casino ouvert.",
+                new BigDecimal("500"), media, rules, List.of(), 9L, lowered));
+        // round(25 × 0.5) = 13 → 23 < 31
+        assertThat(weighted.riskScore()).isEqualTo(23);
+        assertThat(weighted.status()).isEqualTo(AiCheckStatus.APPROVED);
+
+        var strict = new CalibrationSnapshot(5, 21, 60, Map.of());
+        var reviewed = pipeline.analyze(new ContentAnalysisPipeline.AnalysisInput("Collection automne", GOOD_OBJECTIVE,
+                new BigDecimal("500"), media, List.of(keyword(2, "urgence", "tunis", AiModerationSeverity.LOW)), List.of(),
+                9L, strict));
+        assertThat(reviewed.riskScore()).isEqualTo(20);
+        assertThat(reviewed.status()).isEqualTo(AiCheckStatus.APPROVED);
+        assertThat(ContentAnalysisPipeline.status(false, false, 21, 80, strict)).isEqualTo(AiCheckStatus.REVIEW_REQUIRED);
+        assertThat(ContentAnalysisPipeline.status(false, false, 61, 80, strict)).isEqualTo(AiCheckStatus.REJECTED);
+        assertThat(ContentAnalysisPipeline.status(true, false, 0, 80, strict)).isEqualTo(AiCheckStatus.REJECTED);
+        assertThat(ContentAnalysisPipeline.status(false, true, 0, 80, strict)).isEqualTo(AiCheckStatus.REVIEW_REQUIRED);
+    }
+
+    @Test
+    void decodedImageIsMeasuredAndPixelIssuesAreReported(@TempDir Path dir) throws IOException {
+        BufferedImage flat = new BufferedImage(1920, 1080, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = flat.createGraphics();
+        g.setColor(new Color(20, 20, 20));
+        g.fillRect(0, 0, 1920, 1080);
+        g.dispose();
+        Path file = dir.resolve("flat.png");
+        ImageIO.write(flat, "png", file.toFile());
+        MediaInput media = new MediaInput(4L, "visuel-sombre.png", MediaFileType.IMAGE, "image/png", 300_000L, null,
+                null, null, null, file);
+
+        var outcome = pipeline.analyze(input("Collection", GOOD_OBJECTIVE, "500", List.of(media), List.of()));
+
+        var analysis = outcome.mediaAnalyses().get(0);
+        assertThat(analysis.getWidthPx()).isEqualTo(1920);
+        assertThat(analysis.getMetrics()).isNotNull();
+        assertThat(analysis.getMetrics().getAspectFit()).isEqualTo("16:9");
+        assertThat(analysis.getMetrics().getSharpness()).isZero();
+        assertThat(analysis.getOcrEngine()).isEqualTo(OcrEngine.SIMULE);
+        assertThat(analysis.getIssues()).contains(ImageAnalyzer.BLURRY, ImageAnalyzer.TOO_DARK, ImageAnalyzer.LOW_CONTRAST,
+                ImageAnalyzer.UNIFORM);
+        // 85 - flou 15 - sombre 10 - contraste 10 - uniforme 10 = 40
+        assertThat(outcome.qualityScore()).isEqualTo(40);
+        assertThat(outcome.recommendations()).contains("Fournissez un visuel net (évitez les agrandissements)");
+
+        Path broken = Files.writeString(dir.resolve("broken.jpg"), "not an image");
+        var failed = pipeline.analyze(input("Collection", GOOD_OBJECTIVE, "500", List.of(new MediaInput(5L, "broken.jpg",
+                MediaFileType.IMAGE, "image/jpeg", 300_000L, null, 1920, 1080, null, broken)), List.of()));
+        assertThat(failed.issueLabels()).contains(ImageAnalyzer.DECODE_FAILED);
+        assertThat(failed.qualityScore()).isEqualTo(85);
+        assertThat(failed.mediaAnalyses().get(0).getMetrics()).isNull();
+    }
+
+    @Test
+    void textCoverageAboveHalfAddsRiskOnce(@TempDir Path dir) throws IOException {
+        BufferedImage busy = new BufferedImage(1920, 1080, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 1080; y++) {
+            for (int x = 0; x < 1920; x++) {
+                busy.setRGB(x, y, ((x / 3 + y / 5) % 2 == 0) ? 0xFFFFFF : ((x * 7 + y * 13) & 0xFF) << 8);
+            }
+        }
+        Path a = dir.resolve("a.png");
+        Path b = dir.resolve("b.png");
+        ImageIO.write(busy, "png", a.toFile());
+        ImageIO.write(busy, "png", b.toFile());
+        OcrService boxes = new OcrService() {
+            @Override
+            public OcrResult extract(Path file, String name) {
+                return OcrResult.none();
+            }
+
+            @Override
+            public OcrResult extractImage(BufferedImage image, Path file, String name) {
+                return new OcrResult("SOLDES", OcrEngine.TESSERACT, List.of(new OcrBox(0, 0, 1920, 600, 90f)), 90d);
+            }
+        };
+        var outcome = new ContentAnalysisPipeline(boxes).analyze(input("Collection", GOOD_OBJECTIVE, "500", List.of(
+                new MediaInput(1L, "a.png", MediaFileType.IMAGE, "image/png", 900_000L, null, null, null, null, a),
+                new MediaInput(2L, "b.png", MediaFileType.BANNER, "image/png", 900_000L, null, null, null, null, b)), List.of()));
+
+        assertThat(outcome.mediaAnalyses().get(0).getMetrics().getTextCoverage()).isEqualTo(0.556);
+        assertThat(outcome.mediaAnalyses().get(0).getOcrConfidence()).isEqualTo(90d);
+        assertThat(outcome.issueLabels()).contains(ImageAnalyzer.TOO_MUCH_TEXT, ImageAnalyzer.TEXT_OVERLOAD_RISK);
+        assertThat(outcome.riskScore()).isEqualTo(15);
+        assertThat(outcome.extractedText()).isEqualTo("SOLDES");
+        assertThat(outcome.ocrEngine()).isEqualTo(OcrEngine.TESSERACT);
+    }
+
+    @Test
+    void webmVideoIsReportedAsUnsupported() {
+        MediaInput webm = new MediaInput(8L, "clip.webm", MediaFileType.VIDEO, "video/webm", 3_000_000L, 20, null, null,
+                null, Path.of("clip.webm"));
+        var outcome = pipeline.analyze(input("Collection", GOOD_OBJECTIVE, "500", List.of(webm), List.of()));
+        assertThat(outcome.issueLabels()).contains(ContentAnalysisPipeline.WEBM_UNSUPPORTED);
+        assertThat(outcome.mediaAnalyses().get(0).getVideoSupported()).isFalse();
+        assertThat(outcome.qualityScore()).isEqualTo(85);
     }
 }

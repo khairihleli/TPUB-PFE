@@ -4,5 +4,7 @@ package com.example.tpubpfe.model;
 public enum AiEngine {
     LOCAL,
     OPENAI,
-    LOCAL_OPENAI
+    LOCAL_OPENAI,
+    ANTHROPIC,
+    LOCAL_ANTHROPIC
 }

@@ -1,16 +1,21 @@
 package com.example.tpubpfe.service;
 
+import com.example.tpubpfe.config.AiAnalysisProperties;
 import com.example.tpubpfe.dto.AiIssuesResponse;
+import com.example.tpubpfe.dto.AiMediaAnalysisResponse;
 import com.example.tpubpfe.dto.AiReportResponse;
 import com.example.tpubpfe.exception.ApiException;
 import com.example.tpubpfe.model.AiAdminDecision;
 import com.example.tpubpfe.model.AiCheckStatus;
 import com.example.tpubpfe.model.AiContentCheck;
+import com.example.tpubpfe.model.AiContentType;
 import com.example.tpubpfe.model.AiDecisionLog;
 import com.example.tpubpfe.model.AiDecisionType;
+import com.example.tpubpfe.model.AiMediaAnalysis;
 import com.example.tpubpfe.model.Campaign;
 import com.example.tpubpfe.model.CampaignStatus;
 import com.example.tpubpfe.model.MediaFile;
+import com.example.tpubpfe.model.MediaFileType;
 import com.example.tpubpfe.model.RoleCode;
 import com.example.tpubpfe.repository.AiContentCheckRepository;
 import com.example.tpubpfe.repository.AiDecisionLogRepository;
@@ -18,10 +23,13 @@ import com.example.tpubpfe.repository.AiModerationRuleRepository;
 import com.example.tpubpfe.repository.CampaignRepository;
 import com.example.tpubpfe.repository.MediaFileRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
-import com.example.tpubpfe.service.ai.AiAnalysisResult;
 import com.example.tpubpfe.service.ai.ContentAnalysisPipeline;
 import com.example.tpubpfe.service.ai.MediaInput;
-import com.example.tpubpfe.service.ai.OpenAiAnalysisClient;
+import com.example.tpubpfe.service.ai.learning.AiCalibrationService;
+import com.example.tpubpfe.service.ai.learning.CalibrationSnapshot;
+import com.example.tpubpfe.service.ai.media.JpegEncoder;
+import com.example.tpubpfe.service.ai.provider.VisionModerationProvider;
+import com.example.tpubpfe.service.ai.provider.VisionProviderRegistry;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
+import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -41,9 +50,12 @@ import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -52,6 +64,7 @@ import java.util.stream.Collectors;
 public class AiVerificationService {
 
     static final String PREVIEW_PREFIX = "Pré-analyse : ";
+    static final int PROVIDER_IMAGE_MAX_SIDE = 1024;
     private static final Set<CampaignStatus> ADMIN_RERUN = EnumSet.of(
             CampaignStatus.PENDING_AI_CHECK, CampaignStatus.APPROVED_BY_AI, CampaignStatus.REVIEW_REQUIRED);
 
@@ -62,7 +75,9 @@ public class AiVerificationService {
     private final MediaFileRepository mediaFileRepository;
     private final CampaignAccessGuard accessGuard;
     private final ContentAnalysisPipeline pipeline;
-    private final OpenAiAnalysisClient openAiAnalysisClient;
+    private final VisionProviderRegistry providerRegistry;
+    private final AiCalibrationService calibrationService;
+    private final AiAnalysisProperties analysisProperties;
     private final FileStorageService fileStorageService;
     private final AuditService auditService;
     private final Clock clock;
@@ -103,28 +118,35 @@ public class AiVerificationService {
     }
 
     /**
-     * Runs the pipeline, stores the check and the AI decision log. When {@code preview} is false the result is
-     * applied to the campaign (status + aiStatus).
+     * Runs the pipeline with the active calibration, merges the optional vision provider, stores the check and the
+     * AI decision log. When {@code preview} is false the result is applied to the campaign (status + aiStatus).
      */
     @Transactional
     public AiContentCheck runCheck(Campaign campaign, boolean preview) {
         List<MediaFile> mediaFiles = mediaFileRepository.findByCampaignId(campaign.getId()).stream()
-                .sorted(Comparator.comparing(MediaFile::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing((MediaFile m) -> m.getSortOrder() == null ? 0 : m.getSortOrder())
+                        .thenComparing(MediaFile::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
         List<MediaInput> media = mediaFiles.stream().map(this::toMediaInput).toList();
+        CalibrationSnapshot calibration = calibrationService.activeSnapshot();
 
         ContentAnalysisPipeline.AnalysisInput input = new ContentAnalysisPipeline.AnalysisInput(
                 campaign.getName(), campaign.getObjective(), campaign.getBudget(), media,
-                aiModerationRuleRepository.findByIsActiveTrue(), findDuplicates(campaign, mediaFiles));
+                aiModerationRuleRepository.findByIsActiveTrue(), findDuplicates(campaign, mediaFiles),
+                campaign.getId(), calibration);
         ContentAnalysisPipeline.AnalysisOutcome outcome = pipeline.analyze(input);
+        writeBackMetadata(mediaFiles, outcome.mediaAnalyses());
 
-        if (openAiAnalysisClient.isConfigured()) {
+        Optional<VisionModerationProvider> provider = providerRegistry.active();
+        if (provider.isPresent()) {
+            String providerName = ContentAnalysisPipeline.providerName(provider.get().type());
             try {
-                AiAnalysisResult openAi = openAiAnalysisClient.analyze(campaign, outcome);
-                outcome = pipeline.mergeOpenAi(outcome, openAi);
+                VisionModerationProvider.ProviderVerdict verdict = provider.get()
+                        .analyze(providerRequest(campaign, outcome, mediaFiles));
+                outcome = pipeline.mergeProvider(outcome, verdict, provider.get().type());
             } catch (RuntimeException ex) {
-                log.warn("OpenAI indisponible pour la campagne {} : {}", campaign.getId(), ex.getMessage());
-                outcome = pipeline.withFallbackReason(outcome, "OpenAI indisponible — analyse locale appliquée");
+                log.warn("{} indisponible pour la campagne {} : {}", providerName, campaign.getId(), ex.getMessage());
+                outcome = pipeline.withFallbackReason(outcome, providerName + " indisponible : analyse locale appliquée");
             }
         }
 
@@ -152,6 +174,8 @@ public class AiVerificationService {
                 .mediaAnalyses(new ArrayList<>(outcome.mediaAnalyses()))
                 .matchedRules(new ArrayList<>(outcome.matchedRules()))
                 .engine(outcome.engine())
+                .calibrationVersion(calibration.version())
+                .providerModel(truncate(outcome.providerModel(), 100))
                 .isPreview(preview)
                 .adminDecision(!preview && outcome.status() != AiCheckStatus.REJECTED ? AiAdminDecision.PENDING : null)
                 .checkedAt(Instant.now(clock))
@@ -219,8 +243,12 @@ public class AiVerificationService {
                 .extractedText(check.getExtractedText())
                 .ocrEngine(check.getOcrEngine() != null ? check.getOcrEngine().name() : "AUCUN")
                 .engine(check.getEngine() != null ? check.getEngine().name() : "LOCAL")
-                .mediaAnalyses(check.getMediaAnalyses() == null ? List.of() : check.getMediaAnalyses())
+                .mediaAnalyses(check.getMediaAnalyses() == null ? List.of() : check.getMediaAnalyses().stream()
+                        .map(analysis -> AiMediaAnalysisResponse.from(analysis, fileStorageService))
+                        .toList())
                 .matchedRules(check.getMatchedRules() == null ? List.of() : check.getMatchedRules())
+                .providerModel(check.getProviderModel())
+                .calibrationVersion(check.getCalibrationVersion())
                 .preview(Boolean.TRUE.equals(check.getIsPreview()))
                 .adminDecision(check.getAdminDecision() != null ? check.getAdminDecision().name() : null)
                 .checkedAt(check.getCheckedAt())
@@ -229,10 +257,10 @@ public class AiVerificationService {
 
     MediaInput toMediaInput(MediaFile media) {
         Path path = resolveQuietly(media.getFilePath());
-        Integer width = null;
-        Integer height = null;
-        boolean image = media.getFileType() != null && media.getFileType() != com.example.tpubpfe.model.MediaFileType.VIDEO;
-        if (image && path != null) {
+        Integer width = media.getWidthPx();
+        Integer height = media.getHeightPx();
+        boolean image = media.getFileType() != null && media.getFileType() != MediaFileType.VIDEO;
+        if (image && path != null && (width == null || height == null)) {
             int[] dimensions = readDimensions(path);
             if (dimensions != null) {
                 width = dimensions[0];
@@ -243,6 +271,103 @@ public class AiVerificationService {
                 media.getFileSizeBytes(),
                 media.getDurationSeconds() != null ? media.getDurationSeconds().intValue() : null,
                 width, height, media.getChecksum(), path);
+    }
+
+    /**
+     * Stores container / decoded values in {@code media_files} where the column is still null (§2.3).
+     */
+    void writeBackMetadata(List<MediaFile> mediaFiles, List<AiMediaAnalysis> analyses) {
+        Map<Long, AiMediaAnalysis> byId = analyses.stream()
+                .filter(a -> a.getMediaId() != null)
+                .collect(Collectors.toMap(AiMediaAnalysis::getMediaId, Function.identity(), (a, b) -> a));
+        for (MediaFile media : mediaFiles) {
+            AiMediaAnalysis analysis = byId.get(media.getId());
+            if (analysis == null) {
+                continue;
+            }
+            boolean changed = false;
+            if (media.getDurationSeconds() == null && analysis.getContainerDurationSeconds() != null
+                    && analysis.getContainerDurationSeconds() <= Short.MAX_VALUE) {
+                media.setDurationSeconds(analysis.getContainerDurationSeconds().shortValue());
+                changed = true;
+            }
+            if (media.getWidthPx() == null && analysis.getWidthPx() != null) {
+                media.setWidthPx(analysis.getWidthPx());
+                changed = true;
+            }
+            if (media.getHeightPx() == null && analysis.getHeightPx() != null) {
+                media.setHeightPx(analysis.getHeightPx());
+                changed = true;
+            }
+            if (changed) {
+                mediaFileRepository.save(media);
+            }
+        }
+    }
+
+    /** Campaign text, OCR, media summaries and images: IMAGE/BANNER first, then video middle frames (§2.5). */
+    VisionModerationProvider.ProviderRequest providerRequest(Campaign campaign, ContentAnalysisPipeline.AnalysisOutcome outcome,
+                                                             List<MediaFile> mediaFiles) {
+        Map<Long, AiMediaAnalysis> byId = outcome.mediaAnalyses().stream()
+                .filter(a -> a.getMediaId() != null)
+                .collect(Collectors.toMap(AiMediaAnalysis::getMediaId, Function.identity(), (a, b) -> a));
+        int maxImages = Math.max(0, analysisProperties.getProvider().getMaxImages());
+        List<VisionModerationProvider.ProviderImage> images = new ArrayList<>();
+        for (MediaFile media : mediaFiles) {
+            if (images.size() >= maxImages) {
+                break;
+            }
+            if (media.getFileType() != MediaFileType.VIDEO) {
+                providerImage(resolveQuietly(media.getFilePath())).ifPresent(images::add);
+            }
+        }
+        for (MediaFile media : mediaFiles) {
+            if (images.size() >= maxImages) {
+                break;
+            }
+            AiMediaAnalysis analysis = byId.get(media.getId());
+            if (media.getFileType() == MediaFileType.VIDEO && analysis != null && analysis.getThumbnailPath() != null) {
+                providerImage(resolveQuietly(analysis.getThumbnailPath())).ifPresent(images::add);
+            }
+        }
+        List<String> summaries = outcome.mediaAnalyses().stream().map(AiVerificationService::mediaSummary).toList();
+        return new VisionModerationProvider.ProviderRequest(campaign.getId(), campaign.getName(), campaign.getObjective(),
+                campaign.getBudget(), campaign.getStartDate(), campaign.getEndDate(), outcome.extractedText(), summaries,
+                images);
+    }
+
+    static String mediaSummary(AiMediaAnalysis m) {
+        StringBuilder text = new StringBuilder(m.getFileName() == null ? "média" : m.getFileName())
+                .append(" (").append(m.getContentType() == AiContentType.VIDEO ? "vidéo" : "image");
+        if (m.getWidthPx() != null && m.getHeightPx() != null) {
+            text.append(", ").append(m.getWidthPx()).append("×").append(m.getHeightPx()).append(" px");
+        }
+        Integer duration = m.getContainerDurationSeconds() != null ? m.getContainerDurationSeconds() : m.getDurationSeconds();
+        if (duration != null) {
+            text.append(", ").append(duration).append(" s");
+        }
+        if (m.getMetrics() != null) {
+            text.append(String.format(Locale.ROOT, ", netteté %.0f, luminosité %.0f, contraste %.0f, texte %.0f %%",
+                    m.getMetrics().getSharpness(), m.getMetrics().getBrightness(), m.getMetrics().getContrast(),
+                    m.getMetrics().getTextCoverage() * 100));
+        }
+        return text.append(")").toString();
+    }
+
+    private static Optional<VisionModerationProvider.ProviderImage> providerImage(Path path) {
+        if (path == null) {
+            return Optional.empty();
+        }
+        try {
+            BufferedImage image = ImageIO.read(path.toFile());
+            if (image == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new VisionModerationProvider.ProviderImage("image/jpeg",
+                    JpegEncoder.encode(JpegEncoder.fitLongestSide(image, PROVIDER_IMAGE_MAX_SIDE))));
+        } catch (Exception ex) {
+            return Optional.empty();
+        }
     }
 
     /**
@@ -307,10 +432,14 @@ public class AiVerificationService {
         }
     }
 
+    private static String truncate(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
+    }
+
     private static Map<String, Object> details(Object... keyValues) {
         Map<String, Object> map = new LinkedHashMap<>();
-        for (int i = 0; i + 1 < keyValues.length; i += 2) {
-            map.put(String.valueOf(keyValues[i]), keyValues[i + 1]);
+        for (int i = 0; i + 1 < keyValues.length; i++) {
+            map.put(String.valueOf(keyValues[i]), keyValues[++i]);
         }
         return map;
     }

@@ -21,6 +21,11 @@ tpub:
     openai-enabled: false
     ocr:
       mode: simulated
+  analysis:
+    ocr:
+      mode: simulated
+    provider:
+      type: local
   # Lane B: keep test uploads out of the source tree
   media:
     upload-dir: target/test-uploads

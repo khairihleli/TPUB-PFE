@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { maxChars, REQUIRED } from "@/components/admin/form-utils";
 import { hasErrorCode } from "@/lib/api/errors";
+import type { AiCalibrationResponse } from "@/lib/api/types-ia";
 import {
   AI_SECTORS,
   type AiRuleRequest,
@@ -211,6 +212,39 @@ export function filterRules(rules: readonly AiRuleResponse[], f: RuleFilters): A
 export function rulesSummary(rules: readonly Pick<AiRuleResponse, "isActive">[]): string {
   const active = rules.filter((r) => r.isActive).length;
   return `${active} règle${active > 1 ? "s" : ""} active${active > 1 ? "s" : ""} sur ${rules.length}`;
+}
+
+// ---------------------------------------------------------------------------
+// Learnt weights (docs/round2-contract.md §2.6)
+// ---------------------------------------------------------------------------
+const weightFormatter = new Intl.NumberFormat("fr-TN", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/** The active calibration of a version list, if any. */
+export function activeCalibration(
+  versions: readonly AiCalibrationResponse[] | undefined,
+): AiCalibrationResponse | undefined {
+  return versions?.find((v) => v.active);
+}
+
+/** Learnt weight of a rule: absent from the calibration = 1 (neutral). */
+export function learnedWeight(
+  calibration: Pick<AiCalibrationResponse, "ruleWeights"> | undefined | null,
+  ruleId: number,
+): number {
+  return calibration?.ruleWeights.find((w) => w.ruleId === ruleId)?.weight ?? 1;
+}
+
+/** 1 → "1,00", 0.85 → "0,85". */
+export function formatWeight(weight: number): string {
+  return weightFormatter.format(weight);
+}
+
+/** Effective risk points of a rule after its learnt weight (backend rounding). */
+export function weightedPoints(severity: Severity, weight: number): number {
+  return Math.round(SEVERITY_POINTS[severity] * weight);
 }
 
 /** Full PUT body from a stored rule (activation toggle). */

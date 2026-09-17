@@ -1,5 +1,6 @@
 package com.example.tpubpfe.service.ai;
 
+import com.example.tpubpfe.config.AiAnalysisProperties;
 import com.example.tpubpfe.model.AiCheckStatus;
 import com.example.tpubpfe.model.AiContentType;
 import com.example.tpubpfe.model.AiEngine;
@@ -9,12 +10,22 @@ import com.example.tpubpfe.model.AiMatchedRule;
 import com.example.tpubpfe.model.AiMediaAnalysis;
 import com.example.tpubpfe.model.AiModerationRule;
 import com.example.tpubpfe.model.AiModerationSeverity;
+import com.example.tpubpfe.model.AiProviderType;
 import com.example.tpubpfe.model.AiSector;
 import com.example.tpubpfe.model.OcrEngine;
+import com.example.tpubpfe.service.ai.learning.CalibrationSnapshot;
+import com.example.tpubpfe.service.ai.media.ImageAnalyzer;
+import com.example.tpubpfe.service.ai.media.MediaFinding;
+import com.example.tpubpfe.service.ai.media.ThumbnailStore;
+import com.example.tpubpfe.service.ai.media.VideoFrameExtractor;
+import com.example.tpubpfe.service.ai.provider.VisionModerationProvider.ProviderVerdict;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -24,8 +35,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Local content analysis (completion contract §2.2): rules, heuristics, media metadata, OCR, sector, status and
- * recommendations. Deterministic for a given input; persistence is handled by {@code AiVerificationService}.
+ * Local content analysis (completion contract §2.2, docs/round2-contract.md §2.2–2.6): rules weighted by the active
+ * calibration, text heuristics, OCR, image metrics, video frames, sector, status and recommendations. Deterministic
+ * for a given input; persistence is handled by {@code AiVerificationService}.
  */
 @Component
 public class ContentAnalysisPipeline {
@@ -37,8 +49,11 @@ public class ContentAnalysisPipeline {
     static final int BASE_RISK = 10;
     static final int BASE_QUALITY = 85;
     static final int OCR_TEXT_LIMIT = 200;
+    static final int DURATION_TOLERANCE_SECONDS = 2;
     static final String OCR_PREFIX = "texte dans l'image : ";
     static final String INCOHERENT_TEXT = "texte incohérent ou non professionnel";
+    public static final String WEBM_UNSUPPORTED = "analyse vidéo impossible (format WebM)";
+    public static final String DURATION_MISMATCH = "durée déclarée incohérente avec le fichier";
 
     /** A media file with the same checksum already used by another advertiser's campaign. */
     public record DuplicateHit(Long mediaId, Long otherCampaignId) {
@@ -50,8 +65,15 @@ public class ContentAnalysisPipeline {
             BigDecimal budget,
             List<MediaInput> media,
             List<AiModerationRule> rules,
-            List<DuplicateHit> duplicates
+            List<DuplicateHit> duplicates,
+            Long campaignId,
+            CalibrationSnapshot calibration
     ) {
+
+        public AnalysisInput(String name, String objective, BigDecimal budget, List<MediaInput> media,
+                             List<AiModerationRule> rules, List<DuplicateHit> duplicates) {
+            this(name, objective, budget, media, rules, duplicates, null, CalibrationSnapshot.DEFAULT);
+        }
     }
 
     public record AnalysisOutcome(
@@ -69,7 +91,8 @@ public class ContentAnalysisPipeline {
             AiContentType contentType,
             Long primaryMediaId,
             AiEngine engine,
-            String reason
+            String reason,
+            String providerModel
     ) {
 
         public List<String> issueLabels() {
@@ -81,60 +104,52 @@ public class ContentAnalysisPipeline {
     private final TextRuleEngine ruleEngine;
     private final MediaMetadataAnalyzer mediaAnalyzer;
     private final SectorClassifier sectorClassifier;
+    private final VideoFrameExtractor videoExtractor;
+    private final ThumbnailStore thumbnailStore;
+    private final int analysisMaxSide;
 
     @Autowired
-    public ContentAnalysisPipeline(OcrService ocrService) {
-        this(ocrService, new TextRuleEngine(), new MediaMetadataAnalyzer(), new SectorClassifier());
+    public ContentAnalysisPipeline(OcrService ocrService, AiAnalysisProperties properties, ThumbnailStore thumbnailStore) {
+        this(ocrService, new VideoFrameExtractor(properties.getVideo().getTimeoutSeconds()), thumbnailStore,
+                properties.getImage().getAnalysisMaxSide());
     }
 
-    ContentAnalysisPipeline(OcrService ocrService, TextRuleEngine ruleEngine, MediaMetadataAnalyzer mediaAnalyzer,
-                            SectorClassifier sectorClassifier) {
+    /** Defaults without thumbnails (tests). */
+    public ContentAnalysisPipeline(OcrService ocrService) {
+        this(ocrService, new VideoFrameExtractor(20), null, 512);
+    }
+
+    public ContentAnalysisPipeline(OcrService ocrService, VideoFrameExtractor videoExtractor, ThumbnailStore thumbnailStore,
+                                   int analysisMaxSide) {
         this.ocrService = ocrService;
-        this.ruleEngine = ruleEngine;
-        this.mediaAnalyzer = mediaAnalyzer;
-        this.sectorClassifier = sectorClassifier;
+        this.ruleEngine = new TextRuleEngine();
+        this.mediaAnalyzer = new MediaMetadataAnalyzer();
+        this.sectorClassifier = new SectorClassifier();
+        this.videoExtractor = videoExtractor;
+        this.thumbnailStore = thumbnailStore;
+        this.analysisMaxSide = analysisMaxSide;
     }
 
     public AnalysisOutcome analyze(AnalysisInput input) {
         Accumulator acc = new Accumulator();
+        CalibrationSnapshot calibration = input.calibration() == null ? CalibrationSnapshot.DEFAULT : input.calibration();
         String name = input.name() == null ? "" : input.name();
         String objective = input.objective() == null ? "" : input.objective();
         String rawText = objective.isBlank() ? name : name + "\n" + objective;
         String normalizedText = TextNormalizer.normalize(rawText);
         List<MediaInput> media = input.media() == null ? List.of() : input.media();
 
-        // OCR + media metadata
+        // OCR, image metrics, video frames, media metadata
         List<AiMediaAnalysis> analyses = new ArrayList<>();
-        List<String> ocrTexts = new ArrayList<>();
-        OcrEngine ocrEngine = OcrEngine.AUCUN;
+        Set<String> ocrTexts = new LinkedHashSet<>();
+        OcrEngine[] ocrEngine = {OcrEngine.AUCUN};
         for (MediaInput item : media) {
-            AiMediaAnalysis analysis = AiMediaAnalysis.builder()
-                    .mediaId(item.id())
-                    .fileName(item.fileName())
-                    .contentType(item.isVideo() ? AiContentType.VIDEO : AiContentType.IMAGE)
-                    .widthPx(item.widthPx())
-                    .heightPx(item.heightPx())
-                    .durationSeconds(item.durationSeconds())
-                    .issues(new ArrayList<>())
-                    .build();
-            if (item.isImage()) {
-                OcrService.OcrResult ocr = safeOcr(item);
-                if (ocr.hasText()) {
-                    analysis.setExtractedText(ocr.text());
-                    ocrTexts.add(ocr.text());
-                    ocrEngine = strongest(ocrEngine, ocr.engine());
-                }
-            }
-            for (MediaMetadataAnalyzer.MediaFinding finding : mediaAnalyzer.analyze(item)) {
-                analysis.getIssues().add(finding.label());
-                acc.quality(finding.label(), finding.source(), finding.qualityDelta(), finding.recommendation());
-            }
-            analyses.add(analysis);
+            analyses.add(analyzeMedia(item, input.campaignId(), acc, ocrTexts, ocrEngine));
         }
         String extractedText = ocrTexts.isEmpty() ? null : String.join("\n", ocrTexts);
         String normalizedOcr = TextNormalizer.normalize(extractedText);
 
-        // Rules
+        // Rules, weighted by the active calibration
         boolean critical = false;
         boolean high = false;
         Map<String, AiMatchedRule> matched = new LinkedHashMap<>();
@@ -143,7 +158,7 @@ public class ContentAnalysisPipeline {
             AiModerationRule rule = hit.rule();
             AiModerationSeverity severity = rule.getSeverity() == null ? AiModerationSeverity.MEDIUM : rule.getSeverity();
             String ruleKey = rule.getId() != null ? "id:" + rule.getId() : "name:" + rule.getRuleName();
-            int points = countedRules.add(ruleKey) ? TextRuleEngine.riskPoints(severity) : 0;
+            int points = countedRules.add(ruleKey) ? weightedPoints(severity, calibration.weight(rule.getId())) : 0;
             String label = hit.inOcr() ? OCR_PREFIX + hit.description() : hit.description();
             acc.risk(label, hit.inOcr() ? AiIssueSource.OCR : AiIssueSource.REGLE, severity, points);
             matched.putIfAbsent(ruleKey, AiMatchedRule.builder()
@@ -207,14 +222,7 @@ public class ContentAnalysisPipeline {
 
         int risk = clamp(BASE_RISK + acc.riskPoints);
         int quality = clamp(BASE_QUALITY + acc.qualityPoints);
-        AiCheckStatus status;
-        if (critical || risk > 70) {
-            status = AiCheckStatus.REJECTED;
-        } else if (risk >= 31 || high || quality < 40) {
-            status = AiCheckStatus.REVIEW_REQUIRED;
-        } else {
-            status = AiCheckStatus.APPROVED;
-        }
+        AiCheckStatus status = status(critical, high, risk, quality, calibration);
 
         String reason = acc.issues.isEmpty()
                 ? "Analyse locale : aucun problème détecté"
@@ -228,52 +236,201 @@ public class ContentAnalysisPipeline {
                 summary(status),
                 sector,
                 extractedText,
-                ocrEngine,
+                ocrEngine[0],
                 analyses,
                 contentType(media),
                 media.isEmpty() ? null : media.get(0).id(),
                 AiEngine.LOCAL,
-                reason);
+                reason,
+                null);
+    }
+
+    /** REJECTED if critical ∨ risk &gt; R; REVIEW_REQUIRED if risk ≥ A ∨ high ∨ quality &lt; 40; else APPROVED. */
+    static AiCheckStatus status(boolean critical, boolean high, int risk, int quality, CalibrationSnapshot calibration) {
+        if (critical || risk > calibration.rejectThreshold()) {
+            return AiCheckStatus.REJECTED;
+        }
+        if (risk >= calibration.approveThreshold() || high || quality < 40) {
+            return AiCheckStatus.REVIEW_REQUIRED;
+        }
+        return AiCheckStatus.APPROVED;
+    }
+
+    static int weightedPoints(AiModerationSeverity severity, double weight) {
+        return (int) Math.round(TextRuleEngine.riskPoints(severity) * weight);
+    }
+
+    private AiMediaAnalysis analyzeMedia(MediaInput item, Long campaignId, Accumulator acc, Set<String> ocrTexts,
+                                         OcrEngine[] ocrEngine) {
+        AiMediaAnalysis analysis = AiMediaAnalysis.builder()
+                .mediaId(item.id())
+                .fileName(item.fileName())
+                .contentType(item.isVideo() ? AiContentType.VIDEO : AiContentType.IMAGE)
+                .widthPx(item.widthPx())
+                .heightPx(item.heightPx())
+                .durationSeconds(item.durationSeconds())
+                .issues(new ArrayList<>())
+                .frames(new ArrayList<>())
+                .build();
+        MediaInput effective = item;
+        List<MediaFinding> findings = new ArrayList<>();
+
+        if (item.isImage()) {
+            BufferedImage image = decode(item.path());
+            OcrService.OcrResult ocr = image != null ? safeOcr(image, item) : safeOcr(item);
+            analysis.setOcrEngine(ocr.engine());
+            analysis.setOcrConfidence(ocr.meanConfidence());
+            if (ocr.hasText()) {
+                analysis.setExtractedText(ocr.text());
+                ocrTexts.add(ocr.text());
+                ocrEngine[0] = strongest(ocrEngine[0], ocr.engine());
+            }
+            if (image != null) {
+                AiMediaAnalysis.ImageMetrics metrics = ImageAnalyzer.analyze(image, ocr.boxes(), analysisMaxSide);
+                analysis.setMetrics(metrics);
+                if (item.widthPx() == null || item.heightPx() == null) {
+                    analysis.setWidthPx(metrics.getWidth());
+                    analysis.setHeightPx(metrics.getHeight());
+                    effective = item.withDimensions(metrics.getWidth(), metrics.getHeight());
+                }
+                findings.addAll(ImageAnalyzer.metricFindings(metrics, AiIssueSource.IMAGE));
+            } else if (item.path() != null) {
+                findings.add(MediaFinding.quality(ImageAnalyzer.DECODE_FAILED, AiIssueSource.IMAGE, 0,
+                        "Vérifiez que le fichier image n'est pas corrompu (JPEG, PNG ou WebP)"));
+            }
+        } else if (item.isVideo() && videoExtractor != null) {
+            VideoFrameExtractor.VideoProbe probe = videoExtractor.extract(item.path(), item.mimeType(), item.fileName());
+            if (!probe.supported()) {
+                analysis.setVideoSupported(false);
+                findings.add(MediaFinding.quality(WEBM_UNSUPPORTED, AiIssueSource.VIDEO, 0,
+                        "Préférez le format MP4 (H.264) pour une analyse complète de la vidéo"));
+            } else if (item.path() != null) {
+                analysis.setVideoSupported(true);
+                effective = analyzeVideo(item, probe, campaignId, analysis, findings, ocrTexts, ocrEngine);
+            }
+        }
+
+        for (MediaFinding finding : mediaAnalyzer.analyze(effective)) {
+            findings.add(finding);
+        }
+        for (MediaFinding finding : findings) {
+            if (!analysis.getIssues().contains(finding.label())) {
+                analysis.getIssues().add(finding.label());
+            }
+            acc.quality(finding.label(), finding.source(), finding.qualityDelta(), finding.recommendation());
+            if (finding.riskPoints() > 0) {
+                acc.riskOnce(finding.riskLabel(), AiIssueSource.IMAGE, AiModerationSeverity.LOW, finding.riskPoints());
+            }
+        }
+        return analysis;
+    }
+
+    private MediaInput analyzeVideo(MediaInput item, VideoFrameExtractor.VideoProbe probe, Long campaignId,
+                                    AiMediaAnalysis analysis, List<MediaFinding> findings, Set<String> ocrTexts,
+                                    OcrEngine[] ocrEngine) {
+        MediaInput effective = item;
+        Integer container = probe.roundedDurationSeconds();
+        analysis.setContainerDurationSeconds(container);
+        if (probe.width() != null && probe.height() != null && (item.widthPx() == null || item.heightPx() == null)) {
+            analysis.setWidthPx(probe.width());
+            analysis.setHeightPx(probe.height());
+            effective = effective.withDimensions(probe.width(), probe.height());
+        }
+        if (probe.durationSeconds() != null) {
+            if (item.durationSeconds() != null
+                    && Math.abs(item.durationSeconds() - probe.durationSeconds()) > DURATION_TOLERANCE_SECONDS) {
+                findings.add(MediaFinding.quality(DURATION_MISMATCH, AiIssueSource.VIDEO, -5,
+                        "Vérifiez la durée indiquée lors de l'envoi de la vidéo"));
+            }
+            effective = effective.withDuration(container);
+        }
+
+        List<AiMediaAnalysis.ImageMetrics> frameMetrics = new ArrayList<>();
+        Set<String> videoTexts = new LinkedHashSet<>();
+        double confidenceSum = 0;
+        int confidenceCount = 0;
+        OcrEngine videoEngine = OcrEngine.AUCUN;
+        for (VideoFrameExtractor.Frame frame : probe.frames()) {
+            OcrService.OcrResult ocr = safeOcr(frame.image(), item);
+            videoEngine = strongestEngine(videoEngine, ocr.engine());
+            if (ocr.meanConfidence() != null) {
+                confidenceSum += ocr.meanConfidence();
+                confidenceCount++;
+            }
+            AiMediaAnalysis.ImageMetrics metrics = ImageAnalyzer.analyze(frame.image(), ocr.boxes(), analysisMaxSide);
+            frameMetrics.add(metrics);
+            if (ocr.hasText()) {
+                videoTexts.add(ocr.text());
+                ocrEngine[0] = strongest(ocrEngine[0], ocr.engine());
+            }
+            analysis.getFrames().add(AiMediaAnalysis.Frame.builder()
+                    .label(frame.label())
+                    .positionSeconds(frame.positionSeconds())
+                    .extractedText(ocr.hasText() ? ocr.text() : null)
+                    .metrics(metrics)
+                    .build());
+        }
+        if (!probe.frames().isEmpty()) {
+            analysis.setOcrEngine(videoEngine);
+            analysis.setOcrConfidence(confidenceCount == 0 ? null : Math.round(confidenceSum / confidenceCount * 10d) / 10d);
+            AiMediaAnalysis.ImageMetrics worst = ImageAnalyzer.worst(frameMetrics);
+            analysis.setMetrics(worst);
+            findings.addAll(ImageAnalyzer.metricFindings(worst, AiIssueSource.VIDEO));
+            VideoFrameExtractor.Frame middle = probe.middleFrame();
+            if (thumbnailStore != null && middle != null) {
+                analysis.setThumbnailPath(thumbnailStore.store(campaignId, item.id(), item.path(), middle.image()));
+            }
+        }
+        if (!videoTexts.isEmpty()) {
+            String text = String.join("\n", videoTexts);
+            analysis.setExtractedText(text);
+            ocrTexts.addAll(videoTexts);
+        }
+        return effective;
     }
 
     /**
-     * Merges an OpenAI opinion into the local outcome: risk = max, quality = min, status = most severe,
-     * issues = union (source OPENAI), engine = LOCAL_OPENAI.
+     * Merges a vision provider verdict into the local outcome: risk = max, quality = min, status = most severe,
+     * issues and recommendations = union, engine = LOCAL_OPENAI or LOCAL_ANTHROPIC (docs/round2-contract.md §2.5).
      */
-    public AnalysisOutcome mergeOpenAi(AnalysisOutcome local, AiAnalysisResult openAi) {
-        int risk = clamp(Math.max(local.riskScore(), openAi.riskScore()));
-        int quality = clamp(Math.min(local.qualityScore(), openAi.qualityScore()));
-        AiCheckStatus status = mostSevere(local.status(), openAi.aiStatus());
+    public AnalysisOutcome mergeProvider(AnalysisOutcome local, ProviderVerdict verdict, AiProviderType type) {
+        int risk = clamp(Math.max(local.riskScore(), verdict.riskScore()));
+        int quality = clamp(Math.min(local.qualityScore(), verdict.qualityScore()));
+        AiCheckStatus status = mostSevere(local.status(), verdict.status());
+        AiIssueSource source = type == AiProviderType.ANTHROPIC ? AiIssueSource.ANTHROPIC : AiIssueSource.OPENAI;
 
         Map<String, AiIssue> issues = new LinkedHashMap<>();
         local.issues().forEach(issue -> issues.put(key(issue.getLabel()), issue));
-        if (openAi.detectedIssues() != null) {
-            for (String label : openAi.detectedIssues()) {
-                if (label != null && !label.isBlank()) {
-                    issues.putIfAbsent(key(label), AiIssue.builder().label(label.trim())
-                            .severity(AiModerationSeverity.MEDIUM).source(AiIssueSource.OPENAI).build());
-                }
+        for (String label : verdict.issues()) {
+            if (label != null && !label.isBlank()) {
+                issues.putIfAbsent(key(label), AiIssue.builder().label(label.trim())
+                        .severity(AiModerationSeverity.MEDIUM).source(source).build());
             }
         }
         Set<String> recommendations = new LinkedHashSet<>(local.recommendations());
-        if (openAi.recommendation() != null && !openAi.recommendation().isBlank()) {
-            recommendations.add(openAi.recommendation().trim());
+        if (verdict.recommendation() != null && !verdict.recommendation().isBlank()) {
+            recommendations.add(verdict.recommendation().trim());
         }
-        String reason = "Analyse locale + OpenAI"
-                + (openAi.reason() != null && !openAi.reason().isBlank() ? " : " + openAi.reason().trim() : "");
+        String reason = "Analyse locale + " + providerName(type)
+                + (verdict.reason() != null && !verdict.reason().isBlank() ? " : " + verdict.reason().trim() : "");
 
         return new AnalysisOutcome(status, risk, quality, List.copyOf(issues.values()), local.matchedRules(),
                 List.copyOf(recommendations), summary(status), local.sector(), local.extractedText(),
                 local.ocrEngine(), local.mediaAnalyses(), local.contentType(), local.primaryMediaId(),
-                AiEngine.LOCAL_OPENAI, reason);
+                type == AiProviderType.ANTHROPIC ? AiEngine.LOCAL_ANTHROPIC : AiEngine.LOCAL_OPENAI, reason,
+                verdict.model());
     }
 
-    /** Local result kept after an OpenAI failure; the reason mentions the fallback. */
+    /** Local result kept after a provider failure; the reason mentions the fallback. */
     public AnalysisOutcome withFallbackReason(AnalysisOutcome local, String fallbackMessage) {
         return new AnalysisOutcome(local.status(), local.riskScore(), local.qualityScore(), local.issues(),
                 local.matchedRules(), local.recommendations(), local.recommendation(), local.sector(),
                 local.extractedText(), local.ocrEngine(), local.mediaAnalyses(), local.contentType(),
-                local.primaryMediaId(), AiEngine.LOCAL, local.reason() + " (" + fallbackMessage + ")");
+                local.primaryMediaId(), AiEngine.LOCAL, local.reason() + " (" + fallbackMessage + ")", null);
+    }
+
+    public static String providerName(AiProviderType type) {
+        return type == AiProviderType.ANTHROPIC ? "Anthropic" : "OpenAI";
     }
 
     public static String summary(AiCheckStatus status) {
@@ -304,6 +461,17 @@ public class ContentAnalysisPipeline {
         return AiContentType.TEXTE;
     }
 
+    private static BufferedImage decode(Path path) {
+        if (path == null) {
+            return null;
+        }
+        try {
+            return ImageIO.read(path.toFile());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     private OcrService.OcrResult safeOcr(MediaInput item) {
         try {
             OcrService.OcrResult result = ocrService.extract(item.path(), item.fileName());
@@ -313,7 +481,20 @@ public class ContentAnalysisPipeline {
         }
     }
 
+    private OcrService.OcrResult safeOcr(BufferedImage image, MediaInput item) {
+        try {
+            OcrService.OcrResult result = ocrService.extractImage(image, item.path(), item.fileName());
+            return result == null ? OcrService.OcrResult.none() : result;
+        } catch (RuntimeException ex) {
+            return OcrService.OcrResult.none();
+        }
+    }
+
     private static OcrEngine strongest(OcrEngine current, OcrEngine candidate) {
+        return strongestEngine(current, candidate);
+    }
+
+    private static OcrEngine strongestEngine(OcrEngine current, OcrEngine candidate) {
         if (candidate == OcrEngine.TESSERACT || current == OcrEngine.TESSERACT) {
             return OcrEngine.TESSERACT;
         }
@@ -335,6 +516,7 @@ public class ContentAnalysisPipeline {
     private static final class Accumulator {
         private final Map<String, AiIssue> issues = new LinkedHashMap<>();
         private final Set<String> qualityLabels = new HashSet<>();
+        private final Set<String> onceRiskLabels = new HashSet<>();
         private final Set<String> recommendations = new LinkedHashSet<>();
         private int riskPoints;
         private int qualityPoints;
@@ -342,6 +524,13 @@ public class ContentAnalysisPipeline {
         void risk(String label, AiIssueSource source, AiModerationSeverity severity, int points) {
             riskPoints += points;
             issues.putIfAbsent(key(label), AiIssue.builder().label(label).severity(severity).source(source).build());
+        }
+
+        /** Risk counted once per label, whatever the number of media showing it. */
+        void riskOnce(String label, AiIssueSource source, AiModerationSeverity severity, int points) {
+            if (onceRiskLabels.add(key(label))) {
+                risk(label, source, severity, points);
+            }
         }
 
         /** Each quality issue label is counted once, whatever the number of media showing it. */

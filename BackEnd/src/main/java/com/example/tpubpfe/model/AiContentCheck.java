@@ -111,6 +111,14 @@ public class AiContentCheck {
     @Builder.Default
     private AiEngine engine = AiEngine.LOCAL;
 
+    /** Calibration version applied by this analysis (docs/round2-contract.md §2.6). */
+    @Column(name = "calibration_version")
+    private Integer calibrationVersion;
+
+    /** Model string answered by the vision provider, when one was merged. */
+    @Column(name = "provider_model", length = 100)
+    private String providerModel;
+
     @Column(name = "is_preview", nullable = false)
     @Builder.Default
     private Boolean isPreview = false;
