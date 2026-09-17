@@ -2,6 +2,7 @@ import type { AvailabilityStatus, SupportResponse, ZoneResponse } from "@/lib/ap
 import type { SupportFilters } from "@/lib/network/filters";
 import type { BBox, LngLat } from "@/lib/network/geo";
 import type { BasemapId, ViewMode } from "@/lib/network/map-style";
+import type { MapHeatmap, MapPolygon, PolygonDraft } from "@/lib/network/overlays";
 import type { Selection } from "@/lib/network/selection";
 
 import type { MapUiAction, MapUiState } from "@/components/map/map-ui-state";
@@ -78,6 +79,19 @@ export interface NetworkMapProps {
    * accessible name show this status instead of the technical status.
    */
   availability?: ReadonlyMap<number, AvailabilityStatus>;
+
+  // ---- Round 2 (docs/round2-contract.md §4.8) ----
+  /** Target polygons drawn as fill + line (SVG fallback: paths). */
+  polygons?: readonly MapPolygon[];
+  /**
+   * Polygon being drawn. When provided, the toolbar shows « Dessiner un polygone »: click adds a
+   * vertex, a click on the first vertex / a double-click / Entrée closes the ring, Retour arrière
+   * removes the last vertex, Échap cancels, and a closed ring has draggable vertices.
+   */
+  polygonDraft?: PolygonDraft | null;
+  onPolygonDraftChange?: (draft: PolygonDraft) => void;
+  /** Density layer (weights are normalised by `maxWeight`; SVG fallback: proportional circles). */
+  heatmap?: MapHeatmap | null;
 }
 
 /** Imperative camera API implemented by each engine. */
@@ -131,4 +145,9 @@ export interface EngineProps {
   /** Map chrome (framing padding keeps Porteurs clear of the floating tools). */
   chrome?: "full" | "compact";
   availability?: ReadonlyMap<number, AvailabilityStatus>;
+  polygons?: readonly MapPolygon[];
+  polygonDraft?: PolygonDraft | null;
+  /** Set by the map client: applies the draft edits of the engine (click, drag). */
+  onDraftChange?: (draft: PolygonDraft) => void;
+  heatmap?: MapHeatmap | null;
 }

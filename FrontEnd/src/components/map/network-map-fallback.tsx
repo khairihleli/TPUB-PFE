@@ -22,6 +22,14 @@ import type { SupportResponse } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
 import { bboxOf, formatRadiusKm, type LngLat } from "@/lib/network/geo";
 import { gridCluster } from "@/lib/network/geojson";
+import {
+  closeDraft,
+  heatmapColorAt,
+  heatmapFeatureCollection,
+  type MapHeatmap,
+  type MapPolygon,
+  type PolygonDraft,
+} from "@/lib/network/overlays";
 import { spiderfy, type SpiderPlacement } from "@/lib/network/spiderfy";
 
 import { ClusterMarker, PorteurMarker, SpiderFan, SpiderLeg } from "@/components/map/map-markers";
@@ -99,6 +107,10 @@ export function NetworkMapFallback({
   onReady,
   pickPoints,
   availability,
+  polygons,
+  polygonDraft = null,
+  onDraftChange,
+  heatmap = null,
 }: EngineProps) {
   const projection = useMemo(() => createProjection(undefined, SVG_HEIGHT), []);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -254,6 +266,20 @@ export function NetworkMapFallback({
             insetBounds={dense?.bounds ?? null}
             className="absolute inset-0"
           />
+
+          <PolygonOverlay
+            polygons={polygons ?? []}
+            draft={polygonDraft}
+            drawing={ui.tool === "polygon"}
+            onCloseDraft={
+              onDraftChange && polygonDraft
+                ? () => onDraftChange(closeDraft(polygonDraft))
+                : undefined
+            }
+            toPercent={toPercent}
+          />
+
+          {heatmap ? <HeatmapOverlay heatmap={heatmap} toPercent={toPercent} /> : null}
 
           {catchment?.center ? (
             <CatchmentOverlay
@@ -581,6 +607,132 @@ function DenseInset({
         />
       </div>
     </section>
+  );
+}
+
+/** Target polygons and the polygon being drawn, as SVG paths over the projected frame. */
+function PolygonOverlay({
+  polygons,
+  draft,
+  drawing,
+  onCloseDraft,
+  toPercent,
+}: {
+  polygons: readonly MapPolygon[];
+  draft: PolygonDraft | null;
+  drawing: boolean;
+  onCloseDraft?: () => void;
+  toPercent: (lat: number, lng: number) => { left: number; top: number };
+}) {
+  const path = (ring: readonly LngLat[], close: boolean) => {
+    if (ring.length === 0) return "";
+    const points = ring.map((v) => {
+      const p = toPercent(v.lat, v.lng);
+      return `${p.left.toFixed(3)},${p.top.toFixed(3)}`;
+    });
+    return `M${points.join(" L")}${close ? " Z" : ""}`;
+  };
+  const toneClass: Record<NonNullable<MapPolygon["tone"]>, string> = {
+    brand: "fill-brand-orange/12 stroke-brand-orange-text",
+    urgent: "fill-brand-red/15 stroke-brand-red-text",
+    muted: "fill-muted/10 stroke-muted-2",
+  };
+  const hasShapes = polygons.length > 0 || (draft?.vertices.length ?? 0) > 0;
+  if (!hasShapes) return null;
+  return (
+    <>
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="pointer-events-none absolute inset-0 z-[1] h-full w-full"
+      >
+        {polygons.flatMap((polygon) =>
+          polygon.rings.flatMap((part, partIndex) =>
+            part.map((ring, ringIndex) => (
+              <path
+                key={`${polygon.id}-${partIndex}-${ringIndex}`}
+                d={path(ring, true)}
+                vectorEffect="non-scaling-stroke"
+                strokeWidth={polygon.active ? 2 : 1.2}
+                className={toneClass[polygon.tone ?? "brand"]}
+              />
+            )),
+          ),
+        )}
+        {draft && draft.vertices.length >= 2 ? (
+          <path
+            d={path(draft.vertices, draft.closed)}
+            vectorEffect="non-scaling-stroke"
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            className={draft.closed ? "fill-brand-blue-text/15 stroke-brand-blue-text" : "fill-none stroke-brand-blue-text"}
+          />
+        ) : null}
+      </svg>
+      {draft?.vertices.map((v, index) => {
+        const pos = toPercent(v.lat, v.lng);
+        const first = index === 0;
+        const closable = drawing && first && !draft.closed && draft.vertices.length >= 3;
+        return closable && onCloseDraft ? (
+          <button
+            key={`draft-${index}`}
+            type="button"
+            onClick={onCloseDraft}
+            aria-label="Fermer le polygone sur le premier sommet"
+            style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+            className="absolute z-[2] size-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full border-2 border-brand-orange-text bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text"
+          />
+        ) : (
+          <span
+            key={`draft-${index}`}
+            aria-hidden="true"
+            style={{ left: `${pos.left}%`, top: `${pos.top}%` }}
+            className={cx(
+              "pointer-events-none absolute z-[2] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-bg",
+              first ? "border-brand-orange-text" : "border-brand-blue-text",
+            )}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** Heatmap fallback: proportional circles at each point (same colour ramp as the WebGL layer). */
+function HeatmapOverlay({
+  heatmap,
+  toPercent,
+}: {
+  heatmap: MapHeatmap;
+  toPercent: (lat: number, lng: number) => { left: number; top: number };
+}) {
+  const features = heatmapFeatureCollection(heatmap).features;
+  if (features.length === 0) return null;
+  return (
+    <div role="img" aria-label={`${heatmap.label} : ${features.length} points`}>
+      {features.map((f, index) => {
+        const [lng, lat] = f.geometry.coordinates;
+        const pos = toPercent(lat, lng);
+        const size = 10 + Math.round(f.properties.w * 26);
+        return (
+          <span
+            key={index}
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              left: `${pos.left}%`,
+              top: `${pos.top}%`,
+              width: `${size}px`,
+              height: `${size}px`,
+              backgroundColor: heatmapColorAt(f.properties.w),
+              opacity: 0.55,
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }
 
