@@ -98,7 +98,8 @@ class LaneBSchedulersTest {
                 .startDate(TODAY.minusDays(1)).endDate(TODAY).build();
         when(repository.findByIsActiveTrue()).thenReturn(List.of(ended, running, allDay));
 
-        new EmergencyAutoStopScheduler(repository, CLOCK).runOnce();
+        new EmergencyAutoStopScheduler(repository,
+                mock(com.example.tpubpfe.service.supervision.AlertService.class), CLOCK).runOnce();
 
         assertThat(ended.getIsActive()).isFalse();
         assertThat(ended.getStopReason()).isEqualTo(EmergencyStopReason.AUTO);

@@ -1591,7 +1591,14 @@ _None yet._
 
 ### L4 `supervision`
 
-_None yet._
+- 2026-09-17 · L4 · `AdminCampaignService.validate` now returns `ValidationOutcome(campaign, pending)` instead of `CampaignResponse`, and `AdminCampaignController` answers 202 with `ApprovalPendingResponse` when another administrator is still needed · §5.4 asks for a 202 body, which the previous signature could not express. The two L3-owned call sites of the validation (`CampaignLifecycleIntegrationTest`, kept unchanged otherwise) only add `.campaign()`.
+- 2026-09-17 · L4 · new file `BackEnd/src/test/resources/application-test.properties` setting `tpub.approval.emergency-required-approvals=1` and `tpub.approval.campaign-required-approvals=1` · the shared H2 context of the integration tests holds several active administrators (bootstrap admin + one per integration test), so the default two-admin policy would turn the single-admin flows of the L1/L3 integration tests into pending approvals. A separate file was chosen over a hunk in the L2-owned `application-test.yml` to avoid a merge conflict. The multi-level approval itself is unit-tested with explicit values (`AdminCampaignServiceTest`, `EmergencyServiceTest`, `ApprovalPolicyTest`).
+- 2026-09-17 · L4 · `scheduler/EmergencyAutoStopScheduler` takes `AlertService` to close the `EMERGENCY_PENDING_APPROVAL` alert of a message whose window ended while still pending · §5.4 requires the auto-stop to deactivate pending messages; leaving their alert open would keep the supervision badge lit forever.
+- 2026-09-17 · L4 · the `stats` event is pushed by `scheduler/SupervisionStatsScheduler` (a `@Scheduled` component, off in tests through `tpub.scheduler.enabled`), and the `: ping` keepalive by a daemon executor inside `SseHub` · §5.3 asks for both without naming their owner; the scheduler package is L4's.
+- 2026-09-17 · L4 · `SupervisionProperties` holds three nested `@ConfigurationProperties` classes (one per prefix) and `SupervisionConfig` registers them, reading the short environment names (`TPUB_EMERGENCY_APPROVALS`, `TPUB_CAMPAIGN_APPROVALS`, `TPUB_CAMPAIGN_APPROVAL_RISK`, `TPUB_MAIL_FROM`, `TPUB_PUBLIC_URL`) itself, because `application.yml` (L2) receives nothing from L4 and relaxed binding would otherwise expect `TPUB_APPROVAL_EMERGENCYREQUIREDAPPROVALS`.
+- 2026-09-17 · L4 · `NotificationResponse.type` is typed `string` in the frontend (with `NotificationType` documented as the closed list) · the lint rule `no-redundant-type-constituents` refuses `NotificationType | string`, and a backend type unknown to the browser must not break the list.
+- 2026-09-17 · L4 · the round-1 tests that asserted « Exporter en CSV » now open the « Exporter » menu (`admin-pages`, `espace/views`, `overview-view`, `campaign-detail`) and `shell.test.tsx` expects the new navigation entries · direct consequence of §5.6 and §5.9, all files owned by L4.
+- 2026-09-17 · L4 · `moderation-view.test.tsx` mocks `@/lib/api/endpoints-supervision` because the review dialog validates through `approvalsApi.validateCampaign` (§5.8).
 
 ### Integration
 

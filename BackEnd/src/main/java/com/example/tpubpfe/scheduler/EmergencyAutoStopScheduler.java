@@ -2,8 +2,11 @@ package com.example.tpubpfe.scheduler;
 
 import com.example.tpubpfe.model.EmergencyMessage;
 import com.example.tpubpfe.model.EmergencyStopReason;
+import com.example.tpubpfe.model.EmergencyApprovalStatus;
+import com.example.tpubpfe.model.SupervisionAlertType;
 import com.example.tpubpfe.repository.EmergencyMessageRepository;
 import com.example.tpubpfe.service.DiffusionService;
+import com.example.tpubpfe.service.supervision.AlertService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,6 +28,7 @@ import java.util.List;
 public class EmergencyAutoStopScheduler {
 
     private final EmergencyMessageRepository emergencyMessageRepository;
+    private final AlertService alertService;
     private final Clock clock;
 
     @Scheduled(cron = "0 * * * * *")
@@ -43,6 +47,11 @@ public class EmergencyAutoStopScheduler {
         }
         if (!stopped.isEmpty()) {
             emergencyMessageRepository.saveAll(stopped);
+            // A message still waiting for its approvals closes its alert too (round-2 §5.4).
+            stopped.stream()
+                    .filter(m -> m.getApprovalStatus() == EmergencyApprovalStatus.EN_ATTENTE)
+                    .forEach(m -> alertService.resolve(SupervisionAlertType.EMERGENCY_PENDING_APPROVAL,
+                            AlertService.AlertRef.emergency(m.getId())));
             log.info("Messages d'urgence arrêtés automatiquement : {}", stopped.size());
         }
     }

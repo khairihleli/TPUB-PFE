@@ -254,6 +254,46 @@ Every call writes a `diffusion_logs` row (with cost). `POST /interactions { diff
 | `GET /history?from&to` (staff) | daily platform snapshots (updated every 15 min) |
 | `GET /export.csv?type=views|dashboard|mine|campaign&from&to&groupBy&campaignId` | UTF-8 with BOM, `;` separator, decimal comma, French headers, `attachment; filename="tpub-statistiques-<type>-<from>-<to>.csv"` |
 
+### 5.9b Supervision, approbations, notifications, exports
+
+Round 2, lane L4 (`docs/round2-contract.md` §5.2–§5.6). French UI copy, types in `src/lib/api/types-supervision.ts`, calls in `src/lib/api/endpoints-supervision.ts`.
+
+**Realtime (Server-Sent Events).** The Next route `/api/realtime/[...path]` streams the backend `/api/realtime/**` untouched (`text/event-stream`, `no-transform`, `x-accel-buffering: no`) and adds the Bearer token of the session cookie.
+
+| Endpoint | Roles | Events |
+|---|---|---|
+| `GET /api/realtime/supervision` | ADMINISTRATEUR, SUPERVISEUR, OPERATEUR | `snapshot` (first), then `diffusion`, `presence`, `emergency`, `alert`, `stats` (every minute) |
+| `GET /api/realtime/notifications` | staff | `unread-count` (first), then `notification`, `unread-count` |
+
+Every event carries a monotonic `id`; the stream opens with `retry: 5000` and sends a `: ping` comment every 20 s. `Last-Event-ID` is ignored: a reconnection always gets a fresh `snapshot`. After three failures in a minute the client polls `GET /supervision/snapshot` every 15 s and retries the stream every minute.
+
+**Supervision.**
+
+| Endpoint | Roles | Notes |
+|---|---|---|
+| `GET /supervision/snapshot` | staff | `SupervisionSnapshot`: Porteurs with presence (`EN_LIGNE`/`HORS_LIGNE`/`INCONNU`) and current content, live emergencies, open alerts, last 50 diffusions, counters |
+| `GET /supervision/alerts?status=OUVERTE\|RESOLUE\|TOUTES&type&page&size` | staff | paged `SupervisionAlert` |
+| `POST /supervision/alerts/{id}/acknowledge` | staff | 200 `SupervisionAlert`, 404 `ALERT_NOT_FOUND` |
+| `POST /diffusion/heartbeat?supportId=` | paired player (`X-TPUB-Device-Key`) | body `{ playerVersion?, currentDiffusionLogId?, visible? }` → `{ supportId, state, serverTime, nextHeartbeatSeconds }`, 404 `SUPPORT_NOT_FOUND` |
+
+A Porteur without heartbeat for 90 s becomes `HORS_LIGNE`; an ACTIF Porteur then opens a `SUPPORT_OFFLINE` alert (CRITIQUE) and notifies the staff. A zone whose ACTIF Porteurs are booked to capacity opens `ZONE_SATURATION` (AVERTISSEMENT).
+
+**Multi-level approval.**
+
+| Endpoint | Roles | Notes |
+|---|---|---|
+| `POST /admin/campaigns/{id}/validate` | ADMINISTRATEUR | 200 `CampaignResponse` when the validation applies, **202** `{ pending: true, approval }` when a second administrator is still needed, 409 `APPROVAL_ALREADY_GIVEN` |
+| `GET /approvals/pending` | ADMINISTRATEUR, SUPERVISEUR | `{ campaigns: PendingCampaignApproval[], emergencies: PendingEmergencyApproval[] }` |
+| `GET /approvals/campaigns/{id}` | ADMINISTRATEUR, SUPERVISEUR | `CampaignApprovalStatus` (`required`, `reasons`, `approvals`, `canApprove`) |
+| `POST /emergency/{id}/approve` | ADMINISTRATEUR | body `{ comment? }`; 409 `APPROVAL_NOT_PENDING`, `APPROVAL_ALREADY_GIVEN`, `EMERGENCY_NOT_APPROVABLE` |
+| `POST /emergency/{id}/refuse` | ADMINISTRATEUR (never the creator) | body `{ reason }` (3..500); 400 `REFUSAL_REASON_REQUIRED`, 409 `APPROVAL_SELF_REFUSAL` |
+
+A campaign validation needs two distinct administrators when the policy asks for it **and** the decision is an AI override or the risk score reaches the threshold. An emergency message created while two approvals are required stays `EN_ATTENTE` and is **not** broadcast. `EmergencyResponse` gains `approvalStatus`, `approvalsRequired`, `approvalsRequiredConfigured`, `approvals[]` and `approvedAt`; `state` gains `EN_ATTENTE_APPROBATION` and `REFUSE`, and `GET /emergency?state=` accepts both. The effective number of approvals never exceeds the number of active administrators.
+
+**Notifications.** `GET /notifications?unreadOnly&page&size` · `GET /notifications/unread-count` · `POST /notifications/{id}/read` (204, 404 `NOTIFICATION_NOT_FOUND`) · `POST /notifications/read-all` → `{ updated }`. Types: `EMERGENCY_APPROVAL_REQUIRED`, `EMERGENCY_BROADCAST`, `EMERGENCY_REFUSED`, `CAMPAIGN_APPROVAL_REQUIRED`, `SUPPORT_OFFLINE`, `ZONE_SATURATION`; severities `INFO`, `AVERTISSEMENT`, `CRITIQUE`. E-mail is sent only when SMTP and `TPUB_MAIL_FROM` are configured; nothing is ever simulated.
+
+**Exports.** `GET /statistics/export.pdf` and `GET /statistics/export.xlsx` take the same query, roles and `EXPORT_TYPE_INVALID` as `export.csv`. The PDF is an A4 report (TPUB header, period, KPI grid, tables with repeated headers, page footer, the campaign visual for `type=campaign`); the workbook holds a « Synthèse » sheet plus one sheet per table, with numeric, money and date cells, and text that could be read as a formula is quote-prefixed.
+
 ### 5.10 Admin users & audit (`/api/admin`)
 
 `GET /users?q&role&active&validationStatus` (paged `AdminUserResponse` with `activeSessions`, `campaignsCount`, `clientNotes`) · `GET /users/{id}` · `POST /users` (staff roles only) · `PUT /users/{id}` (role change between staff roles, never on yourself) · `POST /users/{id}/activate|deactivate` (`CANNOT_DEACTIVATE_SELF`, `LAST_ADMIN`; deactivation revokes sessions) · `GET /users/{id}/login-history`, `/sessions` · `POST /users/{id}/sessions/revoke` → `{ revoked }` · `POST /clients/{clientId}/validation { validationStatus, trustLevel?, notes? }` · `GET /roles` · `GET /audit?actorId&action&entityType&entityId&from&to` (paged).
