@@ -232,7 +232,7 @@ describe("OverviewView", () => {
       await screen.findByRole("heading", { name: "Messages prioritaires actifs" })
     ).closest("section")!;
     expect(within(strip).getByText("Route coupée avenue Bourguiba")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exporter en CSV" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exporter" })).toBeInTheDocument();
     expect(await screen.findByText("1 message prioritaire actif")).toBeInTheDocument();
   });
 

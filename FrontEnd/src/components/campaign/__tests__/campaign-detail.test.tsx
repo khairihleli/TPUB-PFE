@@ -348,7 +348,7 @@ describe("CampaignDetail", () => {
 
     await screen.findByRole("heading", { level: 1, name: "Lancement Café Démo" });
     expect(screen.getAllByText("Période de diffusion terminée").length).toBeGreaterThan(0);
-    expect(await screen.findByRole("button", { name: "Exporter en CSV" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Exporter" })).toBeInTheDocument();
     expect(mocks.campaignStats).toHaveBeenCalledWith(7, expect.anything());
     expect(screen.getAllByRole("img", { name: /affiche-cafe\.png/ }).length).toBeGreaterThan(0);
 

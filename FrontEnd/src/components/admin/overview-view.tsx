@@ -3,6 +3,8 @@
 import {
   ArrowRight,
   BadgeCheck,
+  CheckCheck,
+  MonitorSmartphone,
   BarChart3,
   CalendarCheck,
   CalendarClock,
@@ -35,8 +37,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { BarList, ColumnChart, HistoryLineChart } from "@/components/admin/admin-charts";
-import { CsvExportButton, InlineFigures } from "@/components/admin/admin-controls";
+import { InlineFigures } from "@/components/admin/admin-controls";
 import { IdChip, ReadOnlyNotice } from "@/components/admin/admin-ui";
+import { ExportMenu } from "@/components/exports/export-menu";
+import { approvalsApi, supervisionApi } from "@/lib/api/endpoints-supervision";
 import { emergencyStateOf } from "@/components/admin/emergency-schema";
 import {
   advertiserName,
@@ -146,6 +150,50 @@ async function loadActivity(signal: AbortSignal, from: string, to: string) {
   return { byDay, byCampaign, bySupport, byZone };
 }
 
+/**
+ * Round-2 tiles (docs/round2-contract.md §5.8): pending approvals for the deciders, and the screens
+ * the supervision stream reports offline.
+ */
+function SupervisionTiles({ canSeeApprovals }: { canSeeApprovals: boolean }) {
+  const snapshot = useResource("admin:overview:supervision", (signal) =>
+    supervisionApi.snapshot({ signal }),
+  );
+  const approvals = useResource(canSeeApprovals ? "admin:overview:approvals" : null, (signal) =>
+    approvalsApi.pending({ signal }),
+  );
+  const pending = approvals.data
+    ? approvals.data.campaigns.length + approvals.data.emergencies.length
+    : null;
+  const offline = snapshot.data?.stats.offlineSupports ?? null;
+  if (pending === null && offline === null) return null;
+  return (
+    <div className="mb-8 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+      {canSeeApprovals && pending !== null ? (
+        <StatCard
+          label="À approuver"
+          value={formatNumber(pending)}
+          hint={
+            pending > 0
+              ? "Validations et messages en attente d'un second administrateur."
+              : "Aucune approbation en attente."
+          }
+          icon={<CheckCheck />}
+          accent="orange"
+        />
+      ) : null}
+      {offline !== null ? (
+        <StatCard
+          label="Écrans hors ligne"
+          value={formatNumber(offline)}
+          hint={`${formatNumber(snapshot.data?.stats.onlineSupports ?? 0)} en ligne · supervision temps réel`}
+          icon={<MonitorSmartphone />}
+          accent={offline > 0 ? "orange" : "blue"}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function OverviewView() {
   const { role, canAct } = useSession();
   const canSeeCampaigns = role === "ADMINISTRATEUR" || role === "SUPERVISEUR";
@@ -195,9 +243,8 @@ export function OverviewView() {
             >
               Actualiser
             </Button>
-            <CsvExportButton
+            <ExportMenu
               size="md"
-              label="Exporter en CSV"
               query={{ type: "dashboard", from: range.from, to: range.to }}
             />
             <Button asChild variant="secondary">
@@ -213,6 +260,8 @@ export function OverviewView() {
       {!canAct ? <ReadOnlyNotice role={role} className="mb-8" /> : null}
 
       <EmergencyStrip />
+
+      <SupervisionTiles canSeeApprovals={canSeeCampaigns} />
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
         {canSeeCampaigns ? (

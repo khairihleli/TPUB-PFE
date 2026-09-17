@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/errors";
@@ -227,7 +228,9 @@ describe("StatisticsView", () => {
       "texte trop court",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Exporter ce tableau" }));
+    const exportUser = userEvent.setup();
+    await exportUser.click(screen.getByRole("button", { name: "Exporter ce tableau" }));
+    await exportUser.click(await screen.findByRole("menuitem", { name: "CSV (tableur)" }));
     await waitFor(() =>
       expect(api.exportCsv).toHaveBeenCalledWith(
         expect.objectContaining({ type: "views", groupBy: "campaign" }),

@@ -46,6 +46,8 @@ import {
   validationBody,
   validationNeedsOverride,
 } from "@/components/admin/moderation-model";
+import { APPROVAL_PENDING_TOAST } from "@/components/approvals/approval-model";
+import { ApprovalNotice } from "@/components/approvals/approval-notice";
 import { useShortcut } from "@/components/shell/shortcuts";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -72,7 +74,9 @@ import {
   reservationsApi,
   supportsApi,
 } from "@/lib/api/endpoints";
+import { approvalsApi } from "@/lib/api/endpoints-supervision";
 import { isNoAiReportError, presentError } from "@/lib/api/errors";
+import type { CampaignApprovalStatus } from "@/lib/api/types-supervision";
 import type {
   AiIssue,
   AiReport,
@@ -256,6 +260,7 @@ function ReviewContent({
   const [priority, setPriority] = useState("");
   const [override, setOverride] = useState(false);
   const [pending, setPending] = useState<"validate" | "reject" | null>(null);
+  const [approval, setApproval] = useState<CampaignApprovalStatus | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<{ reason: string } | null>(null);
@@ -269,6 +274,22 @@ function ReviewContent({
   const blocksDiffusion = rejectBlocksDiffusion(campaign.status);
   const needsOverride = validationNeedsOverride(campaign.status);
   const reasonError = rejectReasonError(reason);
+
+  // Multi-level approval of this validation cycle (docs/round2-contract.md §5.4).
+  useEffect(() => {
+    if (!decidable) {
+      setApproval(null);
+      return;
+    }
+    const controller = new AbortController();
+    approvalsApi
+      .campaign(campaign.id, { signal: controller.signal })
+      .then((status) => {
+        if (!controller.signal.aborted) setApproval(status.required ? status : null);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [campaign.id, decidable]);
 
   const runAnalysis = async () => {
     if (analyzing) return;
@@ -312,7 +333,19 @@ function ReviewContent({
     setPending("validate");
     setDecisionError(null);
     try {
-      const updated = await adminApi.validate(campaign.id, check.body);
+      const result = await approvalsApi.validateCampaign(campaign.id, check.body);
+      if (result.kind === "pending") {
+        setApproval(result.approval);
+        setPending(null);
+        setMode("idle");
+        toast({
+          title: APPROVAL_PENDING_TOAST,
+          description: `Campagne « ${campaign.name} » : ${result.approval.approvals.length}/${result.approval.approvalsRequired} approbation(s).`,
+          variant: "warning",
+        });
+        return;
+      }
+      const updated = result.campaign;
       onCampaignChange(updated);
       toast({
         title: `« ${campaign.name} » validée${needsOverride ? " par dérogation" : ""}`,
@@ -499,6 +532,7 @@ function ReviewContent({
     </div>
   ) : mode === "validating" ? (
     <div className="flex w-full flex-col gap-3">
+      {approval ? <ApprovalNotice status={approval} /> : null}
       {decisionError ? <Alert tone="danger">{decisionError}</Alert> : null}
       {needsOverride ? (
         <Alert tone="warning" title={OVERRIDE_TITLE} live="none">
@@ -577,6 +611,7 @@ function ReviewContent({
     </div>
   ) : decidable || blockable ? (
     <div className="flex w-full flex-col gap-3">
+      {approval ? <ApprovalNotice status={approval} /> : null}
       {decisionError ? <Alert tone="danger">{decisionError}</Alert> : null}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
         <Button variant="ghost" onClick={onClose} className="sm:mr-auto">

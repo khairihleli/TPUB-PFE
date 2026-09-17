@@ -126,7 +126,6 @@ export function useEventStream(
       source?.close();
     };
     // Handlers live in a ref on purpose: only the path and the switches reopen the stream.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, enabled, fallbackIntervalMs]);
 
   return status;

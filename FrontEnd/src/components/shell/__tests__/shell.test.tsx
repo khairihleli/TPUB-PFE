@@ -232,21 +232,27 @@ describe("role-aware back-office navigation (contract §5 F3)", () => {
       navForRole(ADMIN_NAV, role).map((i) => i.href);
     expect(hrefs("ADMINISTRATEUR")).toEqual([
       "/admin",
+      "/admin/supervision",
       "/admin/moderation",
+      "/admin/approbations",
       "/admin/reservations",
       "/admin/reseau",
       "/admin/urgences",
       "/admin/statistiques",
+      "/admin/carte-chaleur",
       "/admin/journal",
+      "/admin/ia-qualite",
       "/admin/utilisateurs",
       "/admin/regles-ia",
     ]);
     expect(hrefs("SUPERVISEUR")).toEqual(hrefs("ADMINISTRATEUR"));
     expect(hrefs("OPERATEUR")).toEqual([
       "/admin",
+      "/admin/supervision",
       "/admin/reseau",
       "/admin/urgences",
       "/admin/statistiques",
+      "/admin/carte-chaleur",
       "/admin/journal",
     ]);
     expect(roleCanOpen(ADMIN_NAV, "OPERATEUR", "/admin/utilisateurs?onglet=equipe")).toBe(false);

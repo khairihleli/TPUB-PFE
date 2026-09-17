@@ -205,7 +205,8 @@ export type NotificationType =
 
 export interface NotificationResponse {
   id: number;
-  type: NotificationType | string;
+  /** One of {@link NotificationType}; kept open so a new backend type never breaks the list. */
+  type: string;
   severity: AlertSeverity;
   title: string;
   message: string;

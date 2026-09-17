@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Bell,
   BookOpen,
   CircleHelp,
   ExternalLink,
@@ -20,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { ADMIN_ACCOUNT_NAV } from "@/content/nav";
 import { CONTACT } from "@/content/site";
 import { ROLE_LABEL } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
@@ -96,7 +98,24 @@ export function AccountMenu({
             <UserRound aria-hidden="true" />
             Profil
           </DropdownMenuItem>
-        ) : null}
+        ) : (
+          ADMIN_ACCOUNT_NAV.map((item) => (
+            <DropdownMenuItem
+              key={item.href}
+              onSelect={() => {
+                onNavigate?.();
+                void guard.confirmNavigation(item.href);
+              }}
+            >
+              {item.icon === "notifications" ? (
+                <Bell aria-hidden="true" />
+              ) : (
+                <UserRound aria-hidden="true" />
+              )}
+              {item.label}
+            </DropdownMenuItem>
+          ))
+        )}
         <DropdownMenuItem onSelect={() => openHelp()}>
           <Keyboard aria-hidden="true" />
           Aide & raccourcis

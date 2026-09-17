@@ -4,7 +4,8 @@ import { BarChart3, History, ListChecks, MapPinned, RefreshCw, ShieldCheck } fro
 import { Suspense } from "react";
 
 import { BarList, ColumnChart, HistoryLineChart } from "@/components/admin/admin-charts";
-import { CsvExportButton, InlineFigures, PeriodPicker } from "@/components/admin/admin-controls";
+import { InlineFigures, PeriodPicker } from "@/components/admin/admin-controls";
+import { ExportMenu } from "@/components/exports/export-menu";
 import {
   aiSummaryFigures,
   aiVerdictBreakdown,
@@ -137,7 +138,7 @@ function StatisticsContent() {
             >
               Actualiser
             </Button>
-            <CsvExportButton
+            <ExportMenu
               size="md"
               label="Exporter le tableau de bord"
               query={{ type: "dashboard", from: range.from, to: range.to }}
@@ -170,7 +171,7 @@ function StatisticsContent() {
           title="Affichages"
           description="Lignes « publicité » du journal de diffusion : un passage de campagne sur un écran, pas une mesure d'audience."
           aside={
-            <CsvExportButton
+            <ExportMenu
               label="Exporter ce tableau"
               query={{ type: "views", from: range.from, to: range.to, groupBy }}
             />
