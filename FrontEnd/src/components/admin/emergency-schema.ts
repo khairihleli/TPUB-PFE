@@ -9,13 +9,16 @@ import { z } from "zod";
 
 import { maxChars, parseDecimal, parseInteger, REQUIRED } from "@/components/admin/form-utils";
 import type {
-  EmergencyCreateRequest,
+
   EmergencyResponse,
   EmergencyState,
   SupportResponse,
   UrgencyLevel,
 } from "@/lib/api/types";
+import type { EmergencyRequestCarte, EmergencyResponseCarte } from "@/lib/api/types-carte";
 import { URGENCY_RANK } from "@/lib/campaign-status";
+import type { LngLat } from "@/lib/network/geo";
+import { pointInPolygon, ringsToGeoJson, validatePolygon } from "@/lib/polygon";
 import { toLocalIsoDateTime } from "@/lib/format";
 import { withinKm } from "@/lib/geo";
 
@@ -40,6 +43,8 @@ export const EMERGENCY_FIELDS = [
   "durationSeconds",
   "priority",
   "urgencyLevel",
+  /** Round 2: polygon target, serialised as `lng,lat;lng,lat…` (docs/round2-contract.md §4.4). */
+  "polygon",
 ] as const;
 
 export type EmergencyField = (typeof EMERGENCY_FIELDS)[number];
@@ -84,6 +89,7 @@ export function emptyEmergencyForm(now: Date = new Date()): EmergencyFormValues 
     latitude: "",
     longitude: "",
     radiusKm: String(RADIUS_DEFAULT_KM),
+    polygon: "",
     startDate: date,
     startTime: `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`,
     endDate: date,
@@ -100,7 +106,51 @@ const TYPED_FIELDS: readonly EmergencyField[] = [
   "zoneId",
   "latitude",
   "longitude",
+  "polygon",
 ];
+
+// ---------------------------------------------------------------------------
+// Polygon target (docs/round2-contract.md §4.4)
+// ---------------------------------------------------------------------------
+
+/** `"10.17,36.79;10.19,36.79"` → vertices (empty when blank or malformed). */
+export function parsePolygonField(value: string): LngLat[] {
+  const out: LngLat[] = [];
+  for (const pair of value.split(";")) {
+    if (pair.trim() === "") continue;
+    const [lng, lat] = pair.split(",").map((n) => Number(n.trim()));
+    if (lng === undefined || lat === undefined || !Number.isFinite(lng) || !Number.isFinite(lat)) {
+      return [];
+    }
+    out.push({ lng, lat });
+  }
+  return out;
+}
+
+export function serializePolygonField(vertices: readonly LngLat[]): string {
+  return vertices.map((v) => `${v.lng},${v.lat}`).join(";");
+}
+
+/** French reason when the polygon cannot be sent (same rules as the backend), else null. */
+export function polygonFieldError(value: string): string | null {
+  const vertices = parsePolygonField(value);
+  if (vertices.length === 0) return "Dessinez le polygone sur la carte.";
+  if (vertices.length < 3) return "Un polygone doit avoir au moins 3 sommets.";
+  const result = validatePolygon([[vertices]]);
+  return result.ok ? null : result.reason;
+}
+
+export function activeSupportsInPolygon(
+  supports: readonly Pick<SupportResponse, "latitude" | "longitude" | "technicalStatus">[],
+  vertices: readonly LngLat[],
+): number {
+  if (vertices.length < 3) return 0;
+  return supports.filter(
+    (s) =>
+      s.technicalStatus === "ACTIF" &&
+      pointInPolygon({ lng: s.longitude, lat: s.latitude }, [[[...vertices]]]),
+  ).length;
+}
 
 /** True when the user typed a message or chose a target. */
 export function isEmergencyFormDirty(values: EmergencyFormValues): boolean {
@@ -170,6 +220,7 @@ export function emergencySchema(now: Date = new Date()) {
           { error: "Nombre entier supérieur ou égal à 1." },
         ),
       urgencyLevel: z.enum(URGENCY_LEVELS, { error: "Choisissez un niveau d'urgence." }),
+      polygon: z.string().trim(),
     })
     .superRefine((v, ctx) => {
       const zone = parseInteger(v.zoneId);
@@ -178,14 +229,26 @@ export function emergencySchema(now: Date = new Date()) {
       const lng = parseDecimal(v.longitude);
       const radius = parseDecimal(v.radiusKm);
       const anyCircle = v.latitude !== "" || v.longitude !== "";
-      if (!hasZone && !anyCircle) {
+      const hasPolygon = v.polygon.trim() !== "";
+      if (hasPolygon) {
+        if (anyCircle) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["polygon"],
+            message: "Choisissez un cercle ou un polygone, pas les deux.",
+          });
+        }
+        const reason = polygonFieldError(v.polygon);
+        if (reason) ctx.addIssue({ code: "custom", path: ["polygon"], message: reason });
+      }
+      if (!hasZone && !anyCircle && !hasPolygon) {
         ctx.addIssue({
           code: "custom",
           path: ["latitude"],
           message: "Placez le point sur la carte ou choisissez une zone.",
         });
       }
-      if (anyCircle) {
+      if (anyCircle && !hasPolygon) {
         if (lat === null || lat < -90 || lat > 90) {
           ctx.addIssue({ code: "custom", path: ["latitude"], message: "Latitude invalide." });
         }
@@ -223,8 +286,9 @@ export function emergencySchema(now: Date = new Date()) {
         }
       }
     })
-    .transform((v): EmergencyCreateRequest => {
+    .transform((v): EmergencyRequestCarte => {
       const zone = parseInteger(v.zoneId);
+      const polygonVertices = v.polygon.trim() === "" ? [] : parsePolygonField(v.polygon);
       const circle =
         v.latitude !== "" || v.longitude !== ""
           ? {
@@ -244,6 +308,13 @@ export function emergencySchema(now: Date = new Date()) {
         priority: parseInteger(v.priority) ?? 1,
         urgencyLevel: v.urgencyLevel,
       };
+      if (polygonVertices.length >= 3) {
+        return {
+          ...common,
+          polygon: ringsToGeoJson([[polygonVertices]]),
+          zoneId: zone !== null && zone > 0 ? zone : null,
+        };
+      }
       if (circle) return { ...common, ...circle, zoneId: zone !== null && zone > 0 ? zone : null };
       return { ...common, zoneId: zone as number };
     });
@@ -320,12 +391,14 @@ export function sortEmergencies<T extends EmergencyResponse>(
   });
 }
 
-/** « Cercle de 2 km · Tunis Centre » or « Zone Tunis Centre ». */
+/** « Polygone · Tunis Centre », « Cercle de 2 km · Tunis Centre » or « Zone Tunis Centre ». */
 export function emergencyTargetLabel(
-  e: Pick<EmergencyResponse, "zoneId" | "zoneName" | "latitude" | "longitude" | "radiusKm">,
+  e: Pick<EmergencyResponse, "zoneId" | "zoneName" | "latitude" | "longitude" | "radiusKm"> &
+    Pick<EmergencyResponseCarte, "targetPolygon">,
   zoneName: (id: number) => string,
 ): string {
   const zone = e.zoneName ?? zoneName(e.zoneId);
+  if (e.targetPolygon) return `Polygone · ${zone}`;
   if (typeof e.radiusKm === "number" && e.latitude !== null && e.latitude !== undefined) {
     const km = new Intl.NumberFormat("fr-TN", { maximumFractionDigits: 1 }).format(e.radiusKm);
     return `Cercle de ${km} km · ${zone}`;

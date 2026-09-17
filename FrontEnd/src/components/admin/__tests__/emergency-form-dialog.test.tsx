@@ -7,8 +7,8 @@ import { draftStorageKey } from "@/lib/forms/form-draft";
 
 const api = vi.hoisted(() => ({ create: vi.fn() }));
 
-vi.mock("@/lib/api/endpoints", () => ({
-  emergencyApi: { create: api.create },
+vi.mock("@/lib/api/endpoints-carte", () => ({
+  emergencyCarteApi: { create: api.create },
 }));
 
 // MapLibre is not available in jsdom: the picker is replaced by a button placing a point.

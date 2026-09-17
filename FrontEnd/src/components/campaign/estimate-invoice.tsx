@@ -5,7 +5,12 @@ import { EstimateTag } from "@/components/campaign/campaign-ui";
 import { ErrorState } from "@/components/ui/error-state";
 import { SectionCard } from "@/components/ui/section-card";
 import { ESTIMATE_COST_RULE } from "@/content/glossary";
+import { multiplierLabel, totalBaseCost } from "@/components/campaign/zone-model";
 import type { CampaignEstimateResponse } from "@/lib/api/types";
+import type {
+  CampaignEstimateResponseCarte,
+  PriceBreakdown,
+} from "@/lib/api/types-carte";
 import { RESERVATION_STATUS } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { formatDateRange, formatNumber, formatTND } from "@/lib/format";
@@ -26,6 +31,66 @@ export function consumedPercent(
 ): number | null {
   if (!(estimate.budget > 0)) return null;
   return Math.min(100, Math.max(0, (estimate.consumedBudget / estimate.budget) * 100));
+}
+
+/** Note shown under every dynamic price (docs/round2-contract.md §4.6). */
+export const DYNAMIC_PRICE_NOTE =
+  "Estimation : tarif ajusté selon le créneau, le jour et la demande.";
+
+/**
+ * « Détail du prix » disclosure: base cost, the four factors with their French explanations and the
+ * final multiplier. Renders nothing when the backend sent no breakdown (prices before V8).
+ */
+export function PriceBreakdownDetails({
+  pricing,
+  className,
+}: {
+  pricing: PriceBreakdown | null | undefined;
+  className?: string;
+}) {
+  if (!pricing) return null;
+  const multiplier = multiplierLabel(pricing.multiplier);
+  return (
+    <details className={cx("mt-1 text-[0.75rem] text-muted", className)}>
+      <summary className="cursor-pointer text-brand-blue-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text">
+        Détail du prix{multiplier ? ` (${multiplier})` : ""}
+      </summary>
+      <dl className="mt-1.5 flex flex-col gap-0.5">
+        <div className="flex justify-between gap-3">
+          <dt>Coût de base</dt>
+          <dd className="tabular">{formatTND(pricing.baseCost)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt>Créneau horaire</dt>
+          <dd className="tabular">×{formatNumber(pricing.factors.hour)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt>Jour de la semaine</dt>
+          <dd className="tabular">×{formatNumber(pricing.factors.dayOfWeek)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt>Demande</dt>
+          <dd className="tabular">×{formatNumber(pricing.factors.demand)}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt>Rareté des Porteurs</dt>
+          <dd className="tabular">×{formatNumber(pricing.factors.scarcity)}</dd>
+        </div>
+        <div className="flex justify-between gap-3 font-semibold text-ink-soft">
+          <dt>Multiplicateur appliqué</dt>
+          <dd className="tabular">×{formatNumber(pricing.multiplier)}</dd>
+        </div>
+      </dl>
+      {pricing.explanations.length > 0 ? (
+        <ul className="mt-1.5 flex flex-col gap-0.5">
+          {pricing.explanations.map((e) => (
+            <li key={e}>• {e}</li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="mt-1.5">{DYNAMIC_PRICE_NOTE}</p>
+    </details>
+  );
 }
 
 export interface EstimateInvoiceProps {
@@ -52,6 +117,10 @@ export function EstimateInvoice({
 }: EstimateInvoiceProps) {
   const coverage = estimate ? budgetCoverageText(estimate) : null;
   const consumed = estimate ? consumedPercent(estimate) : null;
+  const carte: CampaignEstimateResponseCarte | null = estimate;
+  const lines = carte?.lines ?? [];
+  const baseTotal = totalBaseCost(lines);
+  const dynamic = lines.some((l) => l.pricing?.enabled === true);
   return (
     <SectionCard
       id="estimation"
@@ -75,9 +144,9 @@ export function EstimateInvoice({
         )
       ) : (
         <>
-          {estimate.lines.length > 0 ? (
+          {lines.length > 0 ? (
             <ul className="flex flex-col divide-y divide-line">
-              {estimate.lines.map((l) => (
+              {lines.map((l) => (
                 <li
                   key={l.reservationId}
                   className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-2 text-[0.875rem]"
@@ -93,10 +162,18 @@ export function EstimateInvoice({
                     </span>
                   </span>
                   <span className="shrink-0 text-right whitespace-nowrap tabular">
-                    <span className="block text-ink">{formatTND(l.estimatedCost)}</span>
+                    <span className="block text-ink">
+                      {formatTND(l.estimatedCost)}
+                      {multiplierLabel(l.priceMultiplier) ? (
+                        <span className="ml-1 text-[0.75rem] font-semibold text-brand-blue-text">
+                          {multiplierLabel(l.priceMultiplier)}
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="block text-[0.75rem] text-muted">
                       {formatNumber(l.estimatedViews)} affichages
                     </span>
+                    <PriceBreakdownDetails pricing={l.pricing} className="text-right" />
                   </span>
                 </li>
               ))}
@@ -114,6 +191,12 @@ export function EstimateInvoice({
                 {formatNumber(estimate.totalViews)}
               </dd>
             </div>
+            {dynamic ? (
+              <div>
+                <dt className="text-muted">Coût de base</dt>
+                <dd className="whitespace-nowrap text-ink-soft tabular">{formatTND(baseTotal)}</dd>
+              </div>
+            ) : null}
             <div>
               <dt className="text-muted">Coût estimé</dt>
               <dd className="font-display text-[1.25rem] font-semibold whitespace-nowrap text-ink-strong tabular">
@@ -168,6 +251,7 @@ export function EstimateInvoice({
           <p className="mt-4 rounded-control border border-line bg-overlay-inset p-3 text-[0.8125rem] leading-relaxed text-muted">
             Montants simulés par TPUB à partir des audiences estimées. Le budget consommé suit les
             diffusions réelles ; rien n&apos;est facturé en ligne.
+            {dynamic ? ` ${DYNAMIC_PRICE_NOTE}` : ""}
           </p>
         </>
       )}

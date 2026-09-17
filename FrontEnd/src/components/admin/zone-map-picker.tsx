@@ -8,6 +8,7 @@ import type { SupportResponse, ZoneResponse } from "@/lib/api/types";
 import { formatCoordinates } from "@/components/admin/network-schemas";
 import { clampRadiusKm } from "@/components/admin/network-map-model";
 import { roundCoord } from "@/lib/network/geo";
+import type { MapPolygon, PolygonDraft } from "@/lib/network/overlays";
 
 /** Id of the draft circle drawn by the picker (never sent to the backend). */
 const DRAFT_ZONE_ID = -1;
@@ -25,6 +26,9 @@ export function ZoneMapPicker({
   supports,
   onPick,
   onRadius,
+  polygonDraft = null,
+  onPolygonDraftChange,
+  polygons,
   ariaLabel = "Carte de positionnement de la zone",
   hint,
   height = "15rem",
@@ -39,6 +43,11 @@ export function ZoneMapPicker({
   supports: readonly SupportResponse[];
   onPick: (lat: number, lng: number) => void;
   onRadius: (km: number) => void;
+  /** Round 2: polygon being drawn on the same map (docs/round2-contract.md §4.8). */
+  polygonDraft?: PolygonDraft | null;
+  onPolygonDraftChange?: (draft: PolygonDraft) => void;
+  /** Polygons drawn for context. */
+  polygons?: readonly MapPolygon[];
   ariaLabel?: string;
   /** Replaces the default caption under the map. */
   hint?: string;
@@ -75,7 +84,14 @@ export function ZoneMapPicker({
         focusZoneId={null}
         height={height}
         ariaLabel={ariaLabel}
-        onMapClick={(p) => onPick(roundCoord(p.lat), roundCoord(p.lng))}
+        polygons={polygons}
+        polygonDraft={polygonDraft}
+        onPolygonDraftChange={onPolygonDraftChange}
+        onMapClick={
+          onPolygonDraftChange && polygonDraft
+            ? undefined
+            : (p) => onPick(roundCoord(p.lat), roundCoord(p.lng))
+        }
         onZoneRadiusChange={(zoneId, km) => {
           if (zoneId === DRAFT_ZONE_ID) onRadius(clampRadiusKm(km));
         }}
