@@ -42,12 +42,7 @@ export function retryDelayMs(attempt: number, random?: () => number): number {
 }
 
 export type PlayerErrorKind =
-  | "not-found"
-  | "offline"
-  | "unreachable"
-  | "invalid"
-  | "rate-limited"
-  | "server";
+  "not-found" | "offline" | "unreachable" | "invalid" | "rate-limited" | "server";
 
 export interface PlayerErrorInfo {
   kind: PlayerErrorKind;

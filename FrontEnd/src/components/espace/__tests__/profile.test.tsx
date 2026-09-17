@@ -356,9 +356,9 @@ describe("two-factor authentication card (round 2 §3.7)", () => {
       .mockResolvedValueOnce({ recoveryCodes: CODES });
     const { container } = renderProfile();
 
-    const card = (
-      await screen.findByRole("heading", { name: "Double authentification" })
-    ).closest("section")!;
+    const card = (await screen.findByRole("heading", { name: "Double authentification" })).closest(
+      "section",
+    )!;
     expect(container.querySelector("#securite")?.contains(card)).toBe(true);
     expect(await within(card).findByText("Inactive")).toBeInTheDocument();
 

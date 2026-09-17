@@ -28,7 +28,12 @@ import { diffusionApi } from "@/lib/api/endpoints";
 import { isAbortError, isDeviceKeyError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
 import { toLocalIsoDateTime } from "@/lib/format";
-import { clearDeviceKey, isDeviceKey, readDeviceKey, storeDeviceKey } from "@/lib/player/device-key";
+import {
+  clearDeviceKey,
+  isDeviceKey,
+  readDeviceKey,
+  storeDeviceKey,
+} from "@/lib/player/device-key";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 
 /** `undefined`: storage not read yet (first render); `null`: this screen is not paired. */

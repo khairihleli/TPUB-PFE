@@ -45,7 +45,10 @@ export function RecoveryCodesList({ codes, email, generatedAt }: RecoveryCodesLi
           size="sm"
           iconLeft={<Download aria-hidden="true" />}
           onClick={() =>
-            saveBlob(new Blob([text], { type: "text/plain;charset=utf-8" }), recoveryCodesFileName(at))
+            saveBlob(
+              new Blob([text], { type: "text/plain;charset=utf-8" }),
+              recoveryCodesFileName(at),
+            )
           }
         >
           Télécharger (.txt)
@@ -106,7 +109,11 @@ export function RecoveryCodesDialog({
         hideCloseButton
         preventOutsideClose
         footer={
-          <Button variant="primary" disabledReason={kept ? null : "Confirmez d'abord la conservation des codes."} onClick={onClose}>
+          <Button
+            variant="primary"
+            disabledReason={kept ? null : "Confirmez d'abord la conservation des codes."}
+            onClick={onClose}
+          >
             Terminer
           </Button>
         }

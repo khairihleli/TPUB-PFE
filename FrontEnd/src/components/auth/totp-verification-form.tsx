@@ -49,6 +49,10 @@ export function TotpVerificationForm({ next }: { next: string | null }) {
   const [pending, setPending] = useState(false);
   const [recoveryUser, setRecoveryUser] = useState<SessionUser | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // The code field is the only task of this page: focus it once (instead of autoFocus, jsx-a11y).
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
   const busy = useRef(false);
   const now = useNow(recoveryUser === null);
 
@@ -192,7 +196,6 @@ export function TotpVerificationForm({ next }: { next: string | null }) {
           ref={inputRef}
           mode={mode}
           value={code}
-          autoFocus
           onValueChange={(v) => {
             setCode(v);
             if (fieldError) setFieldError(null);

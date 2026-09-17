@@ -369,7 +369,9 @@ function CodeDialog({
     } catch (err) {
       setPending(false);
       if (hasErrorCode(err, "TOTP_CODE_INVALID")) {
-        setCodeErr(mode === "totp" ? INVALID_CODE_MESSAGE : "Code de secours incorrect ou déjà utilisé.");
+        setCodeErr(
+          mode === "totp" ? INVALID_CODE_MESSAGE : "Code de secours incorrect ou déjà utilisé.",
+        );
         setCode("");
       } else if (hasErrorCode(err, "INVALID_CURRENT_PASSWORD")) {
         setPasswordErr("Mot de passe actuel incorrect.");
@@ -405,14 +407,24 @@ function CodeDialog({
           </>
         }
       >
-        <form id={formId} noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
+        <form
+          id={formId}
+          noValidate
+          onSubmit={(e) => void submit(e)}
+          className="flex flex-col gap-4"
+        >
           {formError ? (
             <Alert tone="danger" live="alert">
               {formError}
             </Alert>
           ) : null}
           {withPassword ? (
-            <Field label="Mot de passe actuel" id={`${formId}-password`} error={passwordErr} required>
+            <Field
+              label="Mot de passe actuel"
+              id={`${formId}-password`}
+              error={passwordErr}
+              required
+            >
               <PasswordInput
                 name="password"
                 autoComplete="current-password"
@@ -450,7 +462,9 @@ function CodeDialog({
                 setCodeErr(null);
               }}
             >
-              {mode === "totp" ? "Utiliser un code de secours" : "Utiliser le code de l'application"}
+              {mode === "totp"
+                ? "Utiliser un code de secours"
+                : "Utiliser le code de l'application"}
             </button>
           ) : null}
         </form>
