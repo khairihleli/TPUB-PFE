@@ -32,6 +32,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +50,9 @@ class EmergencyServiceTest {
             .longitude(new BigDecimal("10.3240")).radiusKm(new BigDecimal("3")).isActive(true).build();
     private EmergencyMessageRepository repository;
     private DiffusionSupportRepository supportRepository;
+    private com.example.tpubpfe.service.approval.ApprovalPolicy approvalPolicy;
+    private com.example.tpubpfe.service.supervision.AlertService alertService;
+    private com.example.tpubpfe.service.notification.NotificationService notificationService;
     private EmergencyService service;
 
     @BeforeEach
@@ -56,8 +62,16 @@ class EmergencyServiceTest {
         ZoneRepository zoneRepository = mock(ZoneRepository.class);
         ZoneService zoneService = mock(ZoneService.class);
         UserRepository userRepository = mock(UserRepository.class);
+        approvalPolicy = mock(com.example.tpubpfe.service.approval.ApprovalPolicy.class);
+        alertService = mock(com.example.tpubpfe.service.supervision.AlertService.class);
+        notificationService = mock(com.example.tpubpfe.service.notification.NotificationService.class);
+        when(approvalPolicy.configuredForEmergency()).thenReturn(1);
+        when(approvalPolicy.effective(anyInt())).thenReturn(1);
+        when(approvalPolicy.approvals(any(), any(Long.class), anyString())).thenReturn(List.of());
+        when(approvalPolicy.toResponses(anyList())).thenReturn(List.of());
         service = new EmergencyService(repository, zoneService, zoneRepository, userRepository, supportRepository,
-                mock(DiffusionLogRepository.class), mock(AuditService.class),
+                mock(DiffusionLogRepository.class), mock(AuditService.class), approvalPolicy, alertService,
+                notificationService, mock(org.springframework.context.ApplicationEventPublisher.class),
                 Clock.fixed(NOW.atZone(TUNIS).toInstant(), TUNIS));
         when(zoneRepository.findByIsActiveTrue()).thenReturn(List.of(centre, marsa));
         when(zoneService.findZone(1L)).thenReturn(centre);

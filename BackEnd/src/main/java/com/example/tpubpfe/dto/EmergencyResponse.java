@@ -10,6 +10,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @Builder
@@ -43,4 +45,12 @@ public class EmergencyResponse {
     private long diffusionCount;
     private String createdByName;
     private Instant createdAt;
+    /** Multi-level approval (docs/round2-contract.md §5.4): EN_ATTENTE, APPROUVE or REFUSE. */
+    private String approvalStatus;
+    /** Effective number of distinct administrators needed (capped by the active administrators). */
+    private int approvalsRequired;
+    private int approvalsRequiredConfigured;
+    @Builder.Default
+    private List<ApprovalResponse> approvals = new ArrayList<>();
+    private Instant approvedAt;
 }

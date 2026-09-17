@@ -35,6 +35,8 @@ import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.context.request.async.AsyncRequestTimeoutException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -238,5 +240,10 @@ public class GlobalExceptionHandler {
                                                                HttpServletRequest request, Map<String, String> errors) {
         return ResponseEntity.status(status).body(ApiErrorBody.of(status, code, message,
                 request == null ? null : request.getRequestURI(), errors));
+    }
+
+    /** A finished Server-Sent Events stream: the response is already committed, nothing must be written. */
+    @ExceptionHandler({AsyncRequestTimeoutException.class, AsyncRequestNotUsableException.class})
+    public void asyncDone() {
     }
 }

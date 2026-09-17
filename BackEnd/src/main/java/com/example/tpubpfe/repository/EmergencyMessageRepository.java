@@ -16,6 +16,10 @@ public interface EmergencyMessageRepository extends JpaRepository<EmergencyMessa
 
     List<EmergencyMessage> findAllByOrderByCreatedAtDescIdDesc();
 
+    /** Messages waiting for a multi-level approval, newest first (docs/round2-contract.md §5.4). */
+    List<EmergencyMessage> findByApprovalStatusAndIsActiveTrueOrderByCreatedAtDescIdDesc(
+            com.example.tpubpfe.model.EmergencyApprovalStatus approvalStatus);
+
     long countByZoneId(Long zoneId);
 
     @Query("""
@@ -31,11 +35,15 @@ public interface EmergencyMessageRepository extends JpaRepository<EmergencyMessa
             @Param("date") LocalDate date
     );
 
-    /** Active messages whose date range covers {@code date}, any zone (time window and target filtered in Java). */
+    /**
+     * Active, approved messages whose date range covers {@code date}, any zone (time window and target filtered in
+     * Java). Messages pending a multi-level approval are never broadcast (docs/round2-contract.md §5.4).
+     */
     @Query("""
             SELECT e FROM EmergencyMessage e
             JOIN FETCH e.zone z
             WHERE e.isActive = true
+              AND e.approvalStatus = com.example.tpubpfe.model.EmergencyApprovalStatus.APPROUVE
               AND e.startDate <= :date
               AND e.endDate >= :date
             """)

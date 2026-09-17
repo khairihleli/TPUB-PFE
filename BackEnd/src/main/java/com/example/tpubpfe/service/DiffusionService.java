@@ -66,6 +66,7 @@ public class DiffusionService {
     static final DateTimeFormatter LOCAL_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
     private static final Set<CampaignStatus> DIFFUSABLE = Set.of(CampaignStatus.ACTIVE, CampaignStatus.VALIDATED_BY_ADMIN);
 
+    private final org.springframework.context.ApplicationEventPublisher eventPublisher;
     private final DiffusionSupportRepository supportRepository;
     private final ReservationRepository reservationRepository;
     private final EmergencyMessageRepository emergencyMessageRepository;
@@ -334,7 +335,7 @@ public class DiffusionService {
     private DiffusionLog saveLog(DiffusionSupport support, Campaign campaign, EmergencyMessage emergency,
                                  Reservation reservation, DiffusionContentType type, String title, String mediaUrl,
                                  int duration, Short priority, BigDecimal cost, Instant at) {
-        return diffusionLogRepository.save(DiffusionLog.builder()
+        DiffusionLog saved = diffusionLogRepository.save(DiffusionLog.builder()
                 .support(support)
                 .zone(support.getZone())
                 .campaign(campaign)
@@ -348,5 +349,8 @@ public class DiffusionService {
                 .cost(cost)
                 .diffusedAt(at)
                 .build());
+        eventPublisher.publishEvent(new com.example.tpubpfe.service.realtime.DiffusionRecordedEvent(saved.getId(),
+                support.getId()));
+        return saved;
     }
 }

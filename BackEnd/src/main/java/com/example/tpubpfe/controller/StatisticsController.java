@@ -9,6 +9,7 @@ import com.example.tpubpfe.model.DiffusionContentType;
 import com.example.tpubpfe.service.CampaignSearchSpecifications;
 import com.example.tpubpfe.service.CsvExportService;
 import com.example.tpubpfe.service.StatisticsService;
+import com.example.tpubpfe.service.export.StatisticsExportService;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -32,9 +33,12 @@ import java.util.List;
 public class StatisticsController {
 
     private static final MediaType CSV = new MediaType("text", "csv", java.nio.charset.StandardCharsets.UTF_8);
+    private static final MediaType XLSX = MediaType
+            .parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     private final StatisticsService statisticsService;
     private final CsvExportService csvExportService;
+    private final StatisticsExportService exportService;
 
     @Operation(summary = "Platform dashboard statistics (staff)")
     @PreAuthorize("hasAnyRole('ADMINISTRATEUR', 'SUPERVISEUR', 'OPERATEUR')")
@@ -104,6 +108,42 @@ public class StatisticsController {
                 new CsvExportService.ExportQuery(type, from, to, groupBy, campaignId));
         return ResponseEntity.ok()
                 .contentType(CSV)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(file.filename()).build().toString())
+                .body(file.content());
+    }
+
+    @Operation(summary = "PDF export: same query and roles as the CSV export")
+    @PreAuthorize("hasAnyRole('ANNONCEUR', 'ADMINISTRATEUR', 'SUPERVISEUR', 'OPERATEUR')")
+    @GetMapping("/export.pdf")
+    public ResponseEntity<byte[]> exportPdf(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String groupBy,
+            @RequestParam(required = false) Long campaignId
+    ) {
+        StatisticsExportService.ExportFile file = exportService.pdf(type, from, to, groupBy, campaignId);
+        return download(file, MediaType.APPLICATION_PDF);
+    }
+
+    @Operation(summary = "Excel export: same query and roles as the CSV export")
+    @PreAuthorize("hasAnyRole('ANNONCEUR', 'ADMINISTRATEUR', 'SUPERVISEUR', 'OPERATEUR')")
+    @GetMapping("/export.xlsx")
+    public ResponseEntity<byte[]> exportXlsx(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String groupBy,
+            @RequestParam(required = false) Long campaignId
+    ) {
+        StatisticsExportService.ExportFile file = exportService.xlsx(type, from, to, groupBy, campaignId);
+        return download(file, XLSX);
+    }
+
+    private static ResponseEntity<byte[]> download(StatisticsExportService.ExportFile file, MediaType contentType) {
+        return ResponseEntity.ok()
+                .contentType(contentType)
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename(file.filename()).build().toString())
                 .body(file.content());

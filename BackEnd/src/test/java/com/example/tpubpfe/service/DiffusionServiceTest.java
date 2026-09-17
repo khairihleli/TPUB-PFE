@@ -104,7 +104,8 @@ class DiffusionServiceTest {
         FileStorageService storage = new FileStorageService(properties);
         EstimationService estimation = new EstimationService(properties, supportRepository, reservationRepository,
                 mock(CampaignAccessGuard.class));
-        service = new DiffusionService(supportRepository, reservationRepository, emergencyRepository, mediaRepository,
+        service = new DiffusionService(mock(org.springframework.context.ApplicationEventPublisher.class),
+                supportRepository, reservationRepository, emergencyRepository, mediaRepository,
                 logRepository, blockRepository, campaignZoneRepository, campaignRepository, paymentRepository,
                 checkRepository, estimation, storage, properties,
                 Clock.fixed(AT.atZone(TUNIS).toInstant(), TUNIS));

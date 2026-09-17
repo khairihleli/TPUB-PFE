@@ -181,7 +181,8 @@ class CampaignLifecycleIntegrationTest {
         assertThatThrownBy(() -> adminCampaignService.validate(campaignId, null))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("AI_OVERRIDE_REQUIRED");
         CampaignResponse validated = adminCampaignService.validate(campaignId,
-                AdminValidateRequest.builder().overrideAi(true).comment("Événement vérifié").priorityScore(6).build());
+                AdminValidateRequest.builder().overrideAi(true).comment("Événement vérifié").priorityScore(6).build())
+                .campaign();
         assertThat(validated.getStatus()).isEqualTo("VALIDATED_BY_ADMIN");
         assertThat(validated.isAiOverride()).isTrue();
         assertThat(validated.getPriorityScore()).isEqualTo((short) 6);

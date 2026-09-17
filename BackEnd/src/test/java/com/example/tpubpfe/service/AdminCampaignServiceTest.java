@@ -45,6 +45,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -64,6 +65,9 @@ class AdminCampaignServiceTest {
     private AiContentCheckRepository checkRepository;
     private PaymentSimulationRepository paymentRepository;
     private AuditService auditService;
+    private com.example.tpubpfe.service.approval.ApprovalPolicy approvalPolicy;
+    private com.example.tpubpfe.service.supervision.AlertService alertService;
+    private com.example.tpubpfe.service.notification.NotificationService notificationService;
     private AdminCampaignService service;
     private final List<Reservation> reservations = new ArrayList<>();
     private Campaign campaign;
@@ -80,9 +84,17 @@ class AdminCampaignServiceTest {
         auditService = mock(AuditService.class);
         CampaignMapper mapper = mock(CampaignMapper.class);
         Clock clock = Clock.fixed(TODAY.atTime(9, 30).atZone(TUNIS).toInstant(), TUNIS);
+        approvalPolicy = mock(com.example.tpubpfe.service.approval.ApprovalPolicy.class);
+        alertService = mock(com.example.tpubpfe.service.supervision.AlertService.class);
+        notificationService = mock(com.example.tpubpfe.service.notification.NotificationService.class);
+        when(approvalPolicy.configuredForCampaign()).thenReturn(1);
+        when(approvalPolicy.effective(anyInt())).thenReturn(1);
+        when(approvalPolicy.campaignRiskThreshold()).thenReturn(50);
+        when(approvalPolicy.approvals(any(), any(Long.class), anyString())).thenReturn(List.of());
+        when(approvalPolicy.toResponses(anyList())).thenReturn(List.of());
         service = new AdminCampaignService(campaignRepository, decisionLogRepository, checkRepository, paymentRepository,
                 userRepository, new CampaignReservationSync(reservationRepository, campaignRepository), mapper,
-                auditService, clock);
+                auditService, approvalPolicy, alertService, notificationService, clock);
 
         TestAuth.login(1L, "ADMINISTRATEUR");
         User admin = User.builder().id(1L).nom("Admin").build();
@@ -125,7 +137,8 @@ class AdminCampaignServiceTest {
 
     @Test
     void validationActivatesConfirmsReservationsAndSimulatesPayment() {
-        CampaignResponse response = service.validate(3L, AdminValidateRequest.builder().comment("RAS").priorityScore(7).build());
+        CampaignResponse response = service.validate(3L,
+                AdminValidateRequest.builder().comment("RAS").priorityScore(7).build()).campaign();
 
         assertThat(response.getStatus()).isEqualTo("ACTIVE");
         assertThat(campaign.getAdminStatus()).isEqualTo(CampaignAdminStatus.VALIDATED);
@@ -160,7 +173,7 @@ class AdminCampaignServiceTest {
     @Test
     void futureCampaignIsProgrammed() {
         campaign.setStartDate(TODAY.plusDays(1));
-        assertThat(service.validate(3L, null).getStatus()).isEqualTo("VALIDATED_BY_ADMIN");
+        assertThat(service.validate(3L, null).campaign().getStatus()).isEqualTo("VALIDATED_BY_ADMIN");
         assertThat(campaign.getActivatedAt()).isNull();
     }
 
