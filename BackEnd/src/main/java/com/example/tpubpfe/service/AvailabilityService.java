@@ -16,7 +16,9 @@ import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.repository.SupportAvailabilityRepository;
 import com.example.tpubpfe.repository.ZoneRepository;
+import com.example.tpubpfe.service.pricing.DynamicPricingService;
 import com.example.tpubpfe.util.GeoUtils;
+import com.example.tpubpfe.util.TargetingGeometry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,9 +106,11 @@ public class AvailabilityService {
                 .toList();
 
         Snapshot snapshot = load(window.startDate(), window.endDate());
+        DynamicPricingService.Context pricing = candidates.isEmpty() ? null
+                : estimationService.pricingContext(window, campaignId);
         List<AvailabilityResponse.Item> items = new ArrayList<>();
         for (Candidate candidate : candidates) {
-            items.add(item(candidate, window, snapshot, campaignId));
+            items.add(item(candidate, window, snapshot, campaignId, pricing));
         }
         AvailabilityResponse.Summary summary = summary(items);
         List<AvailabilityResponse.AlternativeSlot> alternatives = summary.getAvailableSupports() == 0 && !candidates.isEmpty()
@@ -169,8 +173,8 @@ public class AvailabilityService {
         }
         if (query.campaignId() != null) {
             Campaign campaign = accessGuard.readable(query.campaignId());
-            List<CampaignZone> circles = campaignZoneRepository.findByCampaignIdOrderByIdAsc(campaign.getId());
-            return inCircles(supportRepository.findAll(), circles);
+            List<CampaignZone> zones = campaignZoneRepository.findByCampaignIdOrderByIdAsc(campaign.getId());
+            return inCircles(supportRepository.findAll(), zones);
         }
         if (hasCircle) {
             if (query.latitude() == null || query.longitude() == null || query.radiusKm() == null) {
@@ -194,15 +198,18 @@ public class AvailabilityService {
                 .toList();
     }
 
-    /** Supports inside at least one circle, with the distance to the nearest circle centre. */
-    static List<Candidate> inCircles(List<DiffusionSupport> supports, List<CampaignZone> circles) {
+    /**
+     * Supports inside at least one campaign zone (circle or polygon), with the smallest distance to a target: the
+     * circle centre, or 0 inside a polygon and its centroid otherwise (docs/round2-contract.md §4.3).
+     */
+    static List<Candidate> inCircles(List<DiffusionSupport> supports, List<CampaignZone> zones) {
         List<Candidate> result = new ArrayList<>();
         for (DiffusionSupport support : supports) {
             Double best = null;
             boolean inside = false;
-            for (CampaignZone circle : circles) {
-                double distance = distance(support, circle.getLatitude().doubleValue(), circle.getLongitude().doubleValue());
-                if (distance <= circle.getRadiusKm().doubleValue()) {
+            for (CampaignZone zone : zones) {
+                double distance = TargetingGeometry.distanceKm(support, zone);
+                if (TargetingGeometry.inside(support, zone)) {
                     inside = true;
                 }
                 best = best == null ? distance : Math.min(best, distance);
@@ -214,7 +221,8 @@ public class AvailabilityService {
         return result;
     }
 
-    AvailabilityResponse.Item item(Candidate candidate, TimeWindow window, Snapshot snapshot, Long campaignId) {
+    AvailabilityResponse.Item item(Candidate candidate, TimeWindow window, Snapshot snapshot, Long campaignId,
+                                   DynamicPricingService.Context pricing) {
         DiffusionSupport support = candidate.support();
         List<Reservation> reservations = snapshot.reservationsOf(support.getId());
         AvailabilityRules.Result result = AvailabilityRules.derive(support, window, reservations,
@@ -225,7 +233,7 @@ public class AvailabilityService {
                 .filter(window::overlaps)
                 .min(Comparator.comparing(Reservation::getId))
                 .orElse(null);
-        EstimationService.Estimate estimate = estimationService.estimate(support, window);
+        EstimationService.Estimate estimate = estimationService.estimate(support, window, pricing);
         List<SupportAvailabilitySlot> conflicts = new ArrayList<>();
         result.overlapping().forEach(r -> conflicts.add(SupportService.toSlot(r)));
         result.blocks().forEach(b -> conflicts.add(SupportService.toSlot(b)));
@@ -241,6 +249,7 @@ public class AvailabilityService {
                 .conflicts(conflicts)
                 .estimatedViews(estimate.views())
                 .estimatedCost(estimate.cost())
+                .priceMultiplier(estimate.multiplier())
                 .build();
     }
 
@@ -313,7 +322,7 @@ public class AvailabilityService {
                     snapshot.reservationsOf(support.getId()), snapshot.blocksOf(support.getId()), campaignId);
             if (result.status() == AvailabilityStatus.DISPONIBLE) {
                 available++;
-                views += estimationService.estimate(support, window).views();
+                views += estimationService.baseEstimate(support, window).views();
             }
         }
         AvailabilityRules.Preset preset = AvailabilityRules.Preset.of(window.startTime(), window.endTime());

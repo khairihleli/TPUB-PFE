@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Map;
 
 @Data
 @Builder
@@ -25,6 +26,7 @@ public class EmergencyResponse {
     private BigDecimal latitude;
     private BigDecimal longitude;
     private BigDecimal radiusKm;
+    private Map<String, Object> targetPolygon;
     private LocalDate startDate;
     private LocalDate endDate;
     @JsonFormat(pattern = "HH:mm:ss")

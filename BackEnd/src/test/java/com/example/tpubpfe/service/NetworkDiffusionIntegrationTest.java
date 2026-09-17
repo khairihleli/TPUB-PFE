@@ -321,7 +321,7 @@ class NetworkDiffusionIntegrationTest {
 
     private void setCircle(Long campaignId) {
         campaignZoneService.setZones(campaignId, CampaignZoneRequest.builder()
-                .zones(List.of(CampaignZoneRequest.Circle.builder().latitude(new BigDecimal("35.8256"))
+                .zones(List.of(CampaignZoneRequest.ZoneInput.builder().latitude(new BigDecimal("35.8256"))
                         .longitude(new BigDecimal("10.6352")).radiusKm(new BigDecimal("1.0")).label("Centre").build()))
                 .build());
     }

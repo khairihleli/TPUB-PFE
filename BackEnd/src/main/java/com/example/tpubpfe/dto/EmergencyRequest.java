@@ -18,6 +18,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Map;
 
 @Data
 @Builder
@@ -47,6 +48,9 @@ public class EmergencyRequest {
     @DecimalMin("0.1")
     @DecimalMax("50")
     private BigDecimal radiusKm;
+
+    /** Round 2: GeoJSON Polygon or MultiPolygon target (exclusive with the circle, docs/round2-contract.md §4.4). */
+    private Map<String, Object> polygon;
 
     @NotNull
     private LocalDate startDate;

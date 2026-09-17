@@ -126,7 +126,7 @@ class CampaignLifecycleIntegrationTest {
 
         // 2. zones + a temporary reservation
         CampaignZonesUpdateResponse zones = campaignZoneService.setZones(campaignId, CampaignZoneRequest.builder()
-                .zones(List.of(CampaignZoneRequest.Circle.builder().latitude(new BigDecimal("36.8008"))
+                .zones(List.of(CampaignZoneRequest.ZoneInput.builder().latitude(new BigDecimal("36.8008"))
                         .longitude(new BigDecimal("10.1800")).radiusKm(new BigDecimal("1.5")).label("Centre").build()))
                 .build());
         assertThat(zones.getZones()).singleElement().satisfies(z -> {

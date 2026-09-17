@@ -67,6 +67,17 @@ public interface DiffusionLogRepository extends JpaRepository<DiffusionLog, Long
     List<DiffusionLog> findForStatistics(@Param("types") Collection<DiffusionContentType> types,
                                          @Param("from") Instant from, @Param("to") Instant to);
 
+    /** Heatmap (round 2 §4.5): diffusions per support in [from, to): rows of [supportId, count]. */
+    @Query("""
+            SELECT l.support.id, COUNT(l) FROM DiffusionLog l
+            WHERE l.contentType IN :types
+              AND l.diffusedAt >= :from
+              AND l.diffusedAt < :to
+            GROUP BY l.support.id
+            """)
+    List<Object[]> countPerSupportBetween(@Param("types") Collection<DiffusionContentType> types,
+                                          @Param("from") Instant from, @Param("to") Instant to);
+
     /** PUBLICITE diffusions per support since {@code from}: rows of [supportId, count]. */
     @Query("""
             SELECT l.support.id, COUNT(l) FROM DiffusionLog l

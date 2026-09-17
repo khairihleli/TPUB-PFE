@@ -1,5 +1,6 @@
 package com.example.tpubpfe.service;
 
+import com.example.tpubpfe.config.GeoPricingProperties;
 import com.example.tpubpfe.config.TpubProperties;
 import com.example.tpubpfe.dto.DiffusionResponse;
 import com.example.tpubpfe.exception.ApiException;
@@ -36,6 +37,7 @@ import com.example.tpubpfe.repository.MediaFileRepository;
 import com.example.tpubpfe.repository.PaymentSimulationRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.repository.SupportAvailabilityRepository;
+import com.example.tpubpfe.service.pricing.DynamicPricingService;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -103,7 +105,8 @@ class DiffusionServiceTest {
         properties.getMedia().setBaseUrl("/uploads");
         FileStorageService storage = new FileStorageService(properties);
         EstimationService estimation = new EstimationService(properties, supportRepository, reservationRepository,
-                mock(CampaignAccessGuard.class));
+                mock(CampaignAccessGuard.class), new DynamicPricingService(new GeoPricingProperties.Dynamic(),
+                reservationRepository, blockRepository, supportRepository));
         service = new DiffusionService(supportRepository, reservationRepository, emergencyRepository, mediaRepository,
                 logRepository, blockRepository, campaignZoneRepository, campaignRepository, paymentRepository,
                 checkRepository, estimation, storage, properties,
@@ -233,15 +236,15 @@ class DiffusionServiceTest {
 
         Instant old = Instant.parse("2026-10-05T10:00:00Z");
         Instant recent = Instant.parse("2026-10-05T17:00:00Z");
-        DiffusionService.Candidate top = new DiffusionService.Candidate(campaign(3, 5), null, 70, recent);
-        DiffusionService.Candidate close = new DiffusionService.Candidate(campaign(2, 5), null, 66, old);
-        DiffusionService.Candidate low = new DiffusionService.Candidate(campaign(1, 1), null, 20, null);
+        DiffusionService.Candidate top = new DiffusionService.Candidate(campaign(3, 5), null, 70, recent, BigDecimal.ZERO);
+        DiffusionService.Candidate close = new DiffusionService.Candidate(campaign(2, 5), null, 66, old, BigDecimal.ZERO);
+        DiffusionService.Candidate low = new DiffusionService.Candidate(campaign(1, 1), null, 20, null, BigDecimal.ZERO);
         // low never diffused but is outside the pool (score < 70 − 5)
         assertThat(DiffusionService.pick(List.of(top, close, low))).contains(close);
-        DiffusionService.Candidate never = new DiffusionService.Candidate(campaign(4, 5), null, 65, null);
+        DiffusionService.Candidate never = new DiffusionService.Candidate(campaign(4, 5), null, 65, null, BigDecimal.ZERO);
         assertThat(DiffusionService.pick(List.of(top, close, never))).contains(never);
-        DiffusionService.Candidate tieA = new DiffusionService.Candidate(campaign(9, 5), null, 50, null);
-        DiffusionService.Candidate tieB = new DiffusionService.Candidate(campaign(8, 5), null, 50, null);
+        DiffusionService.Candidate tieA = new DiffusionService.Candidate(campaign(9, 5), null, 50, null, BigDecimal.ZERO);
+        DiffusionService.Candidate tieB = new DiffusionService.Candidate(campaign(8, 5), null, 50, null, BigDecimal.ZERO);
         assertThat(DiffusionService.pick(List.of(tieA, tieB))).contains(tieB);
         assertThat(DiffusionService.pick(List.of())).isEmpty();
     }
@@ -338,5 +341,65 @@ class DiffusionServiceTest {
         assertThat(log.getValue().getReservation().getId()).isEqualTo(12L);
         assertThat(log.getValue().getCost()).isEqualByComparingTo("0.0080");
         assertThat(log.getValue().getPriority()).isEqualTo((short) 60);
+    }
+
+    @Test
+    void consumptionUsesTheReservationPriceMultiplier() {
+        Campaign c = campaign(1, 5);
+        target(c);
+        Reservation booked = reservation(11, c);
+        booked.setPriceMultiplier(new BigDecimal("1.2500"));
+        when(reservationRepository.findActiveReservationsForSupportAt(7L, D, AT.toLocalTime(), ReservationStatus.CONFIRMEE))
+                .thenReturn(List.of(booked));
+
+        DiffusionResponse response = service.getNextAd(7L, null, AT);
+
+        assertThat(response.getType()).isEqualTo("publicite");
+        // 8 TND CPM / 1000 × 1.25 = 0.0100
+        assertThat(c.getConsumedBudget()).isEqualByComparingTo("0.0100");
+        ArgumentCaptor<DiffusionLog> log = ArgumentCaptor.forClass(DiffusionLog.class);
+        verify(logRepository).save(log.capture());
+        assertThat(log.getValue().getCost()).isEqualByComparingTo("0.0100");
+    }
+
+    @Test
+    void budgetGateUsesTheCandidateOwnUnitCost() {
+        Campaign c = campaign(1, 5);
+        c.setBudget(new BigDecimal("0.0090"));
+        target(c);
+        Reservation expensive = reservation(11, c);
+        expensive.setPriceMultiplier(new BigDecimal("1.6000"));
+        when(reservationRepository.findActiveReservationsForSupportAt(7L, D, AT.toLocalTime(), ReservationStatus.CONFIRMEE))
+                .thenReturn(List.of(expensive));
+        // 0.0128 > 0.0090: not eligible, although the multiplier-1 cost (0.0080) would fit
+        assertThat(service.getNextAd(7L, null, AT).getType()).isEqualTo("defaut");
+
+        expensive.setPriceMultiplier(new BigDecimal("1.0000"));
+        assertThat(service.getNextAd(7L, null, AT).getType()).isEqualTo("publicite");
+    }
+
+    @Test
+    void polygonCampaignZoneAndPolygonEmergencyTargetTheSupport() {
+        java.util.Map<String, Object> around = java.util.Map.of("type", "Polygon", "coordinates", List.of(List.of(
+                List.of(10.17, 36.79), List.of(10.19, 36.79), List.of(10.19, 36.81), List.of(10.17, 36.81))));
+        java.util.Map<String, Object> elsewhere = java.util.Map.of("type", "Polygon", "coordinates", List.of(List.of(
+                List.of(10.30, 36.87), List.of(10.33, 36.87), List.of(10.33, 36.89), List.of(10.30, 36.89))));
+        CampaignZone inside = CampaignZone.builder().geometryType(com.example.tpubpfe.model.ZoneGeometryType.POLYGONE)
+                .polygon(around).latitude(new BigDecimal("36.80")).longitude(new BigDecimal("10.18"))
+                .radiusKm(new BigDecimal("1.5")).build();
+        CampaignZone outside = CampaignZone.builder().geometryType(com.example.tpubpfe.model.ZoneGeometryType.POLYGONE)
+                .polygon(elsewhere).latitude(new BigDecimal("36.88")).longitude(new BigDecimal("10.315"))
+                // bounding circle wide enough to contain the support: only the polygon test must reject it
+                .radiusKm(new BigDecimal("50")).build();
+        assertThat(DiffusionService.supportInsideCampaignZones(support, List.of(inside))).isTrue();
+        assertThat(DiffusionService.supportInsideCampaignZones(support, List.of(outside))).isFalse();
+
+        EmergencyMessage polygon = emergency(1, UrgencyLevel.CRITICAL, 1, otherZone);
+        polygon.setTargetPolygon(around);
+        assertThat(DiffusionService.selectEmergency(List.of(polygon), support, AT)).contains(polygon);
+        EmergencyMessage far = emergency(2, UrgencyLevel.CRITICAL, 1, zone);
+        far.setTargetPolygon(elsewhere);
+        // polygon wins over the zone: same zone but outside the polygon
+        assertThat(DiffusionService.selectEmergency(List.of(far), support, AT)).isEmpty();
     }
 }

@@ -15,7 +15,7 @@ import com.example.tpubpfe.repository.EmergencyMessageRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.repository.ZoneRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
-import com.example.tpubpfe.util.GeoUtils;
+import com.example.tpubpfe.util.TargetingGeometry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,14 +53,8 @@ public class EmergencyService {
 
     @Transactional
     public EmergencyResponse create(EmergencyRequest request) {
-        boolean anyCircle = request.getLatitude() != null || request.getLongitude() != null || request.getRadiusKm() != null;
-        boolean fullCircle = request.getLatitude() != null && request.getLongitude() != null && request.getRadiusKm() != null;
-        if (anyCircle && !fullCircle) {
-            throw NetworkErrors.emergencyTargetRequired();
-        }
-        if (request.getZoneId() == null && !fullCircle) {
-            throw NetworkErrors.emergencyTargetRequired();
-        }
+        EmergencyTargeting.Target target = EmergencyTargeting.resolve(request, zoneService, zoneRepository);
+        boolean fullCircle = target.circle();
         LocalTime startTime = request.getStartTime() != null ? request.getStartTime() : LocalTime.MIDNIGHT;
         LocalTime endTime = request.getEndTime() != null ? request.getEndTime() : DEFAULT_END;
         LocalDateTime startAt = request.getStartDate().atTime(startTime);
@@ -68,13 +62,7 @@ public class EmergencyService {
         if (!endAt.isAfter(startAt) || !endAt.isAfter(LocalDateTime.now(clock))) {
             throw NetworkErrors.invalidEmergencyWindow();
         }
-        Zone zone;
-        if (request.getZoneId() != null) {
-            zone = zoneService.findZone(request.getZoneId());
-        } else {
-            zone = CampaignZoneService.resolveZone(request.getLatitude().doubleValue(), request.getLongitude().doubleValue(),
-                    zoneRepository.findByIsActiveTrue()).orElseThrow(CampaignErrors::invalidZone);
-        }
+        Zone zone = target.zone();
         UserDetailsImpl current = CampaignAccessGuard.currentUser();
         User creator = current == null ? null : userRepository.findById(current.getId()).orElse(null);
         if (creator == null) {
@@ -87,6 +75,7 @@ public class EmergencyService {
                 .latitude(fullCircle ? request.getLatitude().setScale(7, RoundingMode.HALF_UP) : null)
                 .longitude(fullCircle ? request.getLongitude().setScale(7, RoundingMode.HALF_UP) : null)
                 .radiusKm(fullCircle ? request.getRadiusKm().setScale(3, RoundingMode.HALF_UP) : null)
+                .targetPolygon(target.polygon())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .startTime(startTime)
@@ -168,15 +157,7 @@ public class EmergencyService {
     static long affectedSupports(EmergencyMessage message, List<DiffusionSupport> supports) {
         return supports.stream()
                 .filter(s -> s.getTechnicalStatus() == TechnicalStatus.ACTIF)
-                .filter(s -> {
-                    if (message.getLatitude() != null && message.getLongitude() != null && message.getRadiusKm() != null) {
-                        return GeoUtils.within(s.getLatitude().doubleValue(), s.getLongitude().doubleValue(),
-                                message.getLatitude().doubleValue(), message.getLongitude().doubleValue(),
-                                message.getRadiusKm().doubleValue());
-                    }
-                    return s.getZone() != null && message.getZone() != null
-                            && s.getZone().getId().equals(message.getZone().getId());
-                })
+                .filter(s -> TargetingGeometry.emergencyTargets(message, s))
                 .count();
     }
 
@@ -190,6 +171,7 @@ public class EmergencyService {
                 .latitude(message.getLatitude())
                 .longitude(message.getLongitude())
                 .radiusKm(message.getRadiusKm())
+                .targetPolygon(message.getTargetPolygon())
                 .startDate(message.getStartDate())
                 .endDate(message.getEndDate())
                 .startTime(message.getStartTime() != null ? message.getStartTime() : LocalTime.MIDNIGHT)

@@ -1,5 +1,6 @@
 package com.example.tpubpfe.service;
 
+import com.example.tpubpfe.config.GeoPricingProperties;
 import com.example.tpubpfe.dto.ZoneRequest;
 import com.example.tpubpfe.dto.ZoneResponse;
 import com.example.tpubpfe.model.Zone;
@@ -9,6 +10,7 @@ import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.EmergencyMessageRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.repository.ZoneRepository;
+import com.example.tpubpfe.util.PolygonGeometry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,14 @@ public class ZoneService {
     private final EmergencyMessageRepository emergencyMessageRepository;
     private final DiffusionLogRepository diffusionLogRepository;
     private final AuditService auditService;
+    private final GeoPricingProperties.Geo geoProperties;
+
+    /** Polygon validation limits of `tpub.geo.polygon` (docs/round2-contract.md §4.1). */
+    public PolygonGeometry.Limits polygonLimits() {
+        GeoPricingProperties.Geo.Polygon p = geoProperties.getPolygon();
+        return new PolygonGeometry.Limits(p.getMaxVertices(), p.getMaxTotalVertices(), p.getMaxParts(), p.getMaxHoles(),
+                p.getMinAreaKm2(), p.getMaxAreaKm2(), p.getMaxRadiusKm());
+    }
 
     @Transactional
     public ZoneResponse create(ZoneRequest request) {
