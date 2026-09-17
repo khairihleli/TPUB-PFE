@@ -59,7 +59,12 @@ Browser ─► /api/session/login|register ─► Spring /api/auth/*   (never wi
 
 ### 1.3 Public routes (`SecurityConfig.PUBLIC_ENDPOINTS`)
 
-`/api/auth/**`, `GET /api/diffusion/next`, `POST /api/diffusion/interactions`, `/uploads/**`, `/actuator/health`, Swagger. An invalid token is ignored on public routes, and the `Authorization` header is skipped entirely on login/register. Everything else requires a valid token **and** an active session **and** an active account.
+`/api/auth/**`, `GET /api/diffusion/next`, `POST /api/diffusion/interactions`, `POST /api/diffusion/heartbeat`, `/uploads/**`, `/actuator/health`, Swagger. An invalid token is ignored on public routes, and the `Authorization` header is skipped entirely on register, every `/api/auth/login*` route and `/api/auth/2fa/*`. Everything else requires a valid token **and** an active session **and** an active account.
+
+Round 2 (docs/round2-contract.md §3):
+- **Player routes** (`/api/diffusion/next`, `/interactions`, `/heartbeat`) are public for Spring Security but require the header `X-TPUB-Device-Key` matching the `supportId` query param: missing → 401 `DEVICE_KEY_REQUIRED`, wrong/revoked → 401 `DEVICE_KEY_INVALID`, no/invalid `supportId` → 400 `MISSING_PARAMETER`, too many calls per support (token bucket 30, refill 120/min) or too many invalid keys per IP (20/min) → 429 `DEVICE_RATE_LIMITED` with `Retry-After`. The Next bridge forwards `x-tpub-device-key`.
+- **Media** `/uploads/**` is served only with a signed, expiring URL `?exp=&sig=` produced by the API (HMAC-SHA256, 5-minute expiry buckets, TTL `MEDIA_SIGNED_URL_TTL_SECONDS`, default 3600): missing → 403 `MEDIA_SIGNATURE_REQUIRED`, bad → 403 `MEDIA_SIGNATURE_INVALID`, past → 403 `MEDIA_URL_EXPIRED`, traversal → 404 without body. Valid answers carry `Cache-Control: private, max-age=min(exp − now, 3600)`. The Next `/uploads` passthrough forwards only `exp` and `sig` and turns a 403 into an empty 403 (the UI refetches the owning resource once).
+- **Forced password change**: a user with `mustChangePassword` gets 403 `PASSWORD_CHANGE_REQUIRED` on every authenticated route except `GET /api/me`, `POST /api/me/password`, `POST /api/me/logout` and `/api/me/2fa/**`.
 
 ### 1.4 Roles (enforced by `@PreAuthorize`, pinned by `RoleMatrixWebTest`)
 
@@ -162,11 +167,22 @@ Roles: see §1.4. "owner" = the ANNONCEUR who owns the campaign.
 | Endpoint | Notes |
 |---|---|
 | `POST /register` `{ email, password (8..100), nom, societe?, telephone?, adresse? }` | 201 `AuthResponse`; always creates an ANNONCEUR + client `PENDING`; e-mail lower-cased; opens a session and writes login history; 409 `EMAIL_ALREADY_REGISTERED` |
-| `POST /login` `{ email, password }` | 200 `AuthResponse`; 401 `BAD_CREDENTIALS` (also unknown e-mail) or `ACCOUNT_DISABLED` (only with the right password); every attempt journaled |
+| `POST /login` `{ email, password }` | 200 `AuthResponse` (`status: "AUTHENTICATED"`, `mustChangePassword`, `twoFactorEnabled`) **or** 200 `LoginChallengeResponse { status: "TOTP_REQUIRED" \| "TOTP_ENROLMENT_REQUIRED", challengeToken, expiresAt, email }` (no session before the second step); 401 `BAD_CREDENTIALS` (also unknown e-mail) or `ACCOUNT_DISABLED` (only with the right password); every attempt journaled |
+| `POST /login/verify` `{ challengeToken, code }` | `code` = 6 digits or recovery code `xxxxx-xxxxx` (single use) → 200 `AuthResponse` (`recoveryCodeUsed` when a recovery code was used); 401 `TOTP_CODE_INVALID` (attempt counted, history `TOTP_INVALID`); 401 `CHALLENGE_EXPIRED` (unknown, expired after 300 s, consumed, or 5 attempts) |
+| `POST /2fa/setup` `{ challengeToken }` | mandatory enrolment only → 200 `TotpSetupResponse { secret (Base32), otpauthUri, expiresAt }` |
+| `POST /2fa/enable` `{ challengeToken, code }` | 200 `AuthResponse & { recoveryCodes: string[10] }`, TOTP enabled and session opened; 401 `TOTP_CODE_INVALID` / `CHALLENGE_EXPIRED` |
+
+TOTP: RFC 6238 (HMAC-SHA1, 6 digits, 30 s, window ±1 step, replay of a used step refused), secret stored AES-256-GCM encrypted. Next session routes keep the `challengeToken` in the httpOnly cookie `tpub_challenge` (path `/api/session`): `POST /api/session/login` → `{ status, user }` or `{ status, email, expiresAt }`, then `POST /api/session/login/verify { code }`, `POST /api/session/enrolment/setup`, `POST /api/session/enrolment/enable { code }`; `GET /api/session?actualiser=1` rewrites the user cookie from `GET /api/me`.
 
 ### 5.2 Me `/api/me` (authenticated)
 
 `GET` / `PUT { nom, societe?, telephone?, adresse? }` → `MeResponse` (includes `client { clientId, companyName, validationStatus, trustLevel }` for advertisers) · `POST /password { currentPassword, newPassword }` 204, revokes the other sessions · `POST /logo` multipart `file` (png/jpeg/webp ≤ 2 MB) / `DELETE /logo` → `MeResponse` · `GET /sessions` (active, `current` flag) · `DELETE /sessions/{id}` 204 · `POST /sessions/revoke-others` → `{ revoked }` · `POST /logout` 204 · `GET /login-history?limit=` (1..100, default 20).
+
+`MeResponse` (and `AdminUserResponse`) gain `twoFactorEnabled`, `twoFactorRequired` (role listed in `TPUB_TOTP_REQUIRED_ROLES`) and `mustChangePassword`; `POST /password` clears `mustChangePassword`. `logoUrl` is a signed URL.
+
+Two-factor self-service: `GET /2fa` → `TwoFactorStatusResponse { enabled, enabledAt, required, recoveryCodesRemaining, pendingSetup }` · `POST /2fa/setup` → `TotpSetupResponse` (pending 10 min; 409 `TOTP_ALREADY_ENABLED`) · `POST /2fa/enable { code }` → `{ recoveryCodes }` (409 `TOTP_SETUP_REQUIRED`, 400 `TOTP_CODE_INVALID`; audit `USER_2FA_ENABLED`) · `POST /2fa/disable { password, code }` 204, closes the other sessions (403 `TOTP_REQUIRED_FOR_ROLE`, 400 `INVALID_CURRENT_PASSWORD` / `TOTP_CODE_INVALID`; audit `USER_2FA_DISABLED`) · `POST /2fa/recovery-codes { code }` (TOTP code only) → `{ recoveryCodes }`, previous codes deleted (409 `TOTP_NOT_ENABLED`).
+
+Admin (ADMINISTRATEUR, never on self → 400 `ROLE_NOT_ALLOWED`): `POST /api/admin/users/{id}/2fa/reset` → `AdminUserResponse` (TOTP off, recovery codes deleted, sessions revoked; audit `USER_2FA_RESET`) · `POST /api/admin/users/{id}/require-password-change` → `AdminUserResponse` (flag set, sessions revoked `REVOKED_BY_ADMIN`; audit `USER_PASSWORD_CHANGE_REQUIRED`).
 
 ### 5.3 Campaigns `/api/campaigns`
 
@@ -230,14 +246,16 @@ Conflicts are computed on dates **and** time of day against the support capacity
 
 ### 5.7 Diffusion `/api/diffusion`
 
-`GET /next?supportId&zone?&datetime?` (public, `datetime` local, default now) → `DiffusionResponse { type, diffusionLogId, supportId, campaignId, emergencyId, title, content, mediaUrl, mediaType, duration, zone, priority, urgencyLevel, datetime }`. Order:
+`GET /next?supportId&zone?&datetime?` (paired player: header `X-TPUB-Device-Key`, see §1.3; `datetime` local, **honoured only when `tpub.diffusion.simulated-time-enabled` is true** — backend `local` profile — otherwise the server clock is used) → `DiffusionResponse { type, diffusionLogId, supportId, campaignId, emergencyId, title, content, mediaUrl (signed), mediaType, duration, zone, priority, urgencyLevel, datetime, simulatedTime }`. Order:
 
 1. **Urgent message** active at that datetime whose circle contains the support (or whose zone is the support's zone): highest urgency, then priority. Delivered even when the support is not ACTIF.
 2. Support not ACTIF or blocked at that time → default content.
 3. **Campaign** with a CONFIRMEE reservation on the support covering date and time, status `ACTIVE`/`VALIDATED_BY_ADMIN`, admin-validated, AI `APPROVED` (or `REVIEW_REQUIRED` with admin override), support inside one of its circles, client allowed, budget left, and fewer than 30 plays in the last hour. Score = priority × 10 + 20 % of the quality score; among the top scores the least recently played wins (equitable rotation). The unit cost is added to `consumedBudget` and to the payment simulation.
 4. Otherwise default content (`TPUB_DIFFUSION_DEFAULT_*`).
 
-Every call writes a `diffusion_logs` row (with cost). `POST /interactions { diffusionLogId, type: "CLIC" | "INTERACTION" }` (public, idempotent, only on `publicite` logs less than 1 h old) → 204. `GET /logs` (staff, paged) with click/interaction counts.
+Every call writes a `diffusion_logs` row (with cost and the **unsigned** media URL; `GET /logs` re-signs it on read). `POST /interactions?supportId= { diffusionLogId, type: "CLIC" | "INTERACTION" }` (paired player, idempotent, only on `publicite` logs less than 1 h old **of that support**, else 404 `DIFFUSION_LOG_NOT_FOUND`) → 204. `GET /logs` (staff, paged) with click/interaction counts.
+
+**Device keys** (`/api/supports`): `POST /{id}/device-key` (ADMINISTRATEUR) → 201 `DeviceKeyIssuedResponse { supportId, deviceKey (tpd_…, shown once), keyPrefix, createdAt, pairingPath: "/ecran/{id}?cle=…" }`, rotates an existing key (audit `SUPPORT_DEVICE_KEY_ISSUED` / `_ROTATED`) · `GET /{id}/device-key` and `GET /device-keys` (staff) → `DeviceKeyStatusResponse { supportId, supportName, paired, keyPrefix, createdAt, lastUsedAt, lastUsedIp }` · `DELETE /{id}/device-key` (ADMINISTRATEUR) 204 (audit `SUPPORT_DEVICE_KEY_REVOKED`). Keys are stored as SHA-256 hashes.
 
 ### 5.8 Emergencies `/api/emergency`
 
@@ -303,6 +321,6 @@ Everything listed in the previous version of this section (no upload, no zone li
 
 ## 8. Demo data and scenario
 
-- Flyway seeds the four roles (V1, permissions described in V5) and the 8 moderation rules (V3); `DataInitializer` creates `admin@tpub.local` / `Admin@123`.
-- `node scripts/seed-demo.mjs` (idempotent) adds 5 zones, 10 Porteurs covering every technical status with visibility scores, a maintenance block, 2 extra moderation rules, `operateur@tpub.local` / `Operateur@123`, `superviseur@tpub.local` / `Superviseur@123`, the validated advertiser `demo@annonceur.tn` / `Demo@1234` and four campaigns created through the real flow (one ACTIVE and diffusing today, one APPROVED_BY_AI and one REVIEW_REQUIRED awaiting the admin, one draft).
-- `node scripts/demo-scenario.mjs` runs the 18 steps of cahier des charges §11 over HTTP (fresh advertiser, PNG upload, AI preview and report, admin reads it, point + radius, Soir slot, availability, batch reservation, estimates, submit + admin validation, `/diffusion/next` at a datetime inside the window, click and statistics, urgent message replacing the ad) and prints ✔ / ✘ per step. Both scripts read `TPUB_API_URL` (default `http://localhost:8080`).
+- Flyway seeds the four roles (V1, permissions described in V5) and the 8 moderation rules (V3); `DataInitializer` creates `admin@tpub.local` only when no active administrator exists, with `TPUB_ADMIN_INITIAL_PASSWORD` or a random password logged once (round 2 §3.2; an existing database keeps its administrator and password).
+- `node scripts/seed-demo.mjs` (idempotent) adds 5 zones, 10 Porteurs covering every technical status with visibility scores, a maintenance block, 2 extra moderation rules, `operateur@tpub.local`, `superviseur@tpub.local`, a second administrator `admin2@tpub.local`, the validated advertiser `demo@annonceur.tn` (passwords from `TPUB_DEMO_PASSWORD` or generated once into the gitignored `scripts/.demo-accounts.json`; the admin password comes from `TPUB_ADMIN_PASSWORD` or `.tpub-local.secrets`), device keys for every ACTIF Porteur (gitignored `scripts/.demo-device-keys.json`, pairing URLs printed; `--rotate-keys`) and four campaigns created through the real flow (one ACTIVE and diffusing today, one APPROVED_BY_AI and one REVIEW_REQUIRED awaiting the admin, one draft).
+- `node scripts/demo-scenario.mjs` runs the 18 steps of cahier des charges §11 over HTTP (fresh advertiser, PNG upload, AI preview and report, admin reads it, point + radius, Soir slot, availability, batch reservation, estimates, submit + admin validation, `/diffusion/next` at a datetime inside the window, click and statistics, urgent message replacing the ad) and prints ✔ / ✘ per step; player calls send `X-TPUB-Device-Key`, `datetime` needs the backend `local` profile, double approvals are completed as `admin2@tpub.local`. Both scripts read `TPUB_API_URL` (default `http://localhost:8080`).
