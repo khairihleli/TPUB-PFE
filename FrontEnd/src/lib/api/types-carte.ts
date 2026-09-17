@@ -76,7 +76,8 @@ export interface EmergencyPolygonRequest extends Omit<
   polygon: GeoJsonPolygonal;
 }
 
-export type EmergencyRequestCarte = EmergencyRequest | EmergencyCircleRequest | EmergencyPolygonRequest;
+export type EmergencyRequestCarte =
+  EmergencyRequest | EmergencyCircleRequest | EmergencyPolygonRequest;
 
 export interface EmergencyResponseCarte extends EmergencyResponse {
   targetPolygon?: GeoJsonPolygonal | null;
@@ -86,7 +87,8 @@ export interface EmergencyResponseCarte extends EmergencyResponse {
 // Dynamic pricing (§4.6)
 // ---------------------------------------------------------------------------
 
-export type DayOfWeekFr = "LUNDI" | "MARDI" | "MERCREDI" | "JEUDI" | "VENDREDI" | "SAMEDI" | "DIMANCHE";
+export type DayOfWeekFr =
+  "LUNDI" | "MARDI" | "MERCREDI" | "JEUDI" | "VENDREDI" | "SAMEDI" | "DIMANCHE";
 
 export const DAYS_OF_WEEK_FR: readonly DayOfWeekFr[] = [
   "LUNDI",

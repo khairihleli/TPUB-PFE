@@ -1587,7 +1587,34 @@ _None yet._
 
 ### L3 `carte-prix`
 
-_None yet._
+- 2026-09-17 · L3 · `GeoPricingProperties` holds the two `@ConfigurationProperties` classes as nested
+  `Geo` and `Dynamic` classes of one file (one class per prefix, as required), registered together by
+  `GeoPricingConfig`; `TPUB_DYNAMIC_PRICING_ENABLED` is applied by that `@Configuration` when
+  `tpub.pricing.dynamic.enabled` is not set, because relaxed binding alone would only read
+  `TPUB_PRICING_DYNAMIC_ENABLED`.
+- 2026-09-17 · L3 · §4.2 does not say which latitude the equirectangular projection uses: the
+  implementation takes the **mean latitude/longitude of the outer-ring vertices** (translation
+  invariant, so area and centroid are unchanged) and both sides share the same test vectors
+  (`PolygonGeometryTest` ↔ `src/lib/__tests__/polygon.test.ts`). Limit messages state the limit
+  reached: « … (5 parties au plus) », « … (5 trous au plus par partie) », « … (200 sommets au plus au
+  total) ».
+- 2026-09-17 · L3 · the polygon limit messages, the hole rule and the raw multiplier are computed
+  from the **already rounded** 4-decimal factors, so the breakdown a user reads reproduces the
+  multiplier exactly.
+- 2026-09-17 · L3 · new backend enum `model/ZoneGeometryType` (CERCLE/POLYGONE) for the
+  `campaign_zones.geometry_type` column, and new DTOs `PriceBreakdown`, `PricingConfigResponse`,
+  `HeatmapPoints`, `HeatmapResponse`, `DemandHeatmapResponse` (§4.5/§4.6 shapes).
+- 2026-09-17 · L3 · `ReservationResponse` gains `baseCost` and `priceMultiplier` (owned DTO): the
+  wizard and the integration test need the frozen multiplier without refetching the estimate.
+- 2026-09-17 · L3 · `CampaignZoneRequest.Circle` renamed `CampaignZoneRequest.ZoneInput` (it now
+  carries circles and polygons); only L3-owned callers and tests referenced it.
+- 2026-09-17 · L3 · `EmergencyTargeting.resolve` reads the polygon limits through
+  `ZoneService.polygonLimits()` (L3-owned service) and falls back to the documented defaults when
+  that service is a bare mock, because §9.3 fixes the three-argument signature.
+- 2026-09-17 · L3 · the demand heatmap of the wizard and the admin page skip zero-weight points
+  (a density layer draws nothing for them); `byZone` still lists every active zone.
+- 2026-09-17 · L3 · `/admin/carte-chaleur` is reachable by URL only until L4 adds its navigation
+  entry (§1.6 and §5.9 give `src/content/nav.ts` to L4).
 
 ### L4 `supervision`
 

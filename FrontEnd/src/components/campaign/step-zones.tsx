@@ -112,7 +112,9 @@ function zonesSignature(campaign: CampaignResponse): string {
 }
 
 /** Server field errors of PUT /zones (`zones[i].polygon`) → message per zone index. */
-export function zoneFieldErrors(fieldErrors: Readonly<Record<string, string>>): Map<number, string> {
+export function zoneFieldErrors(
+  fieldErrors: Readonly<Record<string, string>>,
+): Map<number, string> {
   const out = new Map<number, string>();
   for (const [field, message] of Object.entries(fieldErrors)) {
     const index = /^zones\[(\d+)\]/.exec(field)?.[1];
@@ -138,10 +140,7 @@ export function StepZones({
 }: StepZonesProps) {
   const { toast } = useToast();
   const win = useMemo(() => campaignWindow(campaign), [campaign]);
-  const savedZones = useMemo(
-    () => zonesFromResponse(campaign.zones),
-    [campaign.zones],
-  );
+  const savedZones = useMemo(() => zonesFromResponse(campaign.zones), [campaign.zones]);
 
   // ---- zones: circles and polygons (docs/round2-contract.md §4.3) -----------------------
   const [circles, setCircles] = useState<DraftZone[]>(savedZones);
@@ -169,9 +168,7 @@ export function StepZones({
   const firstZoneError = zoneErrors.find((e) => e !== null) ?? null;
 
   const updateCircle = (key: string, patch: Partial<DraftZone>) =>
-    setCircles((list) =>
-      list.map((c) => (c.key === key ? ({ ...c, ...patch } as DraftZone) : c)),
-    );
+    setCircles((list) => list.map((c) => (c.key === key ? ({ ...c, ...patch } as DraftZone) : c)));
 
   const addCircle = (circle: DraftZone) => {
     setCircles((list) => (list.length >= MAX_CIRCLES ? list : [...list, circle]));
@@ -203,9 +200,7 @@ export function StepZones({
 
   const setDraft = (key: string, draft: PolygonDraft) =>
     setCircles((list) =>
-      list.map((c) =>
-        c.key === key && isPolygonZone(c) ? { ...c, vertices: draft.vertices } : c,
-      ),
+      list.map((c) => (c.key === key && isPolygonZone(c) ? { ...c, vertices: draft.vertices } : c)),
     );
 
   const onMapClick = (point: { lat: number; lng: number }) => {
@@ -290,9 +285,8 @@ export function StepZones({
         { signal },
       ),
   );
-  const demand = useResource(
-    win && showDemand ? `demande:${windowKey(win)}` : null,
-    (signal) => heatmapApi.demandPublic({ ...(win as NonNullable<typeof win>) }, { signal }),
+  const demand = useResource(win && showDemand ? `demande:${windowKey(win)}` : null, (signal) =>
+    heatmapApi.demandPublic({ ...(win as NonNullable<typeof win>) }, { signal }),
   );
   const demandHeatmap = useMemo<MapHeatmap | null>(
     () =>
@@ -525,15 +519,14 @@ export function StepZones({
             ariaLabel="Carte de ciblage : cliquez pour placer ou déplacer la zone"
             polygons={mapPolygons}
             polygonDraft={drawing ? zoneDraft(drawing) : null}
-            onPolygonDraftChange={
-              drawing ? (draft) => setDraft(drawing.key, draft) : undefined
-            }
+            onPolygonDraftChange={drawing ? (draft) => setDraft(drawing.key, draft) : undefined}
             heatmap={demandHeatmap}
             onMapClick={onMapClick}
             onZoneRadiusChange={(zoneId, km) => {
               const index = circleIndexOfMapId(zoneId);
               const target = index === null ? undefined : circles[index];
-              if (target && !isPolygonZone(target)) updateCircle(target.key, { radiusKm: snapRadius(km) });
+              if (target && !isPolygonZone(target))
+                updateCircle(target.key, { radiusKm: snapRadius(km) });
             }}
             onOpenPorteur={(supportId) => {
               if (selectableIds.has(supportId)) toggle(supportId);
@@ -762,9 +755,7 @@ export function StepZones({
                   loadingLabel="Enregistrement des zones"
                   iconLeft={<Save aria-hidden="true" />}
                   disabledReason={
-                    circles.length === 0
-                      ? "Placez au moins une zone."
-                      : (firstZoneError ?? null)
+                    circles.length === 0 ? "Placez au moins une zone." : (firstZoneError ?? null)
                   }
                   onClick={() => void saveZones()}
                 >
@@ -860,7 +851,10 @@ export function StepZones({
                       circles.length >= MAX_CIRCLES ? `${MAX_CIRCLES} zones maximum.` : null
                     }
                     onClick={() => {
-                      const circle = { type: "CERCLE" as const, ...circleFromRecommendation(rec, catalogue.data?.network ?? []) };
+                      const circle = {
+                        type: "CERCLE" as const,
+                        ...circleFromRecommendation(rec, catalogue.data?.network ?? []),
+                      };
                       const index = circles.length;
                       addCircle(circle);
                       setFocusZoneId(null);

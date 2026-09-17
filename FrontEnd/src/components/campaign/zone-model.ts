@@ -126,9 +126,7 @@ export interface DraftPolygon {
   label: string | null;
 }
 
-export type DraftZone =
-  | ({ type: "CERCLE" } & DraftCircle)
-  | ({ type: "POLYGONE" } & DraftPolygon);
+export type DraftZone = ({ type: "CERCLE" } & DraftCircle) | ({ type: "POLYGONE" } & DraftPolygon);
 
 export function isPolygonZone(zone: DraftZone): zone is { type: "POLYGONE" } & DraftPolygon {
   return zone.type === "POLYGONE";
@@ -194,7 +192,9 @@ export function sameZones(a: readonly DraftZone[], b: readonly DraftZone[]): boo
         zone.vertices.length === o.vertices.length &&
         zone.vertices.every((v, j) => {
           const w = o.vertices[j];
-          return w !== undefined && Math.abs(v.lat - w.lat) < 1e-7 && Math.abs(v.lng - w.lng) < 1e-7;
+          return (
+            w !== undefined && Math.abs(v.lat - w.lat) < 1e-7 && Math.abs(v.lng - w.lng) < 1e-7
+          );
         })
       );
     }
@@ -243,7 +243,9 @@ export function supportsInsideZone<S extends { latitude: number; longitude: numb
 ): S[] {
   if (isPolygonZone(zone)) {
     if (zone.vertices.length < 3) return [];
-    return supports.filter((s) => pointInPolygon({ lng: s.longitude, lat: s.latitude }, [[zone.vertices]]));
+    return supports.filter((s) =>
+      pointInPolygon({ lng: s.longitude, lat: s.latitude }, [[zone.vertices]]),
+    );
   }
   return supports.filter((s) =>
     withinKm(s.latitude, s.longitude, zone.latitude, zone.longitude, zone.radiusKm),
@@ -271,7 +273,11 @@ export function zonesAsMapZones(zones: readonly DraftZone[]): ZoneResponse[] {
 /** Polygons drawn by the map (the active one is highlighted, the edited one is skipped). */
 export function zonesAsMapPolygons(
   zones: readonly DraftZone[],
-  options: { activeKey?: string | null; editingKey?: string | null; tone?: MapPolygon["tone"] } = {},
+  options: {
+    activeKey?: string | null;
+    editingKey?: string | null;
+    tone?: MapPolygon["tone"];
+  } = {},
 ): MapPolygon[] {
   return zones.flatMap((zone, i) =>
     isPolygonZone(zone) && zone.vertices.length >= 3 && zone.key !== options.editingKey
@@ -306,7 +312,9 @@ export function multiplierLabel(multiplier: number | null | undefined): string |
 export function totalBaseCost(
   lines: readonly { baseCost?: number; estimatedCost: number }[],
 ): number {
-  return Math.round(lines.reduce((sum, l) => sum + (l.baseCost ?? l.estimatedCost), 0) * 1000) / 1000;
+  return (
+    Math.round(lines.reduce((sum, l) => sum + (l.baseCost ?? l.estimatedCost), 0) * 1000) / 1000
+  );
 }
 
 /** Explanations of a breakdown, with a fallback when the backend sent none. */

@@ -54,7 +54,9 @@ export function PolygonVertexEditor({
     const vertex = draft.vertices[index];
     const next =
       midpoint ??
-      (vertex ? { lng: roundCoord(vertex.lng + 0.005), lat: roundCoord(vertex.lat + 0.005) } : null);
+      (vertex
+        ? { lng: roundCoord(vertex.lng + 0.005), lat: roundCoord(vertex.lat + 0.005) }
+        : null);
     onChange(next ? insertDraftVertex(draft, index, next) : addDraftVertex(draft, DEFAULT_VERTEX));
   };
 

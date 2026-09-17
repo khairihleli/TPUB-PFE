@@ -286,7 +286,8 @@ function haversineKm(a: LngLat, b: LngLat): number {
   const dLat = toRad(b.lat - a.lat);
   const dLng = toRad(b.lng - a.lng);
   const h =
-    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
@@ -437,7 +438,10 @@ export function validatePolygon(
     }
   }
   if (total > limits.maxTotalVertices) {
-    return { ok: false, reason: tooDetailed(`${limits.maxTotalVertices} sommets au plus au total`) };
+    return {
+      ok: false,
+      reason: tooDetailed(`${limits.maxTotalVertices} sommets au plus au total`),
+    };
   }
   for (const part of clean) {
     for (const ring of part) {

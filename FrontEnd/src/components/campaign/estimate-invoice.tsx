@@ -1,15 +1,22 @@
+"use client";
+
 import { ReceiptText, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 
 import { campaignReference } from "@/components/campaign/campaign-data";
 import { EstimateTag } from "@/components/campaign/campaign-ui";
 import { ErrorState } from "@/components/ui/error-state";
 import { SectionCard } from "@/components/ui/section-card";
 import { ESTIMATE_COST_RULE } from "@/content/glossary";
+import { pricingApi } from "@/lib/api/endpoints-carte";
+import { DAYS_OF_WEEK_FR } from "@/lib/api/types-carte";
+import { useResource } from "@/lib/use-resource";
 import { multiplierLabel, totalBaseCost } from "@/components/campaign/zone-model";
 import type { CampaignEstimateResponse } from "@/lib/api/types";
 import type {
   CampaignEstimateResponseCarte,
   PriceBreakdown,
+  PricingConfig,
 } from "@/lib/api/types-carte";
 import { RESERVATION_STATUS } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
@@ -89,6 +96,74 @@ export function PriceBreakdownDetails({
         </ul>
       ) : null}
       <p className="mt-1.5">{DYNAMIC_PRICE_NOTE}</p>
+    </details>
+  );
+}
+
+const DAY_LABEL: Record<(typeof DAYS_OF_WEEK_FR)[number], string> = {
+  LUNDI: "Lundi",
+  MARDI: "Mardi",
+  MERCREDI: "Mercredi",
+  JEUDI: "Jeudi",
+  VENDREDI: "Vendredi",
+  SAMEDI: "Samedi",
+  DIMANCHE: "Dimanche",
+};
+
+function PricingScale({ config }: { config: PricingConfig }) {
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-0.5">
+        {config.hourBands.map((band) => (
+          <li key={band.start}>
+            • {band.label} ({band.start}–{band.end}) : ×{formatNumber(band.multiplier)}
+          </li>
+        ))}
+      </ul>
+      <p>
+        Jours :{" "}
+        {DAYS_OF_WEEK_FR.map(
+          (day) => `${DAY_LABEL[day]} ×${formatNumber(config.dayMultipliers[day])}`,
+        ).join(" · ")}
+      </p>
+      <p>
+        La demande et la rareté des Porteurs ajoutent au plus ×
+        {formatNumber(1 + config.demandWeight)} et ×{formatNumber(1 + config.scarcityWeight)} ; le
+        multiplicateur reste entre ×{formatNumber(config.minMultiplier)} et ×
+        {formatNumber(config.maxMultiplier)}.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * « Barème tarifaire » disclosure: hour bands, day multipliers and bounds of the dynamic pricing
+ * (GET /api/pricing/config, docs/round2-contract.md §4.6). Loaded only when opened.
+ */
+export function PricingScaleNote({ className }: { className?: string }) {
+  const [open, setOpen] = useState(false);
+  const config = useResource(open ? "pricing-config" : null, (signal) =>
+    pricingApi.config({ signal }),
+  );
+  return (
+    <details
+      className={cx("text-[0.8125rem] text-muted", className)}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-brand-blue-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text">
+        Barème tarifaire
+      </summary>
+      {config.error && !config.data ? (
+        <p className="mt-1.5 text-danger">Barème indisponible pour le moment.</p>
+      ) : !config.data ? (
+        <p className="mt-1.5">Chargement du barème…</p>
+      ) : !config.data.enabled ? (
+        <p className="mt-1.5">
+          Tarification dynamique désactivée : le tarif de base s&apos;applique.
+        </p>
+      ) : (
+        <PricingScale config={config.data} />
+      )}
     </details>
   );
 }
@@ -248,11 +323,14 @@ export function EstimateInvoice({
               {coverage}
             </p>
           ) : null}
-          <p className="mt-4 rounded-control border border-line bg-overlay-inset p-3 text-[0.8125rem] leading-relaxed text-muted">
-            Montants simulés par TPUB à partir des audiences estimées. Le budget consommé suit les
-            diffusions réelles ; rien n&apos;est facturé en ligne.
-            {dynamic ? ` ${DYNAMIC_PRICE_NOTE}` : ""}
-          </p>
+          <div className="mt-4 flex flex-col gap-2 rounded-control border border-line bg-overlay-inset p-3 text-[0.8125rem] leading-relaxed text-muted">
+            <p>
+              Montants simulés par TPUB à partir des audiences estimées. Le budget consommé suit les
+              diffusions réelles ; rien n&apos;est facturé en ligne.
+              {dynamic ? ` ${DYNAMIC_PRICE_NOTE}` : ""}
+            </p>
+            {dynamic ? <PricingScaleNote /> : null}
+          </div>
         </>
       )}
     </SectionCard>

@@ -53,7 +53,8 @@ export function defaultRange(tab: HeatmapTab, today: string): { from: string; to
 export function rangeError(from: string, to: string): string | null {
   if (!from || !to) return null;
   if (to < from) return "La date de fin doit être postérieure ou égale à la date de début.";
-  const days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+  const days =
+    Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
   if (days > MAX_RANGE_DAYS) return `La période ne peut pas dépasser ${MAX_RANGE_DAYS} jours.`;
   return null;
 }
@@ -101,7 +102,9 @@ function toTop(
     .slice(0, TOP_LIMIT);
 }
 
-export function topDiffusions(data: HeatmapResponse<DiffusionHeatProps> | null | undefined): TopRow[] {
+export function topDiffusions(
+  data: HeatmapResponse<DiffusionHeatProps> | null | undefined,
+): TopRow[] {
   if (!data) return [];
   return toTop(data.points.features, (p) => ("clicks" in p ? p.clicks : 0));
 }

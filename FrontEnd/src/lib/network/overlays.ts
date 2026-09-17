@@ -190,8 +190,10 @@ export interface DraftFeatureProps {
 export function polygonDraftFeatureCollection(
   draft: PolygonDraft | null | undefined,
 ): FeatureCollection<PolygonGeometry | LineStringGeometry | PointGeometry, DraftFeatureProps> {
-  const features: Feature<PolygonGeometry | LineStringGeometry | PointGeometry, DraftFeatureProps>[] =
-    [];
+  const features: Feature<
+    PolygonGeometry | LineStringGeometry | PointGeometry,
+    DraftFeatureProps
+  >[] = [];
   if (!draft) return featureCollection(features);
   const vertices = draft.vertices.filter(isValidLngLat);
   if (draft.closed && vertices.length >= 3) {

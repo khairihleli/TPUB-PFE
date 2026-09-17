@@ -135,16 +135,30 @@ function HeatmapContent() {
       key: "detail",
       header: url.onglet === "diffusions" ? "Clics" : "Occupation",
       align: "right",
-      cell: (r) =>
-        url.onglet === "diffusions" ? formatNumber(r.detail) : percentLabel(r.detail),
+      cell: (r) => (url.onglet === "diffusions" ? formatNumber(r.detail) : percentLabel(r.detail)),
     },
   ];
 
   const zoneColumns: DataTableColumn<DemandZone>[] = [
     { key: "zoneName", header: "Zone", primary: true, cell: (z) => z.zoneName },
-    { key: "occupancy", header: "Occupation", align: "right", cell: (z) => percentLabel(z.occupancy) },
-    { key: "reservedHours", header: "Heures réservées", align: "right", cell: (z) => hoursLabel(z.reservedHours) },
-    { key: "targets", header: "Zones ciblées", align: "right", cell: (z) => formatNumber(z.targets) },
+    {
+      key: "occupancy",
+      header: "Occupation",
+      align: "right",
+      cell: (z) => percentLabel(z.occupancy),
+    },
+    {
+      key: "reservedHours",
+      header: "Heures réservées",
+      align: "right",
+      cell: (z) => hoursLabel(z.reservedHours),
+    },
+    {
+      key: "targets",
+      header: "Zones ciblées",
+      align: "right",
+      cell: (z) => formatNumber(z.targets),
+    },
   ];
 
   return (
@@ -177,7 +191,9 @@ function HeatmapContent() {
             <FilterBar
               activeCount={activeFilters}
               onReset={() => setUrl({ du: "", au: "", contenu: null, zone: null })}
-              resultCount={heatmap ? `${formatNumber(totalPoints)} Porteurs sur la carte` : undefined}
+              resultCount={
+                heatmap ? `${formatNumber(totalPoints)} Porteurs sur la carte` : undefined
+              }
             >
               <Field label="Du">
                 <Input type="date" value={from} onChange={(e) => setUrl({ du: e.target.value })} />
