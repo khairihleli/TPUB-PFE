@@ -15,6 +15,11 @@ const api = vi.hoisted(() => ({
   revokeSession: vi.fn(),
   revokeOtherSessions: vi.fn(),
   loginHistory: vi.fn(),
+  twoFactor: vi.fn(),
+  twoFactorSetup: vi.fn(),
+  twoFactorEnable: vi.fn(),
+  twoFactorDisable: vi.fn(),
+  regenerateRecoveryCodes: vi.fn(),
 }));
 
 vi.mock("@/lib/api/endpoints", async (importOriginal) => {
@@ -100,6 +105,13 @@ beforeEach(() => {
   clearResourceCache();
   for (const fn of Object.values(api)) fn.mockReset();
   api.get.mockResolvedValue(me());
+  api.twoFactor.mockResolvedValue({
+    enabled: false,
+    enabledAt: null,
+    required: false,
+    recoveryCodesRemaining: 0,
+    pendingSetup: false,
+  });
   api.sessions.mockResolvedValue([
     session({
       id: "b",
@@ -326,5 +338,101 @@ describe("ProfileView", () => {
       "/uploads/logos/7/logo.png",
     );
     expect(screen.getByRole("button", { name: "Retirer le logo" })).toBeInTheDocument();
+  });
+});
+
+describe("two-factor authentication card (round 2 §3.7)", () => {
+  const CODES = Array.from({ length: 10 }, (_, i) => `abcd${i}-efgh${i}`);
+
+  it("lives in the #securite section and enables TOTP with recovery codes", async () => {
+    const u = userEvent.setup();
+    api.twoFactorSetup.mockResolvedValue({
+      secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+      otpauthUri: "otpauth://totp/TPUB:sami%40exemple.tn?secret=JBSWY3DPEHPK3PXP&issuer=TPUB",
+      expiresAt: "2099-01-01T00:00:00Z",
+    });
+    api.twoFactorEnable
+      .mockRejectedValueOnce(new ApiError(400, "x", { code: "TOTP_CODE_INVALID" }))
+      .mockResolvedValueOnce({ recoveryCodes: CODES });
+    const { container } = renderProfile();
+
+    const card = (
+      await screen.findByRole("heading", { name: "Double authentification" })
+    ).closest("section")!;
+    expect(container.querySelector("#securite")?.contains(card)).toBe(true);
+    expect(await within(card).findByText("Inactive")).toBeInTheDocument();
+
+    await u.click(within(card).getByRole("button", { name: "Activer la double authentification" }));
+    expect(await within(card).findByRole("img", { name: /QR code/ })).toBeInTheDocument();
+    expect(within(card).getByText("JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP")).toBeInTheDocument();
+
+    const input = within(card).getByLabelText(/^Code à 6 chiffres/);
+    await u.type(input, "12a3456");
+    expect(input).toHaveValue("123456");
+    await u.click(within(card).getByRole("button", { name: "Confirmer et activer" }));
+    expect(await within(card).findByText(/Code incorrect/)).toBeInTheDocument();
+
+    await u.type(within(card).getByLabelText(/^Code à 6 chiffres/), "654321");
+    await u.click(within(card).getByRole("button", { name: "Confirmer et activer" }));
+    await waitFor(() => expect(api.twoFactorEnable).toHaveBeenLastCalledWith("654321"));
+
+    const dialog = await screen.findByRole("dialog", { name: "Double authentification activée" });
+    expect(within(dialog).getAllByRole("listitem")).toHaveLength(10);
+    const finish = within(dialog).getByRole("button", { name: "Terminer" });
+    expect(finish).toHaveAttribute("aria-disabled", "true");
+    await u.click(within(dialog).getByLabelText("J'ai conservé mes codes de secours"));
+    await u.click(finish);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("refuses deactivation when the role requires 2FA and warns about few codes", async () => {
+    api.twoFactor.mockResolvedValue({
+      enabled: true,
+      enabledAt: "2026-09-01T08:00:00Z",
+      required: true,
+      recoveryCodesRemaining: 1,
+      pendingSetup: false,
+    });
+    renderProfile();
+    expect(await screen.findByText("Obligatoire pour votre rôle")).toBeInTheDocument();
+    expect(screen.getByText(/1 code de secours restant/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Désactiver" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("disables 2FA with the password and a recovery code", async () => {
+    const u = userEvent.setup();
+    api.twoFactor.mockResolvedValue({
+      enabled: true,
+      enabledAt: "2026-09-01T08:00:00Z",
+      required: false,
+      recoveryCodesRemaining: 8,
+      pendingSetup: false,
+    });
+    api.twoFactorDisable
+      .mockRejectedValueOnce(new ApiError(400, "x", { code: "INVALID_CURRENT_PASSWORD" }))
+      .mockResolvedValueOnce(undefined);
+    renderProfile();
+
+    await u.click(await screen.findByRole("button", { name: "Désactiver" }));
+    const dialog = await screen.findByRole("dialog", { name: /Désactiver la double/ });
+    await u.type(within(dialog).getByLabelText(/^Mot de passe actuel/), "Faux2026");
+    await u.click(within(dialog).getByRole("button", { name: "Utiliser un code de secours" }));
+    await u.type(within(dialog).getByLabelText(/^Code de secours/), "ABCDE12345");
+    await u.click(within(dialog).getByRole("button", { name: "Désactiver" }));
+    expect(await within(dialog).findByText("Mot de passe actuel incorrect.")).toBeInTheDocument();
+
+    await u.clear(within(dialog).getByLabelText(/^Mot de passe actuel/));
+    await u.type(within(dialog).getByLabelText(/^Mot de passe actuel/), "Ancien2025");
+    await u.click(within(dialog).getByRole("button", { name: "Désactiver" }));
+    await waitFor(() =>
+      expect(api.twoFactorDisable).toHaveBeenLastCalledWith({
+        password: "Ancien2025",
+        code: "abcde-12345",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
