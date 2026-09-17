@@ -305,27 +305,80 @@ powershell -ExecutionPolicy Bypass -File .\start-local.ps1 -Stop   # tout arrêt
 
 Le script applique les migrations Flyway au démarrage de Spring, réutilise le JAR de
 `../BackEnd/target` et le build `.next` s'ils existent (supprimez-les après une modification pour
-reconstruire) et lance l'IA en mode local (`OPENAI_ENABLED=false`). Avec Docker :
-`docker compose up` à la racine, puis `TPUB_API_URL=http://localhost:8080` et `npm run dev`.
+reconstruire) et lance l'analyse IA locale (`TPUB_AI_PROVIDER=local` sauf si la variable est déjà
+définie). Avec Docker : copiez `.env.example` en `.env`, remplacez chaque `<…>` (le backend
+refuse de démarrer sans `JWT_SECRET` ou avec une valeur d'exemple), `docker compose up` à la
+racine, puis `TPUB_API_URL=http://localhost:8080` et `npm run dev`.
+
+> **Sécurité — secret JWT compromis.** Le secret JWT autrefois écrit dans `.env.example` et
+> `start-local.ps1` reste lisible dans l'historique git : il doit être considéré comme
+> **compromis**. Le backend refuse désormais de démarrer avec cette valeur, et chaque déploiement
+> doit générer son propre `JWT_SECRET` (au moins 32 octets). Aucun secret n'est plus versionné.
+
+**Secrets locaux** : au premier lancement, `start-local.ps1` crée `.tpub-local.secrets` à la
+racine (ignoré par git) avec `JWT_SECRET`, `MEDIA_SIGNING_SECRET`, `TOTP_ENCRYPTION_KEY` et
+`TPUB_ADMIN_INITIAL_PASSWORD`, puis le réutilise. Supprimer ce fichier régénère les secrets : les
+sessions, les liens de médias et **les doubles authentifications** déjà activées deviennent
+invalides (chaque compte doit réactiver son application). Le profil Spring `local` active l'heure
+simulée du lecteur (`?datetime=`) ; hors de ce profil, le serveur utilise son horloge.
+
+**Compte administrateur** : sur une base neuve, `admin@tpub.local` est créé avec le mot de passe
+`TPUB_ADMIN_INITIAL_PASSWORD` de `.tpub-local.secrets` (sans cette variable, hors start-local, un
+mot de passe aléatoire est affiché une seule fois dans le journal du backend et doit être changé à
+la première connexion sur `/mot-de-passe-requis`). **Une base existante garde son administrateur
+et son ancien mot de passe** (la migration V7 ne force aucun changement) : changez-le depuis
+`/admin/compte`, puis relancez les scripts avec `TPUB_ADMIN_PASSWORD=<nouveau mot de passe>`.
+
+**OCR** : sans `BackEnd\tessdata\fra.traineddata`, l'OCR est simulé ; lancez
+`BackEnd\scripts\fetch-tessdata.ps1` pour activer Tesseract (start-local ne télécharge rien).
 
 **Données de démo** (`node scripts/seed-demo.mjs`, idempotent, lancé par `-Seed`) : 5 zones,
 10 Porteurs couvrant tous les états techniques, une indisponibilité planifiée, 2 règles IA en plus
-des 8 de la migration, les comptes ci-dessous et 4 campagnes créées par le vrai parcours (une en
-diffusion aujourd'hui, une à valider, une en revue manuelle, un brouillon).
+des 8 de la migration, les comptes ci-dessous, 4 campagnes créées par le vrai parcours (une en
+diffusion aujourd'hui, une à valider, une en revue manuelle, un brouillon) et l'appairage des
+écrans.
 
-| Rôle           | E-mail                   | Mot de passe      |
-| -------------- | ------------------------ | ----------------- |
-| Administrateur | `admin@tpub.local`       | `Admin@123`       |
-| Superviseur    | `superviseur@tpub.local` | `Superviseur@123` |
-| Opérateur      | `operateur@tpub.local`   | `Operateur@123`   |
-| Annonceur      | `demo@annonceur.tn`      | `Demo@1234`       |
+| Rôle                      | E-mail                   | Mot de passe                                               |
+| ------------------------- | ------------------------ | ---------------------------------------------------------- |
+| Administrateur            | `admin@tpub.local`       | `TPUB_ADMIN_PASSWORD`, sinon `.tpub-local.secrets`          |
+| Administrateur (2ᵉ)       | `admin2@tpub.local`      | `scripts/.demo-accounts.json` (généré au premier seed)      |
+| Superviseur               | `superviseur@tpub.local` | `scripts/.demo-accounts.json`                               |
+| Opérateur                 | `operateur@tpub.local`   | `scripts/.demo-accounts.json`                               |
+| Annonceur                 | `demo@annonceur.tn`      | `scripts/.demo-accounts.json`                               |
+
+Aucun mot de passe n'est écrit dans les scripts : `TPUB_DEMO_PASSWORD` impose un mot de passe
+commun aux comptes de démonstration, sinon chacun est généré une fois dans
+`scripts/.demo-accounts.json` (ignoré par git) et affiché en fin de seed. Des comptes créés par une
+ancienne version gardent leur ancien mot de passe : relancez alors avec `TPUB_DEMO_PASSWORD`. Le
+second administrateur sert aux **doubles approbations** (messages d'urgence, validations avec
+dérogation ou risque élevé).
+
+**Appairage des écrans** : le seed génère une clé d'appareil pour chaque Porteur ACTIF qui n'en a
+pas, l'enregistre dans `scripts/.demo-device-keys.json` (ignoré par git) et affiche les liens
+`http://localhost:3000/ecran/<id>?cle=tpd_…` ; `--rotate-keys` remplace toutes les clés. Ouvrir ce
+lien une fois suffit : le lecteur garde la clé dans le navigateur et la retire de la barre
+d'adresse. Sans clé, `/ecran/<id>` affiche « Écran non appairé ». Depuis le back-office :
+Réseau › Tableau › Porteurs › « Appairer l'écran » (clé affichée une seule fois, QR code du lien,
+rotation et révocation).
+
+**Double authentification et mot de passe** : chaque compte peut activer la double
+authentification (application TOTP, QR code, 10 codes de secours) dans `/espace/profil#securite`
+ou `/admin/compte`. `TPUB_TOTP_REQUIRED_ROLES=ADMINISTRATEUR,SUPERVISEUR,OPERATEUR` la rend
+obligatoire pour l'équipe (activation imposée à la connexion, `/connexion/activer-2fa`). Un
+administrateur peut la réinitialiser ou exiger un nouveau mot de passe depuis `/admin/utilisateurs`
+(détail d'un compte). Les scripts se connectent à un administrateur protégé avec
+`TPUB_ADMIN_TOTP_SECRET=<clé Base32>`.
 
 **Scénario du cahier des charges (§11)** : `node scripts/demo-scenario.mjs` joue les 18 étapes
 en HTTP contre le backend (compte annonceur neuf, campagne, image PNG, analyse et rapport IA,
 lecture par l'administrateur, point + rayon, créneau Soir, disponibilités, réservation,
 estimation, validation, appel du Porteur à une date simulée, statistiques, message d'urgence qui
-remplace la publicité) et affiche ✔ / ✘ par étape. À la fin, il donne l'URL du lecteur
-(`/ecran/<id>?datetime=…`) qui montre la même diffusion à l'écran.
+remplace la publicité) et affiche ✔ / ✘ par étape. Les appels du Porteur portent la clé
+d'appareil de `scripts/.demo-device-keys.json` (appairage automatique si elle manque), la date
+simulée n'est honorée qu'avec le profil `local` (sinon avertissement « horloge serveur utilisée »),
+et les doubles approbations sont complétées avec `admin2@tpub.local` (« 1/2 approbations » puis
+« validée par … et … »). À la fin, il donne l'URL du lecteur (`/ecran/<id>?datetime=…`) qui montre la
+même diffusion à l'écran.
 
 Parcours à montrer dans l'interface :
 
@@ -337,8 +390,9 @@ Parcours à montrer dans l'interface :
 2. **Administrateur** : `/admin/moderation` → « Examiner » (rapport IA, visuel, zones,
    réservations, estimation) → « Valider… » → « Confirmer la validation » (case de dérogation pour
    une revue manuelle).
-3. **Lecteur** : `/ecran/<id du Porteur>` (ajouter `?datetime=AAAA-MM-JJTHH:mm:ss` pour simuler une
-   heure du créneau). Un message créé dans `/admin/urgences` (point + rayon, niveau d'urgence)
+3. **Lecteur** : ouvrir d'abord le lien d'appairage `/ecran/<id du Porteur>?cle=…`, puis
+   `/ecran/<id du Porteur>` (ajouter `?datetime=AAAA-MM-JJTHH:mm:ss` pour simuler une heure du
+   créneau, profil `local` uniquement). Un message créé dans `/admin/urgences` (point + rayon, niveau d'urgence)
    remplace la publicité pendant sa fenêtre.
 4. **Suivi** : `/espace/statistiques` et `/espace/campagnes/<id>` (affichages, clics, budget
    consommé, export CSV), `/admin/statistiques`, `/admin/journal` (audit, décisions IA,

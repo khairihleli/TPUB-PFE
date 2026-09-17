@@ -6,6 +6,7 @@
  */
 import { ApiError, ApiTransportError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
+import { mediaExtension } from "@/lib/media-url";
 
 export const DEFAULT_DURATION_S = 10;
 /** Floor: protects the diffusion log from a misconfigured duration (0, negative, NaN). */
@@ -40,7 +41,8 @@ export function retryDelayMs(attempt: number, random?: () => number): number {
   return Math.round(Math.min(base * jitter, RETRY_MAX_MS));
 }
 
-export type PlayerErrorKind = "not-found" | "offline" | "unreachable" | "invalid" | "server";
+export type PlayerErrorKind =
+  "not-found" | "offline" | "unreachable" | "invalid" | "rate-limited" | "server";
 
 export interface PlayerErrorInfo {
   kind: PlayerErrorKind;
@@ -68,6 +70,15 @@ export function classifyPlayerError(e: unknown, supportId: number): PlayerErrorI
     };
   }
   if (e instanceof ApiError) {
+    if (e.status === 429) {
+      return {
+        kind: "rate-limited",
+        title: "Trop de requêtes",
+        message:
+          "Le service limite les appels de cet écran. Le lecteur patiente avant de réessayer.",
+        slow: false,
+      };
+    }
     if (e.status === 404) {
       return {
         kind: "not-found",
@@ -138,12 +149,41 @@ export function planAfterError(
 ): NextStep {
   const attempt = Math.max(0, previousAttempt) + 1;
   const error = classifyPlayerError(e, supportId);
-  return {
-    ok: false,
-    attempt,
-    error,
-    delayMs: error.slow ? RETRY_SLOW_MS : retryDelayMs(attempt, random),
-  };
+  const ladder = error.slow ? RETRY_SLOW_MS : retryDelayMs(attempt, random);
+  return { ok: false, attempt, error, delayMs: Math.max(ladder, retryAfterMs(e)) };
+}
+
+/**
+ * Round 2 (§3.4): a 429 DEVICE_RATE_LIMITED carries `Retry-After` (seconds). The player never
+ * calls again before it (capped at RETRY_MAX_MS). 0 when absent.
+ */
+export function retryAfterMs(e: unknown): number {
+  if (!(e instanceof ApiError) || e.retryAfterSeconds === null) return 0;
+  return Math.min(e.retryAfterSeconds * 1000, RETRY_MAX_MS);
+}
+
+/**
+ * Round 2 (§3.7): the `?cle=` of a pairing URL is consumed once. Returns the path without `cle`
+ * (other params such as `datetime` kept), or null when there is nothing to remove.
+ */
+export function urlWithoutPairingKey(href: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (!url.searchParams.has("cle")) return null;
+  url.searchParams.delete("cle");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/** Round 2: `?datetime` was requested but the backend (not in the `local` profile) used its clock. */
+export function simulatedTimeIgnored(
+  simulatedRequested: boolean,
+  d: Pick<Diffusion, "simulatedTime"> | null,
+): boolean {
+  return simulatedRequested && d !== null && d.simulatedTime === false;
 }
 
 /** Seconds left before `nextAt` (ceil, never negative). Null when unknown. */
@@ -187,8 +227,9 @@ export function adMediaKind(d: Pick<Diffusion, "mediaUrl" | "mediaType">): AdMed
   if (!url) return "none";
   if (d.mediaType === "VIDEO") return "video";
   if (d.mediaType === "IMAGE" || d.mediaType === "BANNER") return "image";
-  // Unknown type (older payloads): guess from the extension, default to an image.
-  return /\.(mp4|webm)(\?|#|$)/i.test(url) ? "video" : "image";
+  // Unknown type (older payloads): guess from the extension (signed query ignored), default image.
+  const ext = mediaExtension(url);
+  return ext === "mp4" || ext === "webm" ? "video" : "image";
 }
 
 /** A tap on a publicité counts one CLIC per diffusion log (never twice, never for other types). */

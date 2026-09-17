@@ -23,6 +23,7 @@ import {
   SESSION_EXPIRED_BODY,
   UNREACHABLE_BODY,
 } from "@/lib/backend";
+import { DEVICE_KEY_HEADER } from "@/lib/player/device-key";
 import { clearSessionCookies } from "@/lib/session";
 import { readSession, TOKEN_COOKIE, USER_COOKIE } from "@/lib/session-cookie";
 
@@ -39,6 +40,8 @@ const FORWARDED_REQUEST_HEADERS = [
   "range",
   "if-none-match",
   "if-modified-since",
+  // Round 2 §1.1: player routes authenticate the paired screen with its device key.
+  DEVICE_KEY_HEADER,
 ];
 
 function json(body: unknown, status: number): NextResponse {

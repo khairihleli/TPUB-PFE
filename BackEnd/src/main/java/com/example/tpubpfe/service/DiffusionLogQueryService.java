@@ -7,6 +7,7 @@ import com.example.tpubpfe.model.DiffusionLog;
 import com.example.tpubpfe.model.InteractionType;
 import com.example.tpubpfe.repository.DiffusionInteractionRepository;
 import com.example.tpubpfe.repository.DiffusionLogRepository;
+import com.example.tpubpfe.service.storage.FileStorageService;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -35,6 +36,7 @@ public class DiffusionLogQueryService {
     private final DiffusionLogRepository diffusionLogRepository;
     private final DiffusionInteractionRepository interactionRepository;
     private final Clock clock;
+    private final FileStorageService storage;
 
     public record Filter(Long supportId, Long zoneId, Long campaignId, List<DiffusionContentType> contentTypes,
                          LocalDate from, LocalDate to) {
@@ -92,7 +94,8 @@ public class DiffusionLogQueryService {
         };
     }
 
-    static DiffusionLogResponse toResponse(DiffusionLog log, long[] counts) {
+    /** Stored media URLs are canonical (unsigned); they are re-signed for the staff viewer (round 2, §3.5). */
+    DiffusionLogResponse toResponse(DiffusionLog log, long[] counts) {
         return DiffusionLogResponse.builder()
                 .id(log.getId())
                 .supportId(log.getSupport().getId())
@@ -104,7 +107,7 @@ public class DiffusionLogQueryService {
                 .emergencyId(log.getEmergency() != null ? log.getEmergency().getId() : null)
                 .contentType(log.getContentType().name())
                 .title(log.getTitle())
-                .mediaUrl(log.getMediaUrl())
+                .mediaUrl(storage.resignStoredUrl(log.getMediaUrl()))
                 .durationSeconds(log.getDurationSeconds() != null ? log.getDurationSeconds().intValue() : null)
                 .priority(log.getPriority() != null ? log.getPriority() : 0)
                 .cost(log.getCost())

@@ -24,6 +24,8 @@ import {
   deactivationBlocker,
   deviceLabel,
   emptyStaffForm,
+  passwordChangeBlocker,
+  securityBadges,
   NOTES_MAX,
   STAFF_CREATE_FIELDS,
   STAFF_ROLE_VALUES,
@@ -35,6 +37,7 @@ import {
   type StaffUpdateValues,
   staffUpdateFormFrom,
   staffUpdateSchema,
+  twoFactorResetBlocker,
   type UsersFilterState,
   usersFilterCount,
   usersQuery,
@@ -171,6 +174,13 @@ function UsersContent() {
     </span>
   );
 
+  const security = (u: AdminUserResponse) =>
+    securityBadges(u).map((b) => (
+      <Badge key={b.label} tone={b.tone} size="sm">
+        {b.label}
+      </Badge>
+    ));
+
   const activeBadge = (u: AdminUserResponse) => (
     <Badge tone={u.isActive ? "success" : "muted"} size="sm">
       {u.isActive ? "Actif" : "Désactivé"}
@@ -184,9 +194,10 @@ function UsersContent() {
       primary: true,
       cell: (u) => (
         <div className="min-w-0">
-          <p className="flex items-center gap-2">
+          <p className="flex flex-wrap items-center gap-2">
             <IdChip id={u.userId} />
             <span className="font-label font-semibold text-ink-strong">{accountTitle(u)}</span>
+            {security(u)}
           </p>
           <p className="mt-0.5 text-[0.8125rem] text-muted">
             {u.nom} · {u.email}
@@ -242,7 +253,7 @@ function UsersContent() {
       primary: true,
       cell: (u) => (
         <div className="min-w-0">
-          <p className="flex items-center gap-2">
+          <p className="flex flex-wrap items-center gap-2">
             <IdChip id={u.userId} />
             <span className="font-label font-semibold text-ink-strong">{u.nom}</span>
             {u.userId === user.userId ? (
@@ -250,6 +261,7 @@ function UsersContent() {
                 Vous
               </Badge>
             ) : null}
+            {security(u)}
           </p>
           <p className="mt-0.5 text-[0.8125rem] text-muted">{u.email}</p>
         </div>
@@ -495,6 +507,8 @@ function UsersContent() {
       <UserDetailDialog
         userId={url.utilisateur}
         canAct={canAct}
+        currentUserId={user.userId}
+        onUpdated={replace}
         onOpenChange={(open) => {
           if (!open) setUrl({ utilisateur: null });
         }}
@@ -918,23 +932,48 @@ async function loadUserDetail(userId: number, signal: AbortSignal) {
 function UserDetailDialog({
   userId,
   canAct,
+  currentUserId,
+  onUpdated,
   onOpenChange,
 }: {
   userId: number | null;
   canAct: boolean;
+  currentUserId: number;
+  onUpdated: (u: AdminUserResponse) => void;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
     <Dialog open={userId !== null} onOpenChange={onOpenChange}>
-      {userId !== null ? <UserDetail key={userId} userId={userId} canAct={canAct} /> : null}
+      {userId !== null ? (
+        <UserDetail
+          key={userId}
+          userId={userId}
+          canAct={canAct}
+          currentUserId={currentUserId}
+          onUpdated={onUpdated}
+        />
+      ) : null}
     </Dialog>
   );
 }
 
-function UserDetail({ userId, canAct }: { userId: number; canAct: boolean }) {
+type SecurityAction = "reset-2fa" | "require-password";
+
+function UserDetail({
+  userId,
+  canAct,
+  currentUserId,
+  onUpdated,
+}: {
+  userId: number;
+  canAct: boolean;
+  currentUserId: number;
+  onUpdated: (u: AdminUserResponse) => void;
+}) {
   const { toast } = useToast();
   const detail = useResource(`admin:user:${userId}`, (signal) => loadUserDetail(userId, signal));
   const [revoking, setRevoking] = useState(false);
+  const [securityAction, setSecurityAction] = useState<SecurityAction | null>(null);
   const account = detail.data?.account;
 
   const revoke = async () => {
@@ -972,6 +1011,20 @@ function UserDetail({ userId, canAct }: { userId: number; canAct: boolean }) {
               { label: "Rôle", value: ROLE_LABEL[account.role] },
               { label: "Compte", value: account.isActive ? "Actif" : "Désactivé" },
               {
+                label: "Double authentification",
+                value: account.twoFactorEnabled
+                  ? account.twoFactorRequired
+                    ? "Active (obligatoire)"
+                    : "Active"
+                  : account.twoFactorRequired
+                    ? "Inactive (obligatoire à la prochaine connexion)"
+                    : "Inactive",
+              },
+              {
+                label: "Mot de passe",
+                value: account.mustChangePassword ? "Changement requis" : "—",
+              },
+              {
                 label: "Validation",
                 value: account.client
                   ? CLIENT_VALIDATION_STATUS[account.client.validationStatus].label
@@ -996,6 +1049,70 @@ function UserDetail({ userId, canAct }: { userId: number; canAct: boolean }) {
             <Alert tone="info" title="Notes internes" live="none">
               <span className="whitespace-pre-line">{account.clientNotes}</span>
             </Alert>
+          ) : null}
+
+          {canAct ? (
+            <section aria-labelledby={`securite-${userId}`}>
+              <h3
+                id={`securite-${userId}`}
+                className="flex items-center gap-2 font-display text-base font-semibold text-ink-strong"
+              >
+                <ShieldCheck aria-hidden="true" className="size-4.5 text-brand-blue-text" />
+                Sécurité du compte
+              </h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabledReason={twoFactorResetBlocker(account, currentUserId)}
+                  onClick={() => setSecurityAction("reset-2fa")}
+                >
+                  Réinitialiser la double authentification
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabledReason={passwordChangeBlocker(account, currentUserId)}
+                  onClick={() => setSecurityAction("require-password")}
+                >
+                  Exiger un nouveau mot de passe
+                </Button>
+              </div>
+              <ConfirmDialog
+                open={securityAction !== null}
+                onOpenChange={(open) => {
+                  if (!open) setSecurityAction(null);
+                }}
+                title={
+                  securityAction === "reset-2fa"
+                    ? `Réinitialiser la double authentification de ${accountTitle(account)} ?`
+                    : `Exiger un nouveau mot de passe de ${accountTitle(account)} ?`
+                }
+                description={
+                  securityAction === "reset-2fa"
+                    ? "Son application et ses codes de secours ne fonctionneront plus et ses sessions sont fermées. Si son rôle l'impose, une nouvelle activation lui sera demandée à la prochaine connexion."
+                    : "Ses sessions sont fermées. À sa prochaine connexion, la personne devra définir un nouveau mot de passe avant de continuer."
+                }
+                confirmLabel={
+                  securityAction === "reset-2fa" ? "Réinitialiser" : "Exiger le changement"
+                }
+                onConfirm={async () => {
+                  const updated =
+                    securityAction === "reset-2fa"
+                      ? await adminUsersApi.resetTwoFactor(userId)
+                      : await adminUsersApi.requirePasswordChange(userId);
+                  onUpdated(updated);
+                  detail.reload();
+                  toast({
+                    title:
+                      securityAction === "reset-2fa"
+                        ? "Double authentification réinitialisée"
+                        : "Nouveau mot de passe exigé",
+                    variant: "success",
+                  });
+                }}
+              />
+            </section>
           ) : null}
 
           <section aria-labelledby={`sessions-${userId}`}>

@@ -7,12 +7,28 @@
  * Each run registers a fresh advertiser and books a fresh future window, so it can be replayed.
  * The urgent message created at step 17 is deactivated at the end so the real Porteurs are untouched.
  *
+ * Round 2 (docs/round2-contract.md §10): the administrator password comes from TPUB_ADMIN_PASSWORD /
+ * .tpub-local.secrets, the player calls carry the device key of scripts/.demo-device-keys.json (the
+ * Porteur is paired as admin when the key is missing or revoked), ?datetime= needs the backend `local`
+ * profile, and the double approvals are completed with admin2@tpub.local (created by seed-demo.mjs).
+ *
  * Usage: node scripts/demo-scenario.mjs   (TPUB_API_URL defaults to http://localhost:8080)
  *        --verbose  prints the payload summary of each step
  */
+import {
+  adminCredentials,
+  demoPassword,
+  DEVICE_KEY_HEADER,
+  deviceKeyFor,
+  DEVICE_KEYS_FILE,
+  generatePassword,
+  login,
+  saveDeviceKey,
+  SetupError,
+} from "./lib/demo-auth.mjs";
 import { API, SLOT_PRESETS, call, day, items, pngForm } from "./lib/tpub-api.mjs";
 
-const ADMIN = { email: "admin@tpub.local", password: "Admin@123" };
+const SECOND_ADMIN_EMAIL = "admin2@tpub.local";
 const VERBOSE = process.argv.includes("--verbose");
 
 /** Map target: Tunis Centre (seeded zone), 3 km around Avenue Habib Bourguiba. */
@@ -21,6 +37,58 @@ const TARGET = { latitude: 36.8008, longitude: 10.18, radiusKm: 3, label: "Centr
 class AssertionError extends Error {}
 function assert(condition, message) {
   if (!condition) throw new AssertionError(message);
+}
+
+/** Media URL without its signature (`?exp=&sig=`): two signed URLs of one file compare equal. */
+function mediaPath(url) {
+  return typeof url === "string" ? url.split("?")[0] : url;
+}
+
+let simulatedTimeWarned = false;
+
+/**
+ * Player call with the device key of the Porteur. A refused key (revoked or rotated) is replaced
+ * once by a new pairing done as administrator.
+ */
+async function playerCall(method, path, { query, body, supportId }) {
+  const send = async (key) =>
+    call(method, path, {
+      query: { supportId, ...query },
+      body,
+      headers: { [DEVICE_KEY_HEADER]: key },
+    });
+  let result;
+  try {
+    result = await send(await deviceKeyFor(supportId, ctx.admin.token));
+  } catch (err) {
+    if (err.code !== "DEVICE_KEY_INVALID") throw err;
+    const issued = await call("POST", `/api/supports/${supportId}/device-key`, {
+      token: ctx.admin.token,
+    });
+    saveDeviceKey(supportId, issued.deviceKey);
+    result = await send(issued.deviceKey);
+  }
+  if (query?.datetime && result?.simulatedTime === false && !simulatedTimeWarned) {
+    simulatedTimeWarned = true;
+    console.log("  ⚠ le backend n'est pas en profil local : horloge serveur utilisée");
+  }
+  return result;
+}
+
+/** Logs in as the second administrator (double approvals). */
+async function secondAdmin() {
+  if (ctx.admin2) return ctx.admin2;
+  const password = demoPassword(SECOND_ADMIN_EMAIL, { create: false });
+  assert(
+    password,
+    `mot de passe de ${SECOND_ADMIN_EMAIL} introuvable : lancez scripts/seed-demo.mjs`,
+  );
+  ctx.admin2 = await login({ email: SECOND_ADMIN_EMAIL, password });
+  return ctx.admin2;
+}
+
+function approverNames(approvals) {
+  return (approvals ?? []).map((a) => a.approverName).join(" et ");
 }
 
 const STEPS = [];
@@ -44,7 +112,7 @@ ctx.datetime = `${ctx.diffusionDate}T19:${String(ctx.runId % 60).padStart(2, "0"
 step("Un client annonceur crée un compte", async () => {
   ctx.advertiser = {
     email: `demo.scenario.${ctx.runId}@annonceur.tn`,
-    password: "Scenario@2026",
+    password: generatePassword(),
     nom: "Sami Trabelsi",
     societe: "Librairie El Manar",
     telephone: "+216 22 111 333",
@@ -57,7 +125,7 @@ step("Un client annonceur crée un compte", async () => {
   const me = await call("GET", "/api/me", { token: ctx.token });
   assert(me.client?.clientId, "profil client attendu");
   ctx.clientId = me.client.clientId;
-  ctx.admin = await call("POST", "/api/auth/login", { body: ADMIN });
+  ctx.admin = await login(adminCredentials());
   return `${auth.email} (client #${ctx.clientId}, validation ${me.client.validationStatus})`;
 });
 
@@ -90,12 +158,18 @@ step("Il ajoute une image", async () => {
   });
   assert(media.fileType === "IMAGE", `type IMAGE attendu, reçu ${media.fileType}`);
   assert(media.widthPx === 1280 && media.heightPx === 720, "dimensions 1280×720 attendues");
-  assert(media.url?.startsWith("/uploads/"), "URL publique /uploads attendue");
+  assert(media.url?.startsWith("/uploads/"), "URL /uploads attendue");
+  assert(
+    /[?&]exp=\d+/.test(media.url) && /[?&]sig=/.test(media.url),
+    "URL signée (exp, sig) attendue",
+  );
   const file = await fetch(`${API}${media.url}`);
   assert(
     file.ok && file.headers.get("content-type") === "image/png",
-    "/uploads doit servir le PNG",
+    "/uploads doit servir le PNG avec l'URL signée",
   );
+  const unsigned = await fetch(`${API}${mediaPath(media.url)}`);
+  assert(unsigned.status === 403, `sans signature, 403 attendu (reçu ${unsigned.status})`);
   ctx.mediaUrl = media.url;
   return `média #${media.id} ${media.widthPx}×${media.heightPx}, ${media.fileSizeBytes} octets → ${media.url}`;
 });
@@ -285,14 +359,32 @@ step("L'administrateur valide la campagne après analyse IA", async () => {
   );
   const report = await call("GET", `/api/ai/report/${ctx.campaignId}`, { token: ctx.admin.token });
   assert(report.preview === false, "rapport IA officiel attendu après soumission");
-  const validated = await call("POST", `/api/admin/campaigns/${ctx.campaignId}/validate`, {
-    token: ctx.admin.token,
-    body: {
-      overrideAi: submitted.status === "REVIEW_REQUIRED",
-      comment: "Contenu vérifié, diffusion autorisée.",
-      priorityScore: 10,
-    },
-  });
+  const validateAs = (token) =>
+    call("POST", `/api/admin/campaigns/${ctx.campaignId}/validate`, {
+      token,
+      raw: true,
+      body: {
+        overrideAi: submitted.status === "REVIEW_REQUIRED",
+        comment: "Contenu vérifié, diffusion autorisée.",
+        priorityScore: 10,
+      },
+    });
+  let answer = await validateAs(ctx.admin.token);
+  let approvers = "";
+  if (answer.status === 202 && answer.data?.pending) {
+    const { approval } = answer.data;
+    console.log(
+      `  … ${approval.approvals.length}/${approval.approvalsRequired} approbations : validation par un second administrateur`,
+    );
+    answer = await validateAs((await secondAdmin()).token);
+    const status = await call("GET", `/api/approvals/campaigns/${ctx.campaignId}`, {
+      token: ctx.admin.token,
+    }).catch(() => null);
+    approvers = status?.approvals?.length
+      ? ` · validée par ${approverNames(status.approvals)}`
+      : "";
+  }
+  const validated = answer.data;
   assert(validated.adminStatus === "VALIDATED", "validation admin attendue");
   assert(
     ["VALIDATED_BY_ADMIN", "ACTIVE"].includes(validated.status),
@@ -306,7 +398,7 @@ step("L'administrateur valide la campagne après analyse IA", async () => {
     confirmed.every((r) => r.reservationStatus === "CONFIRMEE"),
     "créneaux confirmés attendus",
   );
-  return `IA ${submitted.status} → admin ${validated.status}, ${confirmed.length} réservation(s) CONFIRMEE`;
+  return `IA ${submitted.status} → admin ${validated.status}, ${confirmed.length} réservation(s) CONFIRMEE${approvers}`;
 });
 
 // 14 ────────────────────────────────────────────────────────────────────────────
@@ -314,8 +406,9 @@ step("Un support appelle l'API de diffusion", async () => {
   ctx.support = ctx.supports[0];
   // Equitable rotation: other campaigns may share this slot, so call again until ours comes up.
   for (let attempt = 1; attempt <= 12; attempt++) {
-    const next = await call("GET", "/api/diffusion/next", {
-      query: { supportId: ctx.support.id, datetime: ctx.datetime },
+    const next = await playerCall("GET", "/api/diffusion/next", {
+      supportId: ctx.support.id,
+      query: { datetime: ctx.datetime },
     });
     assert(
       next.diffusionLogId && next.supportId === ctx.support.id,
@@ -335,10 +428,14 @@ step("Un support appelle l'API de diffusion", async () => {
 step("Le moteur sélectionne la bonne publicité", async () => {
   const next = ctx.diffusion;
   assert(next.type === "publicite", `type publicite attendu, reçu ${next.type}`);
-  assert(next.mediaUrl === ctx.mediaUrl, "le média de la campagne est diffusé");
+  assert(
+    mediaPath(next.mediaUrl) === mediaPath(ctx.mediaUrl),
+    "le média de la campagne est diffusé",
+  );
   assert(next.mediaType === "IMAGE" && next.duration > 0, "type de média et durée attendus");
-  const outside = await call("GET", "/api/diffusion/next", {
-    query: { supportId: ctx.support.id, datetime: `${ctx.diffusionDate}T08:30:00` },
+  const outside = await playerCall("GET", "/api/diffusion/next", {
+    supportId: ctx.support.id,
+    query: { datetime: `${ctx.diffusionDate}T08:30:00` },
   });
   assert(
     outside.campaignId !== ctx.campaignId,
@@ -349,7 +446,8 @@ step("Le moteur sélectionne la bonne publicité", async () => {
 
 // 16 ────────────────────────────────────────────────────────────────────────────
 step("Les statistiques sont mises à jour", async () => {
-  await call("POST", "/api/diffusion/interactions", {
+  await playerCall("POST", "/api/diffusion/interactions", {
+    supportId: ctx.support.id,
     body: { diffusionLogId: ctx.diffusion.diffusionLogId, type: "CLIC" },
   });
   const query = { from: ctx.diffusionDate, to: ctx.diffusionDate };
@@ -403,18 +501,29 @@ step("Un message d'urgence est créé", async () => {
     emergency.isActive && emergency.affectedSupports >= 1,
     "message actif ciblant au moins un Porteur attendu",
   );
+  let approvalNote = "";
+  if (emergency.approvalStatus === "EN_ATTENTE") {
+    const approved = await call("POST", `/api/emergency/${emergency.id}/approve`, {
+      token: (await secondAdmin()).token,
+      body: { comment: "Déviation confirmée par la circulation." },
+    });
+    assert(approved.approvalStatus === "APPROUVE", "approbation du second administrateur attendue");
+    approvalNote = ` · approuvé par ${approverNames(approved.approvals)}`;
+    Object.assign(emergency, approved);
+  }
   assert(
     ["PROGRAMME", "EN_COURS"].includes(emergency.state),
     `état PROGRAMME ou EN_COURS attendu, reçu ${emergency.state}`,
   );
   ctx.emergency = emergency;
-  return `urgence #${emergency.id} ${emergency.urgencyLevel} « ${emergency.title} », ${emergency.affectedSupports} Porteur(s), ${emergency.state}`;
+  return `urgence #${emergency.id} ${emergency.urgencyLevel} « ${emergency.title} », ${emergency.affectedSupports} Porteur(s), ${emergency.state}${approvalNote}`;
 });
 
 // 18 ────────────────────────────────────────────────────────────────────────────
 step("Le message d'urgence remplace temporairement la publicité normale", async () => {
-  const next = await call("GET", "/api/diffusion/next", {
-    query: { supportId: ctx.support.id, datetime: ctx.datetime },
+  const next = await playerCall("GET", "/api/diffusion/next", {
+    supportId: ctx.support.id,
+    query: { datetime: ctx.datetime },
   });
   assert(
     next.type === "urgence" && next.emergencyId === ctx.emergency.id,
@@ -424,19 +533,41 @@ step("Le message d'urgence remplace temporairement la publicité normale", async
     next.content === ctx.emergency.content && next.duration === 20,
     "contenu et durée de l'urgence attendus",
   );
-  const after = await call("GET", "/api/diffusion/next", {
-    query: { supportId: ctx.support.id, datetime: `${ctx.diffusionDate}T20:30:00` },
+  const after = await playerCall("GET", "/api/diffusion/next", {
+    supportId: ctx.support.id,
+    query: { datetime: `${ctx.diffusionDate}T20:30:00` },
   });
   assert(after.type !== "urgence", "après la fenêtre, l'urgence ne doit plus être diffusée");
   const stopped = await call("POST", `/api/emergency/${ctx.emergency.id}/deactivate`, {
     token: ctx.admin.token,
   });
   assert(stopped.state === "DESACTIVE" && stopped.stopReason === "MANUEL", "arrêt manuel attendu");
-  const back = await call("GET", "/api/diffusion/next", {
-    query: { supportId: ctx.support.id, datetime: ctx.datetime },
+  const back = await playerCall("GET", "/api/diffusion/next", {
+    supportId: ctx.support.id,
+    query: { datetime: ctx.datetime },
   });
   assert(back.type === "publicite", `retour à la publicité attendu, reçu ${back.type}`);
   return `urgence ${next.urgencyLevel} diffusée ${next.duration} s ; à 20:30 → ${after.type} ; après arrêt → ${back.type}`;
+});
+
+// Optional ─────────────────────────────────────────────────────────────────────
+step("Supervision : l'écran signale sa présence", async () => {
+  let heartbeat;
+  try {
+    heartbeat = await playerCall("POST", "/api/diffusion/heartbeat", {
+      supportId: ctx.support.id,
+      body: { playerVersion: "demo-scenario", visible: true },
+    });
+  } catch (err) {
+    if (err.status === 404 && err.code !== "SUPPORT_NOT_FOUND") {
+      return "supervision non disponible sur ce backend (étape facultative ignorée)";
+    }
+    throw err;
+  }
+  assert(heartbeat.state === "EN_LIGNE", `présence EN_LIGNE attendue, reçu ${heartbeat.state}`);
+  const snapshot = await call("GET", "/api/supervision/snapshot", { token: ctx.admin.token });
+  const { stats } = snapshot;
+  return `${stats.onlineSupports} en ligne, ${stats.offlineSupports} hors ligne, ${stats.unknownSupports} inconnu(s), ${stats.diffusionsLastHour} diffusion(s) sur l'heure, ${stats.openAlerts} alerte(s)`;
 });
 
 async function main() {
@@ -462,6 +593,10 @@ async function main() {
       const detail = await run();
       console.log(`✔ ${label}${detail ? ` — ${detail}` : ""}`);
     } catch (err) {
+      if (err instanceof SetupError) {
+        console.error(err.message);
+        process.exit(1);
+      }
       failed++;
       console.log(`✘ ${label} — ${err.message}`);
       if (VERBOSE && err.data) console.log(JSON.stringify(err.data, null, 2));
@@ -475,7 +610,7 @@ async function main() {
   if (!failed) {
     console.log(`  Annonceur créé : ${ctx.advertiser.email} / ${ctx.advertiser.password}`);
     console.log(
-      `  Campagne #${ctx.campaignId} · lecteur : http://localhost:3000/ecran/${ctx.support.id}?datetime=${ctx.datetime}`,
+      `  Campagne #${ctx.campaignId} · lecteur : http://localhost:3000/ecran/${ctx.support.id}?datetime=${ctx.datetime} (clé d'appareil : ${DEVICE_KEYS_FILE})`,
     );
   }
   process.exit(failed ? 1 : 0);

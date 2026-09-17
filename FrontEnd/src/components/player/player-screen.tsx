@@ -13,20 +13,31 @@ import {
   shouldSendClick,
   simulatedDateTime,
   slideKey,
+  urlWithoutPairingKey,
 } from "@/components/player/player-schedule";
 import {
   AdSlide,
   BootSlide,
   DefaultSlide,
   OfflineSlide,
+  UnpairedSlide,
   UrgentSlide,
 } from "@/components/player/player-slides";
 import { useNow } from "@/components/player/use-now";
 import { diffusionApi } from "@/lib/api/endpoints";
-import { isAbortError } from "@/lib/api/errors";
+import { isAbortError, isDeviceKeyError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
 import { toLocalIsoDateTime } from "@/lib/format";
+import {
+  clearDeviceKey,
+  isDeviceKey,
+  readDeviceKey,
+  storeDeviceKey,
+} from "@/lib/player/device-key";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
+
+/** `undefined`: storage not read yet (first render); `null`: this screen is not paired. */
+type DeviceKeyState = string | null | undefined;
 
 export interface PlayerState {
   /** Last content successfully received. */
@@ -62,14 +73,30 @@ const INITIAL: PlayerState = {
 export function PlayerScreen({
   supportId,
   simulatedAt = null,
+  pairingKey = null,
 }: {
   supportId: number;
   /** `?datetime=` base (normalised local "YYYY-MM-DDTHH:mm:ss"): the clock starts there. */
   simulatedAt?: string | null;
+  /** `?cle=` of the pairing URL (round 2 §3.7): stored once, then removed from the address bar. */
+  pairingKey?: string | null;
 }) {
   const reduce = useReducedMotion();
   const animate = !reduce;
   const [state, setState] = useState<PlayerState>(INITIAL);
+  const [deviceKey, setDeviceKey] = useState<DeviceKeyState>(undefined);
+  /** The stored key was refused (revoked or rotated): explained on the unpaired slide. */
+  const [keyRevoked, setKeyRevoked] = useState(false);
+
+  useEffect(() => {
+    const fromUrl = isDeviceKey(pairingKey) ? pairingKey : null;
+    if (fromUrl) storeDeviceKey(supportId, fromUrl);
+    const cleaned = urlWithoutPairingKey(window.location.href);
+    if (cleaned !== null) window.history.replaceState(window.history.state, "", cleaned);
+    // Storage unavailable (private mode): the pairing key still works for this page view.
+    setDeviceKey(readDeviceKey(supportId) ?? fromUrl);
+    if (fromUrl) setKeyRevoked(false);
+  }, [supportId, pairingKey]);
   const [announcement, setAnnouncement] = useState("");
   const [retryNonce, setRetryNonce] = useState(0);
   const lastRef = useRef<Diffusion | null>(null);
@@ -79,6 +106,8 @@ export function PlayerScreen({
   const [clickedLogs, setClickedLogs] = useState<ReadonlySet<number>>(new Set());
 
   useEffect(() => {
+    // Not read yet, or unpaired: never call the backend without a key.
+    if (!deviceKey) return;
     let cancelled = false;
     let timer: number | undefined;
     let controller: AbortController | null = null;
@@ -103,7 +132,7 @@ export function PlayerScreen({
       try {
         const d = await diffusionApi.next(
           { supportId, datetime: clock() },
-          { signal: current.signal },
+          { signal: current.signal, deviceKey },
         );
         if (cancelled) return;
         const plan = planAfterSuccess(d);
@@ -126,6 +155,15 @@ export function PlayerScreen({
         schedule(plan.delayMs);
       } catch (e) {
         if (cancelled || current.signal.aborted || isAbortError(e)) return;
+        if (isDeviceKeyError(e)) {
+          // Revoked or rotated key: forget it and stop polling until a new pairing link is opened.
+          clearDeviceKey(supportId);
+          lastRef.current = null;
+          setKeyRevoked(true);
+          setDeviceKey(null);
+          setState(INITIAL);
+          return;
+        }
         const plan = planAfterError(e, attempt, supportId, Math.random);
         attempt = plan.attempt;
         setState((s) => ({
@@ -182,7 +220,7 @@ export function PlayerScreen({
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
     };
-  }, [supportId, retryNonce, simulatedAt]);
+  }, [supportId, retryNonce, simulatedAt, deviceKey]);
 
   const retryNow = useCallback(() => {
     setState((s) => ({ ...s, pending: true }));
@@ -194,15 +232,20 @@ export function PlayerScreen({
     if (lastRef.current?.diffusionLogId === logId) advanceRef.current?.();
   }, []);
 
-  const sendClick = useCallback((d: Diffusion) => {
-    if (!shouldSendClick(d, clickedRef.current) || typeof d.diffusionLogId !== "number") return;
-    const logId = d.diffusionLogId;
-    clickedRef.current.add(logId);
-    setClickedLogs(new Set(clickedRef.current));
-    void diffusionApi.interaction({ diffusionLogId: logId, type: "CLIC" }).catch(() => {
-      // Expired or unknown log: nothing to show on a street screen.
-    });
-  }, []);
+  const sendClick = useCallback(
+    (d: Diffusion) => {
+      if (!shouldSendClick(d, clickedRef.current) || typeof d.diffusionLogId !== "number") return;
+      const logId = d.diffusionLogId;
+      clickedRef.current.add(logId);
+      setClickedLogs(new Set(clickedRef.current));
+      void diffusionApi
+        .interaction({ diffusionLogId: logId, type: "CLIC" }, { supportId, deviceKey })
+        .catch(() => {
+          // Expired or unknown log: nothing to show on a street screen.
+        });
+    },
+    [supportId, deviceKey],
+  );
 
   const { diffusion, error } = state;
   const offlineError =
@@ -210,7 +253,9 @@ export function PlayerScreen({
   const now = useNow(offlineError !== null);
 
   let slide;
-  if (offlineError) {
+  if (deviceKey === null) {
+    slide = <UnpairedSlide supportId={supportId} revoked={keyRevoked} />;
+  } else if (offlineError) {
     slide = (
       <OfflineSlide
         error={offlineError}
@@ -280,12 +325,14 @@ export function PlayerScreen({
 
       {slide}
 
-      <PlayerOverlay
-        supportId={supportId}
-        state={state}
-        onRetry={retryNow}
-        simulated={simulatedAt !== null}
-      />
+      {deviceKey === null ? null : (
+        <PlayerOverlay
+          supportId={supportId}
+          state={state}
+          onRetry={retryNow}
+          simulated={simulatedAt !== null}
+        />
+      )}
     </div>
   );
 }

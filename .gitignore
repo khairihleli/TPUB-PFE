@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+# start-local.ps1 secrets (JWT, media signing, TOTP key, initial admin password)
+.tpub-local.secrets
 
 # OS
 .DS_Store

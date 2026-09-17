@@ -326,7 +326,8 @@ class DiffusionServiceTest {
 
         assertThat(response.getType()).isEqualTo("publicite");
         assertThat(response.getCampaignId()).isEqualTo(2L);
-        assertThat(response.getMediaUrl()).isEqualTo("/uploads/campaigns/2/clip.mp4");
+        // Round 2 (L2): the response carries a signed URL, the log keeps the canonical unsigned one.
+        assertThat(response.getMediaUrl()).startsWith("/uploads/campaigns/2/clip.mp4?exp=").contains("&sig=");
         assertThat(response.getMediaType()).isEqualTo("VIDEO");
         assertThat(response.getDuration()).isEqualTo(20);
         assertThat(response.getPriority()).isEqualTo(60);

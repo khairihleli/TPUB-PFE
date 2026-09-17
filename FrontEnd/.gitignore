@@ -20,6 +20,10 @@ coverage
 .env*.local
 .env
 
+# demo scripts: generated passwords and player device keys (round 2)
+scripts/.demo-accounts.json
+scripts/.demo-device-keys.json
+
 # misc
 .DS_Store
 npm-debug.log*

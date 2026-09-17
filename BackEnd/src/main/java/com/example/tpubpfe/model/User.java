@@ -65,6 +65,32 @@ public class User {
     @Column(name = "password_changed_at")
     private Instant passwordChangedAt;
 
+    /** Round 2 (V7): every authenticated request except the password change is refused while true. */
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private Boolean mustChangePassword = false;
+
+    @Column(name = "totp_enabled", nullable = false)
+    @Builder.Default
+    private Boolean totpEnabled = false;
+
+    /** base64(IV ‖ ciphertext ‖ tag), AES-256-GCM of the Base32 secret. */
+    @Column(name = "totp_secret_enc", length = 512)
+    private String totpSecretEnc;
+
+    @Column(name = "totp_enabled_at")
+    private Instant totpEnabledAt;
+
+    /** Last accepted TOTP time step (replay protection). */
+    @Column(name = "totp_last_used_step")
+    private Long totpLastUsedStep;
+
+    @Column(name = "totp_pending_secret_enc", length = 512)
+    private String totpPendingSecretEnc;
+
+    @Column(name = "totp_pending_created_at")
+    private Instant totpPendingCreatedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

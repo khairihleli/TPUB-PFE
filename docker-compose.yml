@@ -44,6 +44,10 @@ services:
       postgres:
         condition: service_healthy
 
+  # The backend reads its configuration from .env (env_file). JWT_SECRET is REQUIRED (≥ 32 bytes, never
+  # the value once committed to git): without it the container stops at startup with a clear message.
+  # Recommended as well: MEDIA_SIGNING_SECRET, TOTP_ENCRYPTION_KEY, TPUB_ADMIN_INITIAL_PASSWORD and
+  # TPUB_TOTP_REQUIRED_ROLES=ADMINISTRATEUR,SUPERVISEUR,OPERATEUR (see .env.example).
   backend:
     build:
       context: ./BackEnd

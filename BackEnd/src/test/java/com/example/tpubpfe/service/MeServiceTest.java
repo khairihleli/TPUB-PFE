@@ -13,6 +13,7 @@ import com.example.tpubpfe.model.User;
 import com.example.tpubpfe.repository.ClientRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
+import com.example.tpubpfe.security.totp.TotpPolicy;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,7 +61,8 @@ class MeServiceTest {
         storage = mock(FileStorageService.class);
         when(storage.publicUrl(anyString())).thenAnswer(inv -> "/uploads/" + inv.getArgument(0));
         service = new MeService(userRepository, clientRepository, encoder, sessionService,
-                mock(LoginHistoryService.class), storage, Clock.fixed(NOW, ZoneId.of("Africa/Tunis")));
+                mock(LoginHistoryService.class), storage, Clock.fixed(NOW, ZoneId.of("Africa/Tunis")),
+                TotpPolicy.of(List.of()));
         user = User.builder().id(9L).email("ann@tpub.test").nom("Ann").passwordHash(encoder.encode("Ancien123"))
                 .role(Role.builder().code(RoleCode.ANNONCEUR).name("Annonceur").build()).isActive(true)
                 .logoUrl("logos/9/old.png").build();
@@ -107,8 +110,12 @@ class MeServiceTest {
 
     @Test
     void passwordChangeRevokesOtherSessionsOnly() {
+        user.setMustChangePassword(true);
+        assertThat(service.get().isMustChangePassword()).isTrue();
+
         service.changePassword(new PasswordChangeRequest("Ancien123", "Nouveau123"));
 
+        assertThat(user.getMustChangePassword()).isFalse();
         assertThat(encoder.matches("Nouveau123", user.getPasswordHash())).isTrue();
         assertThat(user.getPasswordChangedAt()).isEqualTo(NOW);
         verify(sessionService).revokeAll(9L, "current-sid", SessionRevokeReason.PASSWORD_CHANGED);

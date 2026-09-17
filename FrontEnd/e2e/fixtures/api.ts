@@ -877,7 +877,8 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
         const sessionUser = sessionUserOf(account);
         state.user = sessionUser;
         await setSessionCookies(page.context(), sessionUser, options.baseURL);
-        return json(route, 200, { user: sessionUser });
+        // Round 2: the login route answers a status (no TOTP challenge for the demo accounts).
+        return json(route, 200, { status: "AUTHENTICATED", user: sessionUser });
       }
       if (seg[1] === "register" && method === "POST") {
         const body = bodyOf<RegisterRequest>(request);
@@ -1024,6 +1025,16 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
         return rest;
       };
       if (seg.length === 1 && method === "GET") return json(route, 200, meView());
+      // Round 2: two-factor authentication status (not enabled for the demo accounts).
+      if (seg[1] === "2fa" && seg.length === 2 && method === "GET") {
+        return json(route, 200, {
+          enabled: false,
+          enabledAt: null,
+          required: false,
+          recoveryCodesRemaining: 0,
+          pendingSetup: false,
+        });
+      }
       if (seg.length === 1 && method === "PUT") {
         const body = bodyOf<{
           nom?: string;
@@ -2243,6 +2254,26 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
 
     // ---- Supports
     if (seg[0] === "supports") {
+      // Round 2: player device key status (every ACTIF Porteur is paired in the demo data).
+      if (seg[1] === "device-keys" && seg.length === 2 && method === "GET") {
+        if (!isStaff) return denied(route);
+        return json(
+          route,
+          200,
+          state.supports.map((s) => {
+            const paired = s.technicalStatus === "ACTIF";
+            return {
+              supportId: s.id,
+              supportName: s.name,
+              paired,
+              keyPrefix: paired ? "tpd_e2eDemoK" : null,
+              createdAt: paired ? "2026-09-01T08:00:00Z" : null,
+              lastUsedAt: null,
+              lastUsedIp: null,
+            };
+          }),
+        );
+      }
       if (seg.length === 1 && method === "GET") {
         const zoneIds = listParam(url, "zoneId")?.map(Number) ?? null;
         const types = listParam(url, "supportType");

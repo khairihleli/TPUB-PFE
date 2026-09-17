@@ -39,6 +39,10 @@ export async function prepare(
   await page.addInitScript(() => {
     try {
       window.sessionStorage.clear();
+      // Round 2: the /ecran player needs a device key (docs/round2-contract.md §1.1).
+      for (let id = 1; id <= 50; id++) {
+        window.localStorage.setItem(`tpub.ecran.cle.${id}`, `tpd_${"e2e".repeat(14)}x`);
+      }
     } catch {
       /* storage unavailable */
     }

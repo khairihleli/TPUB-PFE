@@ -4,6 +4,7 @@ import com.example.tpubpfe.config.TpubProperties;
 import com.example.tpubpfe.model.Zone;
 import com.example.tpubpfe.repository.ZoneRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
+import com.example.tpubpfe.service.storage.FileStorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -42,6 +43,7 @@ class LaneBWebLayerTest {
     @Autowired private MockMvc mvc;
     @Autowired private TpubProperties properties;
     @Autowired private ZoneRepository zoneRepository;
+    @Autowired private FileStorageService storage;
 
     private static UserDetailsImpl principal(String role) {
         return new UserDetailsImpl(900L, role.toLowerCase() + "@tpub.test", "x", "Test", role, true);
@@ -52,13 +54,14 @@ class LaneBWebLayerTest {
         mvc.perform(get("/api/diffusion/next"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("MISSING_PARAMETER"));
+        // Round 2 (L2): player routes require the device key (docs/round2-contract.md §3.4).
         mvc.perform(get("/api/diffusion/next").param("supportId", "987654"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("SUPPORT_NOT_FOUND"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("DEVICE_KEY_REQUIRED"));
         mvc.perform(post("/api/diffusion/interactions").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"diffusionLogId\":987654,\"type\":\"CLIC\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("DIFFUSION_LOG_NOT_FOUND"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MISSING_PARAMETER"));
         int logs = mvc.perform(get("/api/diffusion/logs")).andReturn().getResponse().getStatus();
         assertThat(logs).isIn(401, 403);
     }
@@ -118,21 +121,26 @@ class LaneBWebLayerTest {
     }
 
     @Test
-    void uploadsAreServedPubliclyWithRangeSupport() throws Exception {
+    void uploadsAreServedThroughSignedUrlsWithRangeSupport() throws Exception {
         Path root = Paths.get(properties.getMedia().getUploadDir()).toAbsolutePath().normalize();
         Path file = root.resolve("campaigns/web-test/hello.txt");
         Files.createDirectories(file.getParent());
         Files.writeString(file, "bonjour TPUB");
 
-        MvcResult full = mvc.perform(get("/uploads/campaigns/web-test/hello.txt"))
+        // Round 2 (L2): /uploads requires a signed URL (docs/round2-contract.md §3.5).
+        String signed = storage.publicUrl("campaigns/web-test/hello.txt");
+        MvcResult full = mvc.perform(get(signed))
                 .andExpect(status().isOk())
                 .andReturn();
         assertThat(full.getResponse().getContentAsString()).isEqualTo("bonjour TPUB");
-        assertThat(full.getResponse().getHeader(HttpHeaders.CACHE_CONTROL)).contains("max-age=86400");
+        assertThat(full.getResponse().getHeader(HttpHeaders.CACHE_CONTROL)).startsWith("private, max-age=");
 
-        mvc.perform(get("/uploads/campaigns/web-test/hello.txt").header(HttpHeaders.RANGE, "bytes=0-6"))
+        mvc.perform(get(signed).header(HttpHeaders.RANGE, "bytes=0-6"))
                 .andExpect(status().isPartialContent());
-        mvc.perform(get("/uploads/campaigns/web-test/missing.txt"))
+        mvc.perform(get(storage.publicUrl("campaigns/web-test/missing.txt")))
                 .andExpect(status().isNotFound());
+        mvc.perform(get("/uploads/campaigns/web-test/hello.txt"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("MEDIA_SIGNATURE_REQUIRED"));
     }
 }

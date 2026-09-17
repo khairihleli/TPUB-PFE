@@ -90,8 +90,9 @@ class MediaServiceTest {
         assertThat(response.getHeightPx()).isEqualTo(180);
         assertThat(response.getSortOrder()).isEqualTo(2);
         assertThat(response.getChecksum()).hasSize(64);
-        assertThat(response.getUrl()).startsWith("/uploads/campaigns/12/").endsWith(".png");
-        Path stored = uploadDir.resolve(response.getUrl().substring("/uploads/".length()));
+        assertThat(response.getUrl()).startsWith("/uploads/campaigns/12/").contains(".png?exp=").contains("&sig=");
+        String path = response.getUrl().substring("/uploads/".length(), response.getUrl().indexOf('?'));
+        Path stored = uploadDir.resolve(path);
         assertThat(Files.exists(stored)).isTrue();
     }
 

@@ -20,6 +20,8 @@ public class UserDetailsImpl implements UserDetails {
     private boolean active;
     /** {@code user_sessions.id} of the bearer token; null outside a JWT-authenticated request. */
     private String sessionId;
+    /** Round 2 (L2): the account must set a new password before any other action. */
+    private boolean mustChangePassword;
 
     public UserDetailsImpl(Long id, String email, String password, String nom, String roleCode, boolean active) {
         this(id, email, password, nom, roleCode, active, null);
@@ -36,6 +38,12 @@ public class UserDetailsImpl implements UserDetails {
         this.sessionId = sessionId;
     }
 
+    public UserDetailsImpl(Long id, String email, String password, String nom, String roleCode, boolean active,
+                           String sessionId, boolean mustChangePassword) {
+        this(id, email, password, nom, roleCode, active, sessionId);
+        this.mustChangePassword = mustChangePassword;
+    }
+
     public static UserDetailsImpl fromUser(User user) {
         return fromUser(user, null);
     }
@@ -48,7 +56,8 @@ public class UserDetailsImpl implements UserDetails {
                 user.getNom(),
                 user.getRole().getCode().name(),
                 Boolean.TRUE.equals(user.getIsActive()),
-                sessionId
+                sessionId,
+                Boolean.TRUE.equals(user.getMustChangePassword())
         );
     }
 

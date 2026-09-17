@@ -132,7 +132,12 @@ export type PaymentStatus = "SIMULATED" | "PENDING" | "COMPLETED" | "CANCELLED" 
 // ---- Accounts
 export type SessionRevokeReason =
   "LOGOUT" | "REVOKED_BY_USER" | "REVOKED_BY_ADMIN" | "PASSWORD_CHANGED" | "ACCOUNT_DISABLED";
-export type LoginFailureReason = "BAD_CREDENTIALS" | "ACCOUNT_DISABLED" | "UNKNOWN_USER";
+export type LoginFailureReason =
+  | "BAD_CREDENTIALS"
+  | "ACCOUNT_DISABLED"
+  | "UNKNOWN_USER"
+  /** Round 2: wrong TOTP or recovery code on the second login step. */
+  | "TOTP_INVALID";
 
 // ---- Audit (contract §2.10 catalog)
 export type AuditAction =
@@ -159,9 +164,17 @@ export type AuditAction =
   | "USER_ACTIVATED"
   | "USER_DEACTIVATED"
   | "CLIENT_VALIDATION_CHANGED"
-  | "USER_SESSIONS_REVOKED";
+  | "USER_SESSIONS_REVOKED"
+  // Round 2 (L2): account security and player device keys
+  | "USER_PASSWORD_CHANGE_REQUIRED"
+  | "USER_2FA_ENABLED"
+  | "USER_2FA_DISABLED"
+  | "USER_2FA_RESET"
+  | "SUPPORT_DEVICE_KEY_ISSUED"
+  | "SUPPORT_DEVICE_KEY_ROTATED"
+  | "SUPPORT_DEVICE_KEY_REVOKED";
 export type AuditEntityType =
-  "CAMPAIGN" | "AI_RULE" | "ZONE" | "SUPPORT" | "RESERVATION" | "EMERGENCY" | "USER" | "CLIENT";
+  "CAMPAIGN" | "AI_RULE" | "ZONE" | "SUPPORT" | "RESERVATION" | "EMERGENCY" | "USER" | "CLIENT" | "SUPPORT_DEVICE";
 
 // ---------------------------------------------------------------------------
 // Errors and paging
@@ -216,6 +229,8 @@ export interface LoginRequest {
 }
 
 export interface AuthResponse {
+  /** Round 2 (docs/round2-contract.md §3.3). Absent from pre-round-2 backends. */
+  status?: "AUTHENTICATED";
   token: string;
   email: string;
   nom: string;
@@ -225,6 +240,50 @@ export interface AuthResponse {
   sessionId?: string;
   /** ISO instant. Absent from pre-v2 backends. */
   expiresAt?: string;
+  /** Round 2: every other action is refused until a new password is set. */
+  mustChangePassword?: boolean;
+  twoFactorEnabled?: boolean;
+  /** The second login step used a recovery code. */
+  recoveryCodeUsed?: boolean;
+  /** Only from `POST /api/auth/2fa/enable`. */
+  recoveryCodes?: string[];
+}
+
+export type LoginChallengeStatus = "TOTP_REQUIRED" | "TOTP_ENROLMENT_REQUIRED";
+
+/** Password accepted, second step pending (round 2 §3.3). Never reaches the browser as is. */
+export interface LoginChallengeResponse {
+  status: LoginChallengeStatus;
+  challengeToken: string;
+  expiresAt: string;
+  email: string;
+}
+
+export type LoginResponse = AuthResponse | LoginChallengeResponse;
+
+export interface TotpSetupResponse {
+  /** Base32, upper case, no padding. */
+  secret: string;
+  otpauthUri: string;
+  expiresAt: string;
+}
+
+export interface TwoFactorStatusResponse {
+  enabled: boolean;
+  enabledAt: string | null;
+  required: boolean;
+  recoveryCodesRemaining: number;
+  pendingSetup: boolean;
+}
+
+export interface RecoveryCodesResponse {
+  recoveryCodes: string[];
+}
+
+export interface TwoFactorDisableRequest {
+  password: string;
+  /** 6-digit TOTP code or a recovery code. */
+  code: string;
 }
 
 /** What the Next session routes return to the browser (never the token). */
@@ -235,10 +294,32 @@ export interface SessionUser {
   userId: number;
   /** Session expiry, seconds since epoch. */
   exp: number;
+  /** Round 2: absent from cookies written before round 2 (read as false). */
+  mustChangePassword?: boolean;
+  twoFactorEnabled?: boolean;
 }
 
 export interface SessionResponse {
   user: SessionUser;
+}
+
+/** `POST /api/session/login`: a session, or a second step whose token stays in an httpOnly cookie. */
+export type SessionLoginResult =
+  | { status: "AUTHENTICATED"; user: SessionUser }
+  | { status: LoginChallengeStatus; email: string; expiresAt: string };
+
+/** `POST /api/session/login/verify`. */
+export interface SessionVerifyResult {
+  status: "AUTHENTICATED";
+  user: SessionUser;
+  recoveryCodeUsed: boolean;
+}
+
+/** `POST /api/session/enrolment/enable`. */
+export interface SessionEnrolmentResult {
+  status: "AUTHENTICATED";
+  user: SessionUser;
+  recoveryCodes: string[];
 }
 
 export interface MeClient {
@@ -261,6 +342,11 @@ export interface MeResponse {
   lastLoginAt: string | null;
   createdAt: string;
   client: MeClient | null;
+  /** Round 2 (§3.3). Optional for pre-round-2 payloads and fixtures: read with `?? false`. */
+  twoFactorEnabled?: boolean;
+  /** TOTP mandatory for this role (`tpub.security.totp.required-roles`). */
+  twoFactorRequired?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface MeUpdateRequest {
@@ -1291,6 +1377,8 @@ export interface DiffusionResponse {
   urgencyLevel?: UrgencyLevel | null;
   /** Local "YYYY-MM-DDTHH:mm:ss" used by the engine. */
   datetime?: string;
+  /** Round 2: true when the requested `datetime` was honoured (backend `local` profile only). */
+  simulatedTime?: boolean;
 }
 
 /** Normalised diffusion (type uppercase). */
@@ -1303,6 +1391,30 @@ export interface DiffusionQuery {
   /** Local ISO date-time without timezone, e.g. 2026-09-12T14:30:00. Default: now (backend). */
   datetime?: string;
   zone?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Player device keys (round 2 §3.4)
+// ---------------------------------------------------------------------------
+export interface DeviceKeyIssuedResponse {
+  supportId: number;
+  /** Shown once: never stored by the back-office. */
+  deviceKey: string;
+  /** First 12 characters of the key. */
+  keyPrefix: string;
+  createdAt: string;
+  /** "/ecran/{id}?cle={deviceKey}" */
+  pairingPath: string;
+}
+
+export interface DeviceKeyStatusResponse {
+  supportId: number;
+  supportName: string;
+  paired: boolean;
+  keyPrefix: string | null;
+  createdAt: string | null;
+  lastUsedAt: string | null;
+  lastUsedIp: string | null;
 }
 
 export interface InteractionRequest {

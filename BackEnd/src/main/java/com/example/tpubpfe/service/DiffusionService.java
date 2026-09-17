@@ -172,7 +172,8 @@ public class DiffusionService {
         });
 
         DiffusionLog log = saveLog(support, campaign, null, candidate.reservation(), DiffusionContentType.PUBLICITE,
-                campaign.getName(), mediaUrl, duration, (short) candidate.score(), unitCost, at);
+                campaign.getName(), media != null ? storage.canonicalUrl(media.getFilePath()) : null, duration,
+                (short) candidate.score(), unitCost, at);
         return DiffusionResponse.builder()
                 .type("publicite")
                 .diffusionLogId(log.getId())

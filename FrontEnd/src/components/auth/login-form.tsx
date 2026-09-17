@@ -5,7 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useRef, useState } from "react";
 
-import { postAuthDestination } from "@/components/auth/auth-redirect";
+import {
+  ENROLMENT_PATH,
+  safeRedirectPath,
+  sessionDestination,
+  VERIFICATION_PATH,
+} from "@/components/auth/auth-redirect";
+import { clearChallengeInfo, storeChallengeInfo } from "@/components/auth/challenge-storage";
 import {
   firstIssues,
   loginSchema,
@@ -16,6 +22,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input, PasswordInput } from "@/components/ui/field";
 import { ApiError, presentError, sessionApi, SESSION_EXPIRED_MESSAGE } from "@/lib/api";
+import { normalizeSessionLogin } from "@/lib/api/endpoints";
 import { hasErrorCode } from "@/lib/api/errors";
 
 const FIELDS = ["email", "password"] as const;
@@ -24,7 +31,12 @@ type Errors = FieldErrorsOf<LoginValues>;
 export interface LoginFormProps {
   next: string | null;
   expired: boolean;
+  /** Round 2: the second login step expired (back from /connexion/verification). */
+  verificationExpired?: boolean;
 }
+
+export const VERIFICATION_EXPIRED_MESSAGE =
+  "La vérification en deux étapes a expiré. Saisissez à nouveau votre mot de passe.";
 
 export const ACCOUNT_DISABLED_MESSAGE =
   "Ce compte est désactivé. Contactez l'équipe TPUB pour le réactiver.";
@@ -44,7 +56,7 @@ export function loginErrorMessage(e: unknown): string {
   return presentError(e).message;
 }
 
-export function LoginForm({ next, expired }: LoginFormProps) {
+export function LoginForm({ next, expired, verificationExpired = false }: LoginFormProps) {
   const router = useRouter();
   const [values, setValues] = useState<LoginValues>({ email: "", password: "" });
   const [errors, setErrors] = useState<Errors>({});
@@ -79,8 +91,21 @@ export function LoginForm({ next, expired }: LoginFormProps) {
     busy.current = true;
     setPending(true);
     try {
-      const { user } = await sessionApi.login(parsed.data);
-      router.replace(postAuthDestination(next, user.role));
+      const result = normalizeSessionLogin(await sessionApi.login(parsed.data));
+      if (result.status !== "AUTHENTICATED") {
+        // Round 2 §3.7: second step (TOTP code) or mandatory 2FA enrolment.
+        storeChallengeInfo({
+          status: result.status,
+          email: result.email,
+          expiresAt: result.expiresAt,
+        });
+        const target = result.status === "TOTP_REQUIRED" ? VERIFICATION_PATH : ENROLMENT_PATH;
+        const safe = safeRedirectPath(next);
+        router.replace(safe ? `${target}?next=${encodeURIComponent(safe)}` : target);
+        return;
+      }
+      clearChallengeInfo();
+      router.replace(sessionDestination(next, result.user));
       router.refresh();
       // Keep the pending state while navigating.
     } catch (err) {
@@ -107,7 +132,11 @@ export function LoginForm({ next, expired }: LoginFormProps) {
       aria-label="Connexion"
       className="flex flex-col gap-5"
     >
-      {expired && !formError ? (
+      {verificationExpired && !formError ? (
+        <Alert tone="warning" title="Vérification expirée">
+          {VERIFICATION_EXPIRED_MESSAGE}
+        </Alert>
+      ) : expired && !formError ? (
         <Alert tone="warning" title="Session expirée">
           {SESSION_EXPIRED_MESSAGE}
         </Alert>

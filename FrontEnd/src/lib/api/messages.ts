@@ -119,6 +119,24 @@ export const CODE_MESSAGES: Readonly<Record<string, string>> = {
   ROLE_NOT_ALLOWED: "Ce rôle ne peut pas être attribué ici.",
   CANNOT_DEACTIVATE_SELF: "Vous ne pouvez pas désactiver votre propre compte.",
   LAST_ADMIN: "Impossible : c'est le dernier administrateur actif.",
+  // Round 2 — 2FA and forced password change (docs/round2-contract.md §3.2, §3.3)
+  PASSWORD_CHANGE_REQUIRED: "Vous devez définir un nouveau mot de passe avant de continuer.",
+  TOTP_CODE_INVALID: "Code de vérification incorrect.",
+  CHALLENGE_EXPIRED: "La vérification a expiré. Reconnectez-vous.",
+  TOTP_ALREADY_ENABLED: "La double authentification est déjà active.",
+  TOTP_SETUP_REQUIRED:
+    "Aucune configuration en cours ou configuration expirée : recommencez l'activation.",
+  TOTP_NOT_ENABLED: "La double authentification n'est pas active.",
+  TOTP_REQUIRED_FOR_ROLE:
+    "La double authentification est obligatoire pour votre rôle : elle ne peut pas être désactivée.",
+  // Round 2 — player device keys (§3.4)
+  DEVICE_KEY_REQUIRED: "Écran non appairé : clé d'appareil manquante.",
+  DEVICE_KEY_INVALID: "Clé d'appareil invalide ou révoquée.",
+  DEVICE_RATE_LIMITED: "Trop de requêtes pour cet écran.",
+  // Round 2 — signed media URLs (§3.5)
+  MEDIA_SIGNATURE_REQUIRED: "Lien de média non signé : accès refusé.",
+  MEDIA_SIGNATURE_INVALID: "Lien de média invalide : accès refusé.",
+  MEDIA_URL_EXPIRED: "Lien de média expiré : rechargez la page.",
 };
 
 /** SUBMIT_INCOMPLETE `errors` keys, in checklist order, with their French label. */

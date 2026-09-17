@@ -69,7 +69,9 @@ logging:
 # Application-specific properties (consumed by future Java @ConfigurationProperties)
 tpub:
   jwt:
-    secret: ${JWT_SECRET:change_me_jwt_secret_min_32_characters_long}
+    # No default: startup fails with a clear message when JWT_SECRET is missing or shorter than 32 bytes
+    # (config/SecretsValidator). The secret once committed to git history is compromised: never reuse it.
+    secret: ${JWT_SECRET:}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
   media:
@@ -78,6 +80,9 @@ tpub:
     max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
     max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:52428800}
     max-files-per-campaign: ${MEDIA_MAX_FILES_PER_CAMPAIGN:5}
+    # Signed media URLs (empty secret → derived from JWT_SECRET)
+    signing-secret: ${MEDIA_SIGNING_SECRET:}
+    signed-url-ttl-seconds: ${MEDIA_SIGNED_URL_TTL_SECONDS:3600}
   ai:
     service-url: ${AI_SERVICE_URL:http://localhost:5000}
     timeout-ms: ${AI_SERVICE_TIMEOUT_MS:30000}
@@ -99,6 +104,8 @@ tpub:
     default-title: "${TPUB_DIFFUSION_DEFAULT_TITLE:TPUB — Tukhnanutha}"
     default-content: "${TPUB_DIFFUSION_DEFAULT_CONTENT:Espace de diffusion TPUB}"
     default-media-url: ${TPUB_DIFFUSION_DEFAULT_MEDIA_URL:}
+    # ?datetime= of /api/diffusion/next is honoured only when true (local demo profile)
+    simulated-time-enabled: ${TPUB_SIMULATED_TIME_ENABLED:false}
   # Internal simulation constants (estimation only, never shown on marketing pages)
   pricing:
     base-views-per-hour:
@@ -117,6 +124,25 @@ tpub:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
   security:
     session-touch-seconds: ${TPUB_SESSION_TOUCH_SECONDS:60}
+    totp:
+      issuer: ${TPUB_TOTP_ISSUER:TPUB}
+      # Empty → derived from JWT_SECRET (rotating JWT_SECRET then invalidates every TOTP secret)
+      encryption-key: ${TOTP_ENCRYPTION_KEY:}
+      # Comma list among ADMINISTRATEUR, SUPERVISEUR, OPERATEUR (recommended in production: all three)
+      required-roles: ${TPUB_TOTP_REQUIRED_ROLES:}
+      challenge-ttl-seconds: 300
+      max-attempts: 5
+    bootstrap-admin:
+      email: ${TPUB_ADMIN_EMAIL:admin@tpub.local}
+      # Empty → a random password is generated and printed once in the log
+      initial-password: ${TPUB_ADMIN_INITIAL_PASSWORD:}
+      must-change-password: ${TPUB_ADMIN_MUST_CHANGE_PASSWORD:true}
+  device:
+    rate-limit:
+      per-minute: 120
+      burst: 30
+    invalid-key-per-minute-per-ip: 20
+    touch-seconds: 60
 
 springdoc:
   api-docs:
@@ -144,6 +170,22 @@ logging:
     com.example.tpubpfe: DEBUG
     org.hibernate.SQL: DEBUG
     org.flywaydb: INFO
+
+---
+# Local demo profile (start-local.ps1) — simulated player time allowed, INFO logging
+spring:
+  config:
+    activate:
+      on-profile: local
+
+tpub:
+  diffusion:
+    simulated-time-enabled: true
+
+logging:
+  level:
+    com.example.tpubpfe: INFO
+    org.hibernate.SQL: WARN
 
 ---
 # Docker profile — backend container talking to postgres service on bridge network

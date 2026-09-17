@@ -43,6 +43,8 @@ const api = vi.hoisted(() => ({
   sessions: vi.fn(),
   loginHistory: vi.fn(),
   revokeSessions: vi.fn(),
+  resetTwoFactor: vi.fn(),
+  requirePasswordChange: vi.fn(),
   audit: vi.fn(),
   logs: vi.fn(),
 }));
@@ -84,6 +86,8 @@ vi.mock("@/lib/api/endpoints", () => ({
     sessions: api.sessions,
     loginHistory: api.loginHistory,
     revokeSessions: api.revokeSessions,
+    resetTwoFactor: api.resetTwoFactor,
+    requirePasswordChange: api.requirePasswordChange,
   },
   auditApi: { list: api.audit },
   diffusionApi: { logs: api.logs },
@@ -583,6 +587,55 @@ describe("UsersView", () => {
     expect(
       await within(create).findByText("Cette adresse e-mail est déjà utilisée."),
     ).toBeInTheDocument();
+  });
+
+  it("shows the security badges and resets 2FA / requires a new password from the detail", async () => {
+    const operator: AdminUserResponse = {
+      ...advertiser,
+      userId: 9,
+      email: "ops@tpub.tn",
+      nom: "Opérateur Sud",
+      role: "OPERATEUR",
+      societe: null,
+      client: null,
+      campaignsCount: 0,
+      twoFactorEnabled: true,
+      twoFactorRequired: true,
+      mustChangePassword: false,
+    };
+    nav.reset("onglet=equipe&utilisateur=9");
+    api.usersList.mockResolvedValue(page([operator]));
+    api.usersGet.mockResolvedValue(operator);
+    api.sessions.mockResolvedValue([]);
+    api.loginHistory.mockResolvedValue([]);
+    api.resetTwoFactor.mockResolvedValue({ ...operator, twoFactorEnabled: false });
+    api.requirePasswordChange.mockResolvedValue({ ...operator, mustChangePassword: true });
+    render(<UsersView />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Opérateur Sud" });
+    expect(await within(dialog).findByText("Active (obligatoire)")).toBeInTheDocument();
+    expect(screen.getAllByText("2FA active").length).toBeGreaterThan(0);
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Réinitialiser la double authentification" }),
+    );
+    const confirm = await screen.findByRole("dialog", {
+      name: /Réinitialiser la double authentification de Opérateur Sud/,
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Réinitialiser" }));
+    await waitFor(() => expect(api.resetTwoFactor).toHaveBeenCalledWith(9));
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Exiger un nouveau mot de passe" }),
+      ).not.toHaveAttribute("aria-disabled"),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Exiger un nouveau mot de passe" }));
+    const confirm2 = await screen.findByRole("dialog", {
+      name: /Exiger un nouveau mot de passe de Opérateur Sud/,
+    });
+    fireEvent.click(within(confirm2).getByRole("button", { name: "Exiger le changement" }));
+    await waitFor(() => expect(api.requirePasswordChange).toHaveBeenCalledWith(9));
   });
 
   it("refuses the page to opérateurs", () => {

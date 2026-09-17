@@ -90,6 +90,20 @@ export function declaredContentLength(headers: Headers): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/** Query params of a signed media URL (docs/round2-contract.md §3.5); anything else is dropped. */
+export const SIGNED_MEDIA_PARAMS = ["exp", "sig"] as const;
+
+/** `?exp=…&sig=…` rebuilt from an incoming query (first value of each, oversized values dropped). */
+export function signedMediaQuery(params: URLSearchParams): string {
+  const out = new URLSearchParams();
+  for (const name of SIGNED_MEDIA_PARAMS) {
+    const value = params.get(name);
+    if (value !== null && value.length > 0 && value.length <= 256) out.set(name, value);
+  }
+  const qs = out.toString();
+  return qs ? `?${qs}` : "";
+}
+
 /** Segments that could escape the uploads directory, or are not plain file names. */
 export function isSafeUploadPath(segments: readonly string[]): boolean {
   if (segments.length === 0) return false;

@@ -27,13 +27,50 @@ public class TpubProperties {
     private Diffusion diffusion = new Diffusion();
     /** Lane B: internal simulation constants of the estimation formula (contract §2.6). */
     private Pricing pricing = new Pricing();
-    /** Lane C: session tracking. */
+    /** Lane C: session tracking; round 2 (L2): TOTP and admin bootstrap. */
     private Security security = new Security();
+    /** Round 2 (L2): player device keys (docs/round2-contract.md §3.4). */
+    private Device device = new Device();
 
     @Data
     public static class Security {
         /** Minimum delay between two {@code user_sessions.last_seen_at} updates. */
         private long sessionTouchSeconds = 60;
+        private Totp totp = new Totp();
+        private BootstrapAdmin bootstrapAdmin = new BootstrapAdmin();
+    }
+
+    @Data
+    public static class Totp {
+        private String issuer = "TPUB";
+        /** Empty or shorter than 32 bytes: derived from the JWT secret. */
+        private String encryptionKey;
+        /** Staff roles that must enrol (ADMINISTRATEUR, SUPERVISEUR, OPERATEUR); ANNONCEUR is ignored. */
+        private List<String> requiredRoles = List.of();
+        private long challengeTtlSeconds = 300;
+        private int maxAttempts = 5;
+    }
+
+    @Data
+    public static class BootstrapAdmin {
+        private String email = "admin@tpub.local";
+        /** Empty: a random password is generated and logged once. */
+        private String initialPassword;
+        private boolean mustChangePassword = true;
+    }
+
+    @Data
+    public static class Device {
+        private RateLimit rateLimit = new RateLimit();
+        private int invalidKeyPerMinutePerIp = 20;
+        /** Minimum delay between two {@code last_used_at} updates of a key. */
+        private long touchSeconds = 60;
+    }
+
+    @Data
+    public static class RateLimit {
+        private int perMinute = 120;
+        private int burst = 30;
     }
 
     @Data
@@ -49,6 +86,8 @@ public class TpubProperties {
         private String defaultContent = "Espace de diffusion TPUB";
         /** Empty means null. */
         private String defaultMediaUrl;
+        /** Round 2 (L2): honour {@code ?datetime=} of {@code /api/diffusion/next} (demo only). */
+        private boolean simulatedTimeEnabled = false;
     }
 
     @Data
@@ -87,6 +126,9 @@ public class TpubProperties {
         private long maxImageBytes = 10_485_760L;
         private long maxVideoBytes = 52_428_800L;
         private int maxFilesPerCampaign = 5;
+        /** Round 2 (L2): HMAC key of signed media URLs; empty or shorter than 32 bytes → derived from the JWT secret. */
+        private String signingSecret;
+        private long signedUrlTtlSeconds = 3600;
     }
 
     @Data

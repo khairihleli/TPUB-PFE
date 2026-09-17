@@ -215,7 +215,8 @@ class NetworkDiffusionIntegrationTest {
         DiffusionResponse ad = diffusionService.getNextAd(screen.getId(), zone.getName(), start.atTime(19, 0));
         assertThat(ad.getType()).isEqualTo("publicite");
         assertThat(ad.getCampaignId()).isEqualTo(campaignId);
-        assertThat(ad.getMediaUrl()).isEqualTo(media.getUrl());
+        // Round 2 (L2): both URLs are signed; they point to the same file (the expiry bucket may differ).
+        assertThat(ad.getMediaUrl()).startsWith(media.getUrl().substring(0, media.getUrl().indexOf('?')) + "?exp=");
         assertThat(ad.getMediaType()).isEqualTo("IMAGE");
         assertThat(ad.getDuration()).isEqualTo(10);
         Campaign afterAd = campaignRepository.findById(campaignId).orElseThrow();

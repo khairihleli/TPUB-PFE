@@ -18,9 +18,12 @@ import {
   planAfterSuccess,
   RETRY_MAX_MS,
   RETRY_SLOW_MS,
+  retryAfterMs,
   retryDelayMs,
   secondsUntil,
+  simulatedTimeIgnored,
   slideKey,
+  urlWithoutPairingKey,
 } from "@/components/player/player-schedule";
 import { ApiError, ApiTransportError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
@@ -222,5 +225,39 @@ describe("v2 player helpers", () => {
     expect(slideKey({ ...ad, mediaUrl: "/uploads/x.jpg" })).toBe(
       "PUBLICITE:4:Lancement Café Démo:/uploads/x.jpg",
     );
+  });
+});
+
+describe("round 2: device keys, rate limit, simulated time", () => {
+  it("waits for Retry-After on a device rate limit (never before, capped)", () => {
+    const limited = new ApiError(429, "Trop de requêtes pour cet écran.", {
+      code: "DEVICE_RATE_LIMITED",
+      retryAfterSeconds: 45,
+    });
+    expect(classifyPlayerError(limited, 3).kind).toBe("rate-limited");
+    expect(retryAfterMs(limited)).toBe(45_000);
+    expect(planAfterError(limited, 0, 3).delayMs).toBe(45_000);
+    const huge = new ApiError(429, "x", { retryAfterSeconds: 3600 });
+    expect(retryAfterMs(huge)).toBe(RETRY_MAX_MS);
+    // Without the header the exponential ladder applies.
+    expect(planAfterError(new ApiError(429, "x"), 0, 3).delayMs).toBe(2_000);
+    expect(retryAfterMs(new Error("x"))).toBe(0);
+  });
+
+  it("removes only the pairing key from the player URL", () => {
+    expect(
+      urlWithoutPairingKey("http://localhost:3000/ecran/4?cle=tpd_abc&datetime=2026-01-01T10:00"),
+    ).toBe("/ecran/4?datetime=2026-01-01T10%3A00");
+    expect(urlWithoutPairingKey("http://localhost:3000/ecran/4?cle=x")).toBe("/ecran/4");
+    expect(urlWithoutPairingKey("http://localhost:3000/ecran/4?datetime=x")).toBeNull();
+    expect(urlWithoutPairingKey("pas une url")).toBeNull();
+  });
+
+  it("detects a simulated date-time ignored by the backend", () => {
+    expect(simulatedTimeIgnored(true, { simulatedTime: false })).toBe(true);
+    expect(simulatedTimeIgnored(true, { simulatedTime: true })).toBe(false);
+    expect(simulatedTimeIgnored(true, {})).toBe(false);
+    expect(simulatedTimeIgnored(false, { simulatedTime: false })).toBe(false);
+    expect(simulatedTimeIgnored(true, null)).toBe(false);
   });
 });

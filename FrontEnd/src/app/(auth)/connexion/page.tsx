@@ -16,6 +16,7 @@ export default async function ConnexionPage({ searchParams }: { searchParams: Se
   const params = await searchParams;
   const next = safeRedirectPath(params.next);
   const expired = params.expire === "1";
+  const verificationExpired = params.verification === "expiree";
 
   return (
     <div className="flex flex-col gap-8">
@@ -25,7 +26,7 @@ export default async function ConnexionPage({ searchParams }: { searchParams: Se
         subtitle="Accédez à vos campagnes, réservations et statistiques."
       />
       <AuthCard>
-        <LoginForm next={next} expired={expired} />
+        <LoginForm next={next} expired={expired} verificationExpired={verificationExpired} />
       </AuthCard>
       <div className="enter enter-3 flex flex-col gap-2 text-center text-[0.875rem] text-muted">
         <p>

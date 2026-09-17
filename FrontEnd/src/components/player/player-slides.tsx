@@ -2,6 +2,8 @@
 
 import {
   CloudOff,
+  Hourglass,
+  KeyRound,
   MapPin,
   RefreshCw,
   SearchX,
@@ -530,8 +532,42 @@ const ERROR_ICONS = {
   unreachable: CloudOff,
   "not-found": SearchX,
   invalid: ServerCrash,
+  "rate-limited": Hourglass,
   server: ServerCrash,
 } as const;
+
+/**
+ * Round 2 (§3.7): no device key for this Porteur (never paired, or revoked). No polling happens:
+ * only an administrator's pairing link can start the player.
+ */
+export function UnpairedSlide({ supportId, revoked }: { supportId: number; revoked: boolean }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-bg p-6">
+      <div aria-hidden="true" className="app-ground absolute inset-0" />
+      <div aria-hidden="true" className="pixel-grid absolute inset-0 opacity-30" />
+      <div className="relative flex w-full max-w-lg flex-col items-center rounded-panel border border-line-strong bg-surface/70 px-6 py-10 text-center shadow-card backdrop-blur-md sm:px-10">
+        <div aria-hidden="true" className="hairline-tricolor absolute inset-x-0 top-0 opacity-70" />
+        <span
+          aria-hidden="true"
+          className="inline-flex size-16 items-center justify-center rounded-full border border-warning/30 bg-warning/10 text-warning"
+        >
+          <KeyRound className="size-7" />
+        </span>
+        <p className="mt-5 font-display text-2xl font-semibold text-ink-strong">
+          Écran non appairé
+        </p>
+        <p className="mt-2 max-w-md text-[0.9375rem] leading-relaxed text-muted">
+          {revoked ? "La clé de cet écran a été révoquée ou remplacée. " : null}
+          Demandez à un administrateur TPUB de générer le lien d&apos;appairage (Réseau › Porteur ›
+          Appairer l&apos;écran).
+        </p>
+        <p className="mt-4 font-label text-[0.8125rem] text-muted-2 tabular">
+          Écran n° {supportId}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function OfflineSlide({
   error,

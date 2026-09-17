@@ -23,7 +23,7 @@ export class ApiCallError extends Error {
  * (null/undefined values skipped). Returns `{ status, data, headers }` when `raw` is set, else the
  * parsed JSON (or text) body.
  */
-export async function call(method, path, { token, body, form, query, raw = false } = {}) {
+export async function call(method, path, { token, body, form, query, headers, raw = false } = {}) {
   const qs = query
     ? new URLSearchParams(
         Object.entries(query)
@@ -37,6 +37,7 @@ export async function call(method, path, { token, body, form, query, raw = false
     headers: {
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers,
     },
     body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
   });

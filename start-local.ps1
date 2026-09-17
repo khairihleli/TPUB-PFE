@@ -2,7 +2,8 @@
 # TPUB — local run without Docker (Windows)
 #   0. portable JDK 21 in %LOCALAPPDATA%\tpub-jdk (only to compile the backend once)
 #   1. portable PostgreSQL in %LOCALAPPDATA%\tpub-postgres (port 5432)
-#   2. Spring Boot backend JAR (port 8080), AI moderation in local fallback mode
+#   2. Spring Boot backend JAR (port 8080, profile "local": simulated player time), secrets from
+#      .tpub-local.secrets (generated on first run, gitignored), local AI analysis by default
 #   3. Next.js frontend (port 3000)
 # Usage:  powershell -ExecutionPolicy Bypass -File .\start-local.ps1 [-Seed] [-Stop]
 # =============================================================================
@@ -50,6 +51,61 @@ if ($Stop) {
   }
   Write-Host "TPUB arrêté."
   exit 0
+}
+
+# --- 0. Local secrets (.tpub-local.secrets, gitignored) ----------------------
+# Generated on first run and reused afterwards: nothing secret lives in this script.
+# The JWT secret once committed here is in git history: it is compromised and refused by the backend.
+$SecretsFile = Join-Path $Root ".tpub-local.secrets"
+
+function New-HexSecret {
+  $bytes = New-Object byte[] 32
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+  -join ($bytes | ForEach-Object { $_.ToString("x2") })
+}
+
+function New-AdminPassword {
+  # 20 characters, A-Za-z0-9 without the ambiguous 0 O 1 l I, at least one letter and one digit.
+  $alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    do {
+      $bytes = New-Object byte[] 20
+      $rng.GetBytes($bytes)
+      $password = -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
+    } while (-not ($password -match "[0-9]" -and $password -match "[A-Za-z]"))
+  } finally { $rng.Dispose() }
+  $password
+}
+
+function Get-LocalSecrets {
+  $values = [ordered]@{}
+  if (Test-Path $SecretsFile) {
+    foreach ($line in Get-Content $SecretsFile) {
+      if ($line -match "^\s*([A-Z_]+)=(.*)$") { $values[$Matches[1]] = $Matches[2] }
+    }
+  }
+  $generators = [ordered]@{
+    JWT_SECRET                  = { New-HexSecret }
+    MEDIA_SIGNING_SECRET        = { New-HexSecret }
+    TOTP_ENCRYPTION_KEY         = { New-HexSecret }
+    TPUB_ADMIN_INITIAL_PASSWORD = { New-AdminPassword }
+  }
+  $changed = $false
+  foreach ($key in $generators.Keys) {
+    if (-not $values.Contains($key) -or [string]::IsNullOrWhiteSpace($values[$key])) {
+      $values[$key] = & $generators[$key]
+      $changed = $true
+    }
+  }
+  if ($changed) {
+    $content = @("# TPUB : secrets locaux generes par start-local.ps1 (ne jamais committer)")
+    foreach ($key in $values.Keys) { $content += "$key=$($values[$key])" }
+    Set-Content -Path $SecretsFile -Value $content -Encoding ascii
+    Write-Host "Secrets locaux enregistrés dans .tpub-local.secrets."
+  }
+  $values
 }
 
 # --- 1. PostgreSQL -----------------------------------------------------------
@@ -112,8 +168,19 @@ if (-not (Test-Port 8080)) {
   $env:POSTGRES_DB = $DbName
   $env:SPRING_DATASOURCE_USERNAME = $DbUser
   $env:SPRING_DATASOURCE_PASSWORD = $DbPassword
-  $env:JWT_SECRET = "b157b9619183d271ce6e8b0fc61739c6032df14c30d297e2d80533db79b99b11"
-  $env:OPENAI_ENABLED = "false"
+  $secrets = Get-LocalSecrets
+  $env:JWT_SECRET = $secrets["JWT_SECRET"]
+  $env:MEDIA_SIGNING_SECRET = $secrets["MEDIA_SIGNING_SECRET"]
+  $env:TOTP_ENCRYPTION_KEY = $secrets["TOTP_ENCRYPTION_KEY"]
+  # Used only if the database has no active administrator yet (a new database).
+  $env:TPUB_ADMIN_INITIAL_PASSWORD = $secrets["TPUB_ADMIN_INITIAL_PASSWORD"]
+  $env:TPUB_ADMIN_MUST_CHANGE_PASSWORD = "false"
+  if ([string]::IsNullOrWhiteSpace($env:TPUB_AI_PROVIDER)) { $env:TPUB_AI_PROVIDER = "local" }
+  $tessdata = Join-Path $Root "BackEnd\tessdata"
+  $env:TPUB_OCR_TESSDATA = $tessdata
+  if (-not (Test-Path (Join-Path $tessdata "fra.traineddata"))) {
+    Write-Host "OCR simulé : lancez BackEnd\scripts\fetch-tessdata.ps1 pour activer Tesseract"
+  }
   $env:CORS_ALLOWED_ORIGINS = "http://localhost:3000,http://localhost:4200"
   $env:MEDIA_UPLOAD_DIR = (Join-Path $Root "BackEnd\uploads")
   Write-Host "Démarrage du backend ($($jar.Name))..."
@@ -147,6 +214,7 @@ if (-not (Wait-Http "http://localhost:3000/" 60)) { throw "Le frontend ne répon
 
 Write-Host ""
 Write-Host "TPUB est lancé : http://localhost:3000"
-Write-Host "  Admin     : admin@tpub.local / Admin@123"
-Write-Host "  Annonceur : demo@annonceur.tn / Demo@1234 (après -Seed)"
+Write-Host "  Admin : admin@tpub.local, mot de passe dans .tpub-local.secrets (TPUB_ADMIN_INITIAL_PASSWORD) si la base a été créée par ce script ; une base existante garde son mot de passe"
+Write-Host "  Comptes de démonstration (après -Seed) : mots de passe dans FrontEnd\scripts\.demo-accounts.json"
+Write-Host "  Écrans : liens d'appairage affichés par -Seed (FrontEnd\scripts\.demo-device-keys.json)"
 Write-Host "Arrêt : .\start-local.ps1 -Stop"

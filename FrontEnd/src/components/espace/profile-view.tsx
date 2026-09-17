@@ -1,41 +1,24 @@
 "use client";
 
-import {
-  Building2,
-  CheckCircle2,
-  Clock,
-  History,
-  ImageUp,
-  KeyRound,
-  LogOut,
-  Mail,
-  MonitorSmartphone,
-  Phone,
-  Trash2,
-  XCircle,
-} from "lucide-react";
+import { Building2, Clock, ImageUp, LogOut, Mail, Phone, Trash2 } from "lucide-react";
 import { type FormEvent, useId, useRef, useState } from "react";
+
+import { PasswordChangeCard } from "@/components/account/password-change-card";
+import { LoginHistoryCard, SessionsCard } from "@/components/account/sessions-card";
+import { TwoFactorCard } from "@/components/account/two-factor-card";
 
 import { firstIssues } from "@/components/auth/auth-schemas";
 import { Fact } from "@/components/espace/espace-ui";
 import { useMarkOnboardingVisit } from "@/components/espace/onboarding-storage";
 import {
   checkLogoFile,
-  describeUserAgent,
   LOGO_ACCEPT,
-  loginOutcomeLabel,
   MAX_LOGO_BYTES,
-  PASSWORD_ERROR_FIELD,
-  PASSWORD_ERROR_MESSAGE,
-  PASSWORD_FIELDS,
-  passwordChangeSchema,
-  type PasswordValues,
   PROFILE_FIELDS,
   profileSchema,
   profileValuesOf,
   type ProfileValues,
   sameProfile,
-  sortSessions,
   toMeUpdateRequest,
 } from "@/components/espace/profile-model";
 import { formatFileSize } from "@/components/campaign/media-model";
@@ -46,24 +29,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
-import { Field, Input, PasswordInput, Textarea } from "@/components/ui/field";
+import { Field, Input, Textarea } from "@/components/ui/field";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { CONTACT } from "@/content/site";
 import { meApi } from "@/lib/api/endpoints";
-import { ApiError, hasErrorCode, presentError } from "@/lib/api/errors";
-import type { LoginHistoryResponse, MeResponse, UserSessionResponse } from "@/lib/api/types";
+import { ApiError, presentError } from "@/lib/api/errors";
+import type { MeResponse } from "@/lib/api/types";
 import { CLIENT_VALIDATION_STATUS, isClientBlocked, ROLE_LABEL } from "@/lib/campaign-status";
-import { cx } from "@/lib/cx";
-import { formatDateTime, formatRelative, initials } from "@/lib/format";
+import { formatDateTime, initials } from "@/lib/format";
 import { primeCache, resourceKeys } from "@/lib/resource-cache";
 import { useResource } from "@/lib/use-resource";
+import { useSignedMediaSrc } from "@/lib/use-signed-media";
 
-export const LOGIN_HISTORY_LIMIT = 20;
-export const PASSWORD_CHANGED_NOTICE = "Vos autres sessions ont été déconnectées.";
+export { PASSWORD_CHANGED_NOTICE } from "@/components/account/password-change-card";
+export { LOGIN_HISTORY_LIMIT } from "@/components/account/sessions-card";
 
-/** /espace/profil — GET/PUT /me, logo, password, active sessions and login history. */
+/**
+ * /espace/profil — GET/PUT /me, logo, then the « Sécurité » section (#securite): password,
+ * two-factor authentication, active sessions and login history.
+ */
 export function ProfileView() {
   const { user } = useSession();
   useMarkOnboardingVisit(user.userId, "visitedProfile");
@@ -80,7 +66,7 @@ export function ProfileView() {
     <>
       <PageHeader
         title="Profil"
-        description="Vos coordonnées, votre logo, votre mot de passe et les appareils connectés à votre compte."
+        description="Vos coordonnées, votre logo et la sécurité de votre compte : mot de passe, double authentification et appareils connectés."
       />
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:items-start">
@@ -98,9 +84,17 @@ export function ProfileView() {
               <Skeleton className="h-80 rounded-card" />
             </LoadingRegion>
           )}
-          <PasswordCard />
-          <SessionsCard />
-          <LoginHistoryCard />
+          <section
+            id="securite"
+            aria-label="Sécurité du compte"
+            tabIndex={-1}
+            className="flex scroll-mt-24 flex-col gap-6 focus:outline-none"
+          >
+            <PasswordChangeCard />
+            <TwoFactorCard email={user.email} />
+            <SessionsCard />
+            <LoginHistoryCard />
+          </section>
         </div>
 
         <aside
@@ -125,6 +119,8 @@ function AccountCard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => v
   const [logoError, setLogoError] = useState<string | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
   const client = me.client;
+  // Round 2: the signed logo URL is refreshed once when it expired; then the initials are shown.
+  const logo = useSignedMediaSrc(me.logoUrl);
   const validation = client ? CLIENT_VALIDATION_STATUS[client.validationStatus] : null;
 
   const upload = async (file: File) => {
@@ -154,10 +150,11 @@ function AccountCard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => v
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 top-0 h-px hairline-tricolor"
         />
-        {me.logoUrl ? (
+        {logo.src ? (
           // eslint-disable-next-line @next/next/no-img-element -- uploaded file served by /uploads
           <img
-            src={me.logoUrl}
+            src={logo.src}
+            onError={logo.onError}
             alt={`Logo de ${me.societe ?? me.nom}`}
             className="size-16 shrink-0 rounded-full border border-line bg-surface-2 object-contain"
           />
@@ -427,350 +424,6 @@ function ProfileForm({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => v
           ) : null}
         </div>
       </form>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Password (POST /me/password)
-// ---------------------------------------------------------------------------
-type PasswordErrors = Partial<Record<(typeof PASSWORD_FIELDS)[number], string>>;
-const EMPTY_PASSWORDS: PasswordValues = {
-  currentPassword: "",
-  newPassword: "",
-  confirmPassword: "",
-};
-
-function PasswordCard() {
-  const baseId = useId();
-  const [values, setValues] = useState<PasswordValues>(EMPTY_PASSWORDS);
-  const [errors, setErrors] = useState<PasswordErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
-  const [pending, setPending] = useState(false);
-  const fieldId = (f: string) => `${baseId}-${f}`;
-
-  const set = (key: (typeof PASSWORD_FIELDS)[number], value: string) => {
-    setValues((v) => ({ ...v, [key]: value }));
-    setDone(false);
-    if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
-  };
-
-  const focusFirst = (errs: PasswordErrors) => {
-    const first = PASSWORD_FIELDS.find((f) => errs[f]);
-    if (first) document.getElementById(fieldId(first))?.focus();
-  };
-
-  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (pending) return;
-    setFormError(null);
-    setDone(false);
-    const parsed = passwordChangeSchema.safeParse(values);
-    if (!parsed.success) {
-      const errs = firstIssues<PasswordValues>(parsed.error, PASSWORD_FIELDS);
-      setErrors(errs);
-      focusFirst(errs);
-      return;
-    }
-    setPending(true);
-    try {
-      await meApi.changePassword({
-        currentPassword: parsed.data.currentPassword,
-        newPassword: parsed.data.newPassword,
-      });
-      setValues(EMPTY_PASSWORDS);
-      setErrors({});
-      setDone(true);
-    } catch (err) {
-      const code = err instanceof ApiError ? err.code : null;
-      const field = code ? PASSWORD_ERROR_FIELD[code] : undefined;
-      if (field && code) {
-        const errs = { [field]: PASSWORD_ERROR_MESSAGE[code] } as PasswordErrors;
-        setErrors(errs);
-        focusFirst(errs);
-      } else if (err instanceof ApiError && err.fieldErrors.newPassword) {
-        const errs = { newPassword: err.fieldErrors.newPassword };
-        setErrors(errs);
-        focusFirst(errs);
-      } else {
-        setFormError(presentError(err).message);
-      }
-    } finally {
-      setPending(false);
-    }
-  };
-
-  return (
-    <Card as="section" aria-labelledby="password-title">
-      <CardHeader
-        title={<span id="password-title">Mot de passe</span>}
-        description="Au moins 8 caractères, dont une lettre et un chiffre."
-        icon={<KeyRound />}
-      />
-      <form noValidate onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4">
-        {done ? (
-          <Alert tone="success" title="Mot de passe modifié">
-            {PASSWORD_CHANGED_NOTICE}
-          </Alert>
-        ) : null}
-        {formError ? (
-          <Alert tone="danger" title="Mot de passe non modifié">
-            {formError}
-          </Alert>
-        ) : null}
-        <Field
-          label="Mot de passe actuel"
-          id={fieldId("currentPassword")}
-          error={errors.currentPassword}
-          required
-        >
-          <PasswordInput
-            name="currentPassword"
-            autoComplete="current-password"
-            maxLength={100}
-            value={values.currentPassword}
-            onChange={(e) => set("currentPassword", e.target.value)}
-          />
-        </Field>
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
-          <Field
-            label="Nouveau mot de passe"
-            id={fieldId("newPassword")}
-            error={errors.newPassword}
-            required
-          >
-            <PasswordInput
-              name="newPassword"
-              autoComplete="new-password"
-              maxLength={100}
-              value={values.newPassword}
-              onChange={(e) => set("newPassword", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Confirmation"
-            id={fieldId("confirmPassword")}
-            error={errors.confirmPassword}
-            required
-          >
-            <PasswordInput
-              name="confirmPassword"
-              autoComplete="new-password"
-              maxLength={100}
-              value={values.confirmPassword}
-              onChange={(e) => set("confirmPassword", e.target.value)}
-            />
-          </Field>
-        </div>
-        <p className="text-[0.8125rem] text-muted">
-          Les autres appareils connectés seront déconnectés ; celui-ci reste connecté.
-        </p>
-        <div>
-          <Button type="submit" variant="primary" loading={pending} loadingLabel="Modification…">
-            Modifier le mot de passe
-          </Button>
-        </div>
-      </form>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Active sessions
-// ---------------------------------------------------------------------------
-function SessionsCard() {
-  const { toast } = useToast();
-  const sessions = useResource("espace:me:sessions", (signal) => meApi.sessions({ signal }));
-  const { setData } = sessions;
-  const [revoking, setRevoking] = useState<UserSessionResponse | null>(null);
-  const [othersOpen, setOthersOpen] = useState(false);
-  const list = sortSessions(sessions.data ?? []);
-  const others = list.filter((s) => !s.current);
-
-  return (
-    <Card as="section" aria-labelledby="sessions-title">
-      <CardHeader
-        title={<span id="sessions-title">Sessions actives</span>}
-        description="Les appareils actuellement connectés à votre compte."
-        icon={<MonitorSmartphone />}
-        actions={
-          others.length > 0 ? (
-            <Button variant="secondary" size="sm" onClick={() => setOthersOpen(true)}>
-              Déconnecter les autres appareils
-            </Button>
-          ) : undefined
-        }
-      />
-      {sessions.error && !sessions.data ? (
-        <ErrorState error={sessions.error} onRetry={sessions.reload} scope="section" />
-      ) : !sessions.data ? (
-        <LoadingRegion label="Chargement des sessions…">
-          <Skeleton className="h-24 rounded-card" />
-        </LoadingRegion>
-      ) : list.length === 0 ? (
-        <p className="text-sm text-muted">Aucune session active.</p>
-      ) : (
-        <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
-          {list.map((s) => (
-            <li
-              key={s.id}
-              className="flex flex-wrap items-center justify-between gap-3 bg-surface px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-2 font-label text-[0.9375rem] font-semibold text-ink-strong">
-                  {describeUserAgent(s.userAgent)}
-                  {s.current ? (
-                    <Badge tone="success" size="sm">
-                      Cet appareil
-                    </Badge>
-                  ) : null}
-                </p>
-                <p className="mt-0.5 text-[0.8125rem] text-muted">
-                  {s.ipAddress ? `IP ${s.ipAddress} · ` : ""}Dernière activité{" "}
-                  <time dateTime={s.lastSeenAt} title={formatDateTime(s.lastSeenAt)}>
-                    {formatRelative(s.lastSeenAt)}
-                  </time>{" "}
-                  · Connecté le {formatDateTime(s.createdAt)}
-                </p>
-              </div>
-              {s.current ? null : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconLeft={<LogOut aria-hidden="true" />}
-                  onClick={() => setRevoking(s)}
-                >
-                  Déconnecter
-                  <span className="sr-only"> : {describeUserAgent(s.userAgent)}</span>
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <ConfirmDialog
-        open={revoking !== null}
-        onOpenChange={(open) => {
-          if (!open) setRevoking(null);
-        }}
-        title="Déconnecter cet appareil ?"
-        description={
-          revoking
-            ? `${describeUserAgent(revoking.userAgent)}${revoking.ipAddress ? ` (IP ${revoking.ipAddress})` : ""} devra se reconnecter.`
-            : undefined
-        }
-        confirmLabel="Déconnecter"
-        onConfirm={async () => {
-          if (!revoking) return;
-          try {
-            await meApi.revokeSession(revoking.id);
-          } catch (e) {
-            // Already gone (expired or revoked elsewhere): the list is simply out of date.
-            if (!hasErrorCode(e, "SESSION_NOT_FOUND")) throw e;
-          }
-          const id = revoking.id;
-          setData((prev) => (prev ?? []).filter((s) => s.id !== id));
-          toast({ title: "Appareil déconnecté", variant: "success" });
-        }}
-      />
-      <ConfirmDialog
-        open={othersOpen}
-        onOpenChange={setOthersOpen}
-        title="Déconnecter les autres appareils ?"
-        description="Tous les appareils sauf celui-ci devront se reconnecter."
-        confirmLabel="Déconnecter les autres"
-        onConfirm={async () => {
-          const { revoked } = await meApi.revokeOtherSessions();
-          setData((prev) => (prev ?? []).filter((s) => s.current));
-          toast({
-            title:
-              revoked > 1
-                ? `${revoked} appareils déconnectés`
-                : revoked === 1
-                  ? "1 appareil déconnecté"
-                  : "Aucun autre appareil connecté",
-            variant: "success",
-          });
-        }}
-      />
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Login history
-// ---------------------------------------------------------------------------
-function LoginHistoryCard() {
-  const history = useResource("espace:me:login-history", (signal) =>
-    meApi.loginHistory(LOGIN_HISTORY_LIMIT, { signal }),
-  );
-  const rows: LoginHistoryResponse[] = history.data ?? [];
-
-  return (
-    <Card as="section" aria-labelledby="history-title">
-      <CardHeader
-        title={<span id="history-title">Historique des connexions</span>}
-        description={`Les ${LOGIN_HISTORY_LIMIT} dernières tentatives de connexion à votre compte.`}
-        icon={<History />}
-      />
-      {history.error && !history.data ? (
-        <ErrorState error={history.error} onRetry={history.reload} scope="section" />
-      ) : !history.data ? (
-        <LoadingRegion label="Chargement de l'historique…">
-          <Skeleton className="h-32 rounded-card" />
-        </LoadingRegion>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted">Aucune connexion enregistrée.</p>
-      ) : (
-        <div className="relative overflow-x-auto">
-          <table className="w-full min-w-[34rem] border-collapse text-sm">
-            <caption className="sr-only">Historique des connexions</caption>
-            <thead>
-              <tr className="border-b border-line text-left font-label text-[0.75rem] text-muted">
-                <th scope="col" className="py-2 pr-3 font-semibold">
-                  Date
-                </th>
-                <th scope="col" className="px-3 py-2 font-semibold">
-                  Résultat
-                </th>
-                <th scope="col" className="px-3 py-2 font-semibold">
-                  Appareil
-                </th>
-                <th scope="col" className="py-2 pl-3 font-semibold">
-                  IP
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((h) => (
-                <tr key={h.id} className="border-b border-line last:border-b-0">
-                  <td className="py-2.5 pr-3 whitespace-nowrap tabular">
-                    {formatDateTime(h.createdAt)}
-                  </td>
-                  <td className={cx("px-3 py-2.5", h.success ? "text-success" : "text-danger")}>
-                    <span className="inline-flex items-center gap-1.5">
-                      {h.success ? (
-                        <CheckCircle2 aria-hidden="true" className="size-4" />
-                      ) : (
-                        <XCircle aria-hidden="true" className="size-4" />
-                      )}
-                      {loginOutcomeLabel(h)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-ink-soft">{describeUserAgent(h.userAgent)}</td>
-                  <td className="py-2.5 pl-3 text-muted tabular">{h.ipAddress ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <p className="mt-3 text-[0.8125rem] text-muted">
-        Une tentative que vous ne reconnaissez pas ? Changez votre mot de passe puis déconnectez les
-        autres appareils.
-      </p>
     </Card>
   );
 }

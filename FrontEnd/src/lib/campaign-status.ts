@@ -1059,6 +1059,13 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   USER_DEACTIVATED: "Compte désactivé",
   CLIENT_VALIDATION_CHANGED: "Validation annonceur modifiée",
   USER_SESSIONS_REVOKED: "Sessions révoquées",
+  USER_PASSWORD_CHANGE_REQUIRED: "Nouveau mot de passe exigé",
+  USER_2FA_ENABLED: "Double authentification activée",
+  USER_2FA_DISABLED: "Double authentification désactivée",
+  USER_2FA_RESET: "Double authentification réinitialisée",
+  SUPPORT_DEVICE_KEY_ISSUED: "Écran appairé",
+  SUPPORT_DEVICE_KEY_ROTATED: "Clé d'écran remplacée",
+  SUPPORT_DEVICE_KEY_REVOKED: "Clé d'écran révoquée",
 };
 
 export const AUDIT_ENTITY_LABEL: Record<AuditEntityType, string> = {
@@ -1070,6 +1077,7 @@ export const AUDIT_ENTITY_LABEL: Record<AuditEntityType, string> = {
   EMERGENCY: "Message prioritaire",
   USER: "Compte",
   CLIENT: "Annonceur",
+  SUPPORT_DEVICE: "Écran (clé d'appareil)",
 };
 
 /** Label of any audit action, including values added later by the backend. */
@@ -1085,6 +1093,7 @@ export const LOGIN_FAILURE_LABEL: Record<LoginFailureReason, string> = {
   BAD_CREDENTIALS: "Mot de passe incorrect",
   ACCOUNT_DISABLED: "Compte désactivé",
   UNKNOWN_USER: "Compte inconnu",
+  TOTP_INVALID: "Code de vérification incorrect",
 };
 
 // ---------------------------------------------------------------------------

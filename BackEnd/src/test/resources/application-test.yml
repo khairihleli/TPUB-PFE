@@ -15,6 +15,14 @@ spring:
     enabled: false
 
 tpub:
+  # Round 2 (L2): fixed test-only secrets (never used outside the test profile)
+  jwt:
+    secret: test-only-jwt-secret-0123456789abcdef-0123456789abcdef
+  security:
+    totp:
+      encryption-key: test-only-totp-key-0123456789abcdef-0123456789
+  diffusion:
+    simulated-time-enabled: true
   scheduler:
     enabled: false
   ai:
@@ -30,3 +38,4 @@ tpub:
   media:
     upload-dir: target/test-uploads
     base-url: /uploads
+    signing-secret: test-only-media-signing-secret-0123456789abcdef
