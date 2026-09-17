@@ -5,9 +5,13 @@
  * client-side ranking over data already loaded through the shared cache. No backend search.
  */
 import {
+  Activity,
+  Bell,
   CalendarRange,
   ChartColumn,
+  CheckCheck,
   CornerDownLeft,
+  Flame,
   FileClock,
   Gauge,
   ListChecks,
@@ -42,7 +46,14 @@ import { useSession } from "@/components/shell/session-provider";
 import { useShortcut, useShortcutsHelp } from "@/components/shell/shortcuts";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ACCOUNT_NAV, ADMIN_NAV, type AppNavIcon, ESPACE_NAV, navForRole } from "@/content/nav";
+import {
+  ACCOUNT_NAV,
+  ADMIN_ACCOUNT_NAV,
+  ADMIN_NAV,
+  type AppNavIcon,
+  ESPACE_NAV,
+  navForRole,
+} from "@/content/nav";
 import { campaignsApi, supportsApi, zonesApi } from "@/lib/api/endpoints";
 import type { CampaignResponse, RoleCode, SupportResponse, ZoneResponse } from "@/lib/api/types";
 import { campaignStatusFor, getCampaignDisplayStatus } from "@/lib/campaign-status";
@@ -212,6 +223,12 @@ const NAV_ICONS: Record<AppNavIcon, typeof LayoutDashboard> = {
   users: UsersRound,
   journal: FileClock,
   rules: ListChecks,
+  supervision: Activity,
+  approvals: CheckCheck,
+  heatmap: Flame,
+  aiQuality: Gauge,
+  notifications: Bell,
+  account: UserRound,
 };
 
 const SEQUENCE_OF: Record<string, string> = {
@@ -226,6 +243,11 @@ const SEQUENCE_OF: Record<string, string> = {
   "/admin/urgences": "g u",
   "/admin/reservations": "g v",
   "/admin/statistiques": "g s",
+  "/admin/supervision": "g o",
+  "/admin/approbations": "g b",
+  "/admin/carte-chaleur": "g c",
+  "/admin/ia-qualite": "g q",
+  "/admin/notifications": "g n",
   "/admin/journal": "g j",
   "/admin/utilisateurs": "g e",
   "/admin/regles-ia": "g i",
@@ -250,7 +272,9 @@ export function buildCommands({
   moderationCount,
 }: BuildCommandsInput): Command[] {
   const staff = role !== "ANNONCEUR";
-  const nav = staff ? navForRole(ADMIN_NAV, role) : [...ESPACE_NAV, ...ACCOUNT_NAV];
+  const nav = staff
+    ? [...navForRole(ADMIN_NAV, role), ...ADMIN_ACCOUNT_NAV]
+    : [...ESPACE_NAV, ...ACCOUNT_NAV];
   const out: Command[] = nav.map((item) => {
     const Icon = NAV_ICONS[item.icon];
     return {

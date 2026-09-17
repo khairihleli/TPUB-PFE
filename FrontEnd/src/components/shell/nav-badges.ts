@@ -21,6 +21,8 @@ import type {
   ReservationResponse,
   RoleCode,
 } from "@/lib/api/types";
+import { approvalsApi, supervisionApi } from "@/lib/api/endpoints-supervision";
+import type { PendingApprovals, SupervisionAlert } from "@/lib/api/types-supervision";
 import { runWithConcurrency } from "@/lib/network/use-supports-availability";
 import { fetchCached, resourceKeys } from "@/lib/resource-cache";
 
@@ -70,6 +72,16 @@ export function countConflicts(
   conflicts: readonly Pick<ReservationConflict, "severity">[],
 ): number {
   return conflicts.filter((c) => c.severity === "CONFLIT").length;
+}
+
+/** Approbations badge: campaigns and emergency messages still waiting for an administrator. */
+export function countPendingApprovals(pending: PendingApprovals): number {
+  return pending.campaigns.length + pending.emergencies.length;
+}
+
+/** Supervision badge: open alerts that nobody acknowledged yet. */
+export function countOpenAlerts(alerts: readonly Pick<SupervisionAlert, "acknowledgedAt">[]): number {
+  return alerts.filter((a) => a.acknowledgedAt === null).length;
 }
 
 /** Roles allowed to list every campaign (api-contract: ADMINISTRATEUR, SUPERVISEUR). */
@@ -146,6 +158,24 @@ async function loadAdminBadges(role: RoleCode, signal: AbortSignal): Promise<Nav
       .catch(() => undefined),
   );
   tasks.push(
+    supervisionApi
+      .snapshot({ signal })
+      .then((snapshot) => {
+        out.alerts = countOpenAlerts(snapshot.alerts);
+      })
+      .catch(() => undefined),
+  );
+  if (canListAllCampaigns(role)) {
+    tasks.push(
+      approvalsApi
+        .pending({ signal })
+        .then((pending) => {
+          out.approvals = countPendingApprovals(pending);
+        })
+        .catch(() => undefined),
+    );
+  }
+  tasks.push(
     fetchCached(resourceKeys.emergencies, (s) => emergencyApi.all({ signal: s }), { signal })
       .then((list) => {
         out.emergencies = countActiveEmergencies(list);
@@ -221,5 +251,9 @@ export function badgeAriaLabel(key: NavBadgeKey, count: number): string {
       return `${count} ${count >= 2 ? "messages actifs" : "message actif"}`;
     case "conflicts":
       return `${count} ${count >= 2 ? "conflits de réservation" : "conflit de réservation"}`;
+    case "approvals":
+      return `${count} ${count >= 2 ? "approbations en attente" : "approbation en attente"}`;
+    case "alerts":
+      return `${count} ${count >= 2 ? "alertes ouvertes" : "alerte ouverte"}`;
   }
 }

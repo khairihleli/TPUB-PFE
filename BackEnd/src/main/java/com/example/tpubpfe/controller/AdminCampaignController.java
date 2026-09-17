@@ -2,6 +2,7 @@ package com.example.tpubpfe.controller;
 
 import com.example.tpubpfe.dto.AdminRejectRequest;
 import com.example.tpubpfe.dto.AdminValidateRequest;
+import com.example.tpubpfe.dto.ApprovalPendingResponse;
 import com.example.tpubpfe.dto.CampaignResponse;
 import com.example.tpubpfe.dto.PriorityRequest;
 import com.example.tpubpfe.service.AdminCampaignService;
@@ -25,14 +26,20 @@ public class AdminCampaignController {
 
     private final AdminCampaignService adminCampaignService;
 
-    @Operation(summary = "Validate a campaign after AI review (overrideAi required for REVIEW_REQUIRED)")
+    @Operation(summary = "Validate a campaign after AI review (overrideAi required for REVIEW_REQUIRED); "
+            + "202 when a second administrator must still approve")
     @PreAuthorize("hasRole('ADMINISTRATEUR')")
     @PostMapping("/{campaignId}/validate")
-    public ResponseEntity<CampaignResponse> validate(
+    public ResponseEntity<Object> validate(
             @PathVariable Long campaignId,
             @Valid @RequestBody(required = false) AdminValidateRequest request
     ) {
-        return ResponseEntity.ok(adminCampaignService.validate(campaignId, request));
+        AdminCampaignService.ValidationOutcome outcome = adminCampaignService.validate(campaignId, request);
+        if (outcome.isPending()) {
+            return ResponseEntity.accepted()
+                    .body(ApprovalPendingResponse.builder().approval(outcome.pending()).build());
+        }
+        return ResponseEntity.ok(outcome.campaign());
     }
 
     @Operation(summary = "Reject / block a campaign (reason required)")

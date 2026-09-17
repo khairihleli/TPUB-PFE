@@ -1,10 +1,21 @@
 package com.example.tpubpfe.service;
 
+import com.example.tpubpfe.dto.ApprovalResponse;
+import com.example.tpubpfe.dto.EmergencyLiveEvent;
 import com.example.tpubpfe.dto.EmergencyRequest;
 import com.example.tpubpfe.dto.EmergencyResponse;
+import com.example.tpubpfe.dto.PendingEmergencyApproval;
+import com.example.tpubpfe.model.AlertSeverity;
+import com.example.tpubpfe.model.Approval;
+import com.example.tpubpfe.model.ApprovalDecision;
+import com.example.tpubpfe.model.ApprovalEntityType;
 import com.example.tpubpfe.model.DiffusionSupport;
+import com.example.tpubpfe.model.EmergencyApprovalStatus;
 import com.example.tpubpfe.model.EmergencyMessage;
 import com.example.tpubpfe.model.EmergencyStopReason;
+import com.example.tpubpfe.model.NotificationType;
+import com.example.tpubpfe.model.RoleCode;
+import com.example.tpubpfe.model.SupervisionAlertType;
 import com.example.tpubpfe.model.TechnicalStatus;
 import com.example.tpubpfe.model.UrgencyLevel;
 import com.example.tpubpfe.model.User;
@@ -15,8 +26,15 @@ import com.example.tpubpfe.repository.EmergencyMessageRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.repository.ZoneRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
+import com.example.tpubpfe.service.approval.ApprovalErrors;
+import com.example.tpubpfe.service.approval.ApprovalPolicy;
+import com.example.tpubpfe.service.notification.NotificationService;
+import com.example.tpubpfe.service.realtime.SupervisionBroadcastEvent;
+import com.example.tpubpfe.service.supervision.AlertService;
+import com.example.tpubpfe.util.GeoUtils;
 import com.example.tpubpfe.util.TargetingGeometry;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,9 +47,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Emergency messages v2 (contract §2.8): datetime window, map circle or zone target, urgency, state and stop tracking.
+ * Emergency messages v2 (contract §2.8): datetime window, map circle or zone target, urgency, state and stop
+ * tracking, plus the multi-level approval of round 2 (docs/round2-contract.md §5.4).
  */
 @Service
 @RequiredArgsConstructor
@@ -40,7 +60,7 @@ public class EmergencyService {
     static final LocalTime DEFAULT_END = LocalTime.of(23, 59, 59);
     static final int DEFAULT_DURATION = 15;
 
-    public enum State { PROGRAMME, EN_COURS, TERMINE, DESACTIVE }
+    public enum State { PROGRAMME, EN_COURS, TERMINE, DESACTIVE, EN_ATTENTE_APPROBATION, REFUSE }
 
     private final EmergencyMessageRepository emergencyMessageRepository;
     private final ZoneService zoneService;
@@ -49,6 +69,10 @@ public class EmergencyService {
     private final DiffusionSupportRepository supportRepository;
     private final DiffusionLogRepository diffusionLogRepository;
     private final AuditService auditService;
+    private final ApprovalPolicy approvalPolicy;
+    private final AlertService alertService;
+    private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     @Transactional
@@ -68,6 +92,10 @@ public class EmergencyService {
         if (creator == null) {
             throw CampaignErrors.validationFailed("createdBy", "Utilisateur courant introuvable.");
         }
+        // Multi-level approval: the creation counts as the first approval (docs/round2-contract.md §5.4).
+        int required = approvalPolicy.effective(approvalPolicy.configuredForEmergency());
+        boolean pending = required > 1;
+        Instant now = Instant.now(clock);
         EmergencyMessage message = EmergencyMessage.builder()
                 .title(request.getTitle().trim())
                 .content(request.getContent().trim())
@@ -84,14 +112,21 @@ public class EmergencyService {
                 .priority((short) (request.getPriority() != null ? request.getPriority() : 1))
                 .urgencyLevel(request.getUrgencyLevel() != null ? request.getUrgencyLevel() : UrgencyLevel.HIGH)
                 .isActive(true)
+                .approvalStatus(pending ? EmergencyApprovalStatus.EN_ATTENTE : EmergencyApprovalStatus.APPROUVE)
+                .approvalsRequired((short) required)
+                .approvedAt(pending ? null : now)
                 .createdByUser(creator)
                 .build();
         EmergencyMessage saved = emergencyMessageRepository.save(message);
+        approvalPolicy.record(ApprovalEntityType.EMERGENCY, saved.getId(), ApprovalPolicy.EMERGENCY_CYCLE,
+                creator.getId(), ApprovalDecision.APPROUVE, null, Map.of("creation", true));
+
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("zoneId", zone.getId());
         details.put("urgencyLevel", saved.getUrgencyLevel().name());
         details.put("startAt", startAt.toString());
         details.put("endAt", endAt.toString());
+        details.put("approvalsRequired", required);
         if (fullCircle) {
             details.put("latitude", saved.getLatitude());
             details.put("longitude", saved.getLongitude());
@@ -99,7 +134,96 @@ public class EmergencyService {
         }
         auditService.record("EMERGENCY_CREATED", "EMERGENCY", saved.getId(),
                 "Création du message d'urgence « " + saved.getTitle() + " »", details);
-        return toResponse(saved, supportRepository.findAll());
+
+        if (pending) {
+            openApprovalAlert(saved, creator);
+        } else {
+            notifyBroadcast(saved);
+        }
+        List<DiffusionSupport> supports = supportRepository.findAll();
+        publishLive(saved, supports);
+        return toResponse(saved, supports);
+    }
+
+    /** Second (or n-th) administrator approving a pending message (docs/round2-contract.md §5.4). */
+    @Transactional
+    public EmergencyResponse approve(Long id, String comment) {
+        EmergencyMessage message = emergencyMessageRepository.findById(id).orElseThrow(NetworkErrors::emergencyNotFound);
+        if (approvalStatus(message) != EmergencyApprovalStatus.EN_ATTENTE) {
+            throw ApprovalErrors.notPending();
+        }
+        if (!Boolean.TRUE.equals(message.getIsActive()) || DiffusionService.endAt(message).isBefore(LocalDateTime.now(clock))) {
+            throw ApprovalErrors.emergencyNotApprovable();
+        }
+        Long approverId = currentUserId();
+        List<Approval> existing = approvalPolicy.approvals(ApprovalEntityType.EMERGENCY, message.getId(),
+                ApprovalPolicy.EMERGENCY_CYCLE);
+        if (ApprovalPolicy.approved(existing).stream().anyMatch(a -> approverId.equals(a.getApproverUserId()))) {
+            throw ApprovalErrors.alreadyGiven();
+        }
+        approvalPolicy.record(ApprovalEntityType.EMERGENCY, message.getId(), ApprovalPolicy.EMERGENCY_CYCLE,
+                approverId, ApprovalDecision.APPROUVE, comment, null);
+        int approvals = ApprovalPolicy.approved(approvalPolicy.approvals(ApprovalEntityType.EMERGENCY, message.getId(),
+                ApprovalPolicy.EMERGENCY_CYCLE)).size();
+        int required = requiredApprovals(message);
+        boolean broadcast = approvals >= required;
+        if (broadcast) {
+            message.setApprovalStatus(EmergencyApprovalStatus.APPROUVE);
+            message.setApprovedAt(Instant.now(clock));
+            message = emergencyMessageRepository.save(message);
+            alertService.resolve(SupervisionAlertType.EMERGENCY_PENDING_APPROVAL,
+                    AlertService.AlertRef.emergency(message.getId()));
+            notifyBroadcast(message);
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("approvals", approvals);
+        details.put("approvalsRequired", required);
+        details.put("broadcast", broadcast);
+        auditService.record("EMERGENCY_APPROVED", "APPROVAL", message.getId(),
+                "Approbation du message d'urgence « " + message.getTitle() + " » (" + approvals + "/" + required + ")",
+                details);
+        List<DiffusionSupport> supports = supportRepository.findAll();
+        publishLive(message, supports);
+        return toResponse(message, supports);
+    }
+
+    /** Refusal of a pending message by another administrator (docs/round2-contract.md §5.4). */
+    @Transactional
+    public EmergencyResponse refuse(Long id, String rawReason) {
+        String reason = rawReason == null ? null : rawReason.trim();
+        if (reason == null || reason.length() < 3 || reason.length() > 500) {
+            throw ApprovalErrors.refusalReasonRequired();
+        }
+        EmergencyMessage message = emergencyMessageRepository.findById(id).orElseThrow(NetworkErrors::emergencyNotFound);
+        if (approvalStatus(message) != EmergencyApprovalStatus.EN_ATTENTE) {
+            throw ApprovalErrors.notPending();
+        }
+        Long approverId = currentUserId();
+        if (message.getCreatedByUser() != null && approverId.equals(message.getCreatedByUser().getId())) {
+            throw ApprovalErrors.selfRefusal();
+        }
+        Instant now = Instant.now(clock);
+        message.setApprovalStatus(EmergencyApprovalStatus.REFUSE);
+        message.setIsActive(false);
+        message.setStoppedAt(now);
+        message.setStopReason(EmergencyStopReason.REFUSE);
+        EmergencyMessage saved = emergencyMessageRepository.save(message);
+        approvalPolicy.record(ApprovalEntityType.EMERGENCY, saved.getId(), ApprovalPolicy.EMERGENCY_CYCLE,
+                approverId, ApprovalDecision.REFUSE, reason, null);
+        alertService.resolve(SupervisionAlertType.EMERGENCY_PENDING_APPROVAL,
+                AlertService.AlertRef.emergency(saved.getId()));
+        if (saved.getCreatedByUser() != null) {
+            notificationService.notifyUser(saved.getCreatedByUser(), NotificationType.EMERGENCY_REFUSED,
+                    AlertSeverity.AVERTISSEMENT, "Message prioritaire refusé : " + saved.getTitle(),
+                    "Motif : " + reason, "/admin/urgences", "EMERGENCY", String.valueOf(saved.getId()));
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("reason", reason);
+        auditService.record("EMERGENCY_REFUSED", "APPROVAL", saved.getId(),
+                "Refus du message d'urgence « " + saved.getTitle() + " »", details);
+        List<DiffusionSupport> supports = supportRepository.findAll();
+        publishLive(saved, supports);
+        return toResponse(saved, supports);
     }
 
     @Transactional(readOnly = true)
@@ -135,21 +259,82 @@ public class EmergencyService {
             message.setStoppedAt(Instant.now(clock));
             message.setStopReason(EmergencyStopReason.MANUEL);
             message = emergencyMessageRepository.save(message);
+            alertService.resolve(SupervisionAlertType.EMERGENCY_PENDING_APPROVAL,
+                    AlertService.AlertRef.emergency(message.getId()));
             auditService.record("EMERGENCY_DEACTIVATED", "EMERGENCY", message.getId(),
                     "Arrêt manuel du message d'urgence « " + message.getTitle() + " »", null);
         }
-        return toResponse(message, supportRepository.findAll());
+        List<DiffusionSupport> supports = supportRepository.findAll();
+        publishLive(message, supports);
+        return toResponse(message, supports);
+    }
+
+    /** Messages of the supervision snapshot: running, scheduled or waiting for an approval. */
+    @Transactional(readOnly = true)
+    public List<EmergencyLiveEvent> liveEvents() {
+        List<DiffusionSupport> supports = supportRepository.findAll();
+        LocalDateTime now = LocalDateTime.now(clock);
+        return emergencyMessageRepository.findAllByOrderByCreatedAtDescIdDesc().stream()
+                .filter(m -> {
+                    State state = state(m, now);
+                    return state == State.EN_COURS || state == State.PROGRAMME
+                            || state == State.EN_ATTENTE_APPROBATION;
+                })
+                .map(m -> liveEvent(m, supports))
+                .toList();
+    }
+
+    /** Messages waiting for their remaining approvals, for {@code GET /api/approvals/pending}. */
+    @Transactional(readOnly = true)
+    public List<PendingEmergencyApproval> pendingApprovals(Long currentAdminId, boolean canApprove) {
+        return emergencyMessageRepository
+                .findByApprovalStatusAndIsActiveTrueOrderByCreatedAtDescIdDesc(EmergencyApprovalStatus.EN_ATTENTE)
+                .stream()
+                .map(message -> {
+                    List<ApprovalResponse> approvals = approvalsOf(message);
+                    boolean already = approvals.stream()
+                            .anyMatch(a -> "APPROUVE".equals(a.getDecision())
+                                    && a.getApproverUserId() != null
+                                    && a.getApproverUserId().equals(currentAdminId));
+                    return PendingEmergencyApproval.builder()
+                            .emergencyId(message.getId())
+                            .title(message.getTitle())
+                            .urgencyLevel(message.getUrgencyLevel().name())
+                            .zoneName(message.getZone() == null ? null : message.getZone().getName())
+                            .startDate(message.getStartDate())
+                            .endDate(message.getEndDate())
+                            .createdByName(message.getCreatedByUser() == null ? null : message.getCreatedByUser().getNom())
+                            .approvalsRequired(requiredApprovals(message))
+                            .approvals(approvals)
+                            .canApprove(canApprove && !already)
+                            .requestedAt(message.getCreatedAt())
+                            .build();
+                })
+                .toList();
+    }
+
+    // --- derived state --------------------------------------------------------------------------------------------
+
+    static EmergencyApprovalStatus approvalStatus(EmergencyMessage message) {
+        return message.getApprovalStatus() == null ? EmergencyApprovalStatus.APPROUVE : message.getApprovalStatus();
     }
 
     static State state(EmergencyMessage message, LocalDateTime now) {
         if (!Boolean.TRUE.equals(message.getIsActive())) {
+            if (message.getStopReason() == EmergencyStopReason.REFUSE
+                    || approvalStatus(message) == EmergencyApprovalStatus.REFUSE) {
+                return State.REFUSE;
+            }
             return message.getStopReason() == EmergencyStopReason.AUTO ? State.TERMINE : State.DESACTIVE;
-        }
-        if (now.isBefore(DiffusionService.startAt(message))) {
-            return State.PROGRAMME;
         }
         if (now.isAfter(DiffusionService.endAt(message))) {
             return State.TERMINE;
+        }
+        if (approvalStatus(message) == EmergencyApprovalStatus.EN_ATTENTE) {
+            return State.EN_ATTENTE_APPROBATION;
+        }
+        if (now.isBefore(DiffusionService.startAt(message))) {
+            return State.PROGRAMME;
         }
         return State.EN_COURS;
     }
@@ -161,7 +346,65 @@ public class EmergencyService {
                 .count();
     }
 
+    // --- helpers --------------------------------------------------------------------------------------------------
+
+    private int requiredApprovals(EmergencyMessage message) {
+        return message.getApprovalsRequired() == null || message.getApprovalsRequired() < 1
+                ? 1 : message.getApprovalsRequired();
+    }
+
+    private Long currentUserId() {
+        UserDetailsImpl current = CampaignAccessGuard.currentUser();
+        if (current == null) {
+            throw CampaignErrors.validationFailed("approver", "Utilisateur courant introuvable.");
+        }
+        return current.getId();
+    }
+
+    private List<ApprovalResponse> approvalsOf(EmergencyMessage message) {
+        return message.getId() == null ? List.of() : approvalPolicy.toResponses(
+                approvalPolicy.approvals(ApprovalEntityType.EMERGENCY, message.getId(), ApprovalPolicy.EMERGENCY_CYCLE));
+    }
+
+    private void openApprovalAlert(EmergencyMessage message, User creator) {
+        String title = "Message prioritaire à approuver : " + message.getTitle();
+        String text = "Le message « " + message.getTitle() + " » attend l'approbation d'un second administrateur "
+                + "avant d'être diffusé.";
+        alertService.openIfAbsent(SupervisionAlertType.EMERGENCY_PENDING_APPROVAL, AlertSeverity.CRITIQUE, title, text,
+                AlertService.AlertRef.emergency(message.getId()));
+        notificationService.notifyRoles(Set.of(RoleCode.ADMINISTRATEUR), NotificationType.EMERGENCY_APPROVAL_REQUIRED,
+                AlertSeverity.CRITIQUE, title, text, "/admin/approbations", "EMERGENCY",
+                String.valueOf(message.getId()), Set.of(creator.getId()));
+    }
+
+    private void notifyBroadcast(EmergencyMessage message) {
+        notificationService.notifyRoles(
+                Set.of(RoleCode.ADMINISTRATEUR, RoleCode.SUPERVISEUR, RoleCode.OPERATEUR),
+                NotificationType.EMERGENCY_BROADCAST, AlertSeverity.CRITIQUE,
+                "Message prioritaire diffusé : " + message.getTitle(), message.getContent(), "/admin/urgences",
+                "EMERGENCY", String.valueOf(message.getId()), Set.of());
+    }
+
+    private void publishLive(EmergencyMessage message, List<DiffusionSupport> supports) {
+        eventPublisher.publishEvent(new SupervisionBroadcastEvent("emergency", liveEvent(message, supports)));
+    }
+
+    EmergencyLiveEvent liveEvent(EmergencyMessage message, List<DiffusionSupport> supports) {
+        List<ApprovalResponse> approvals = approvalsOf(message);
+        return EmergencyLiveEvent.builder()
+                .emergencyId(message.getId())
+                .title(message.getTitle())
+                .urgencyLevel(message.getUrgencyLevel().name())
+                .state(state(message, LocalDateTime.now(clock)).name())
+                .approvalStatus(approvalStatus(message).name())
+                .approvalsCount((int) approvals.stream().filter(a -> "APPROUVE".equals(a.getDecision())).count())
+                .approvalsRequired(requiredApprovals(message))
+                .affectedSupports(affectedSupports(message, supports))
+                .build();
+    }
+
     private EmergencyResponse toResponse(EmergencyMessage message, List<DiffusionSupport> supports) {
+        List<ApprovalResponse> approvals = approvalsOf(message);
         return EmergencyResponse.builder()
                 .id(message.getId())
                 .title(message.getTitle())
@@ -187,6 +430,11 @@ public class EmergencyService {
                 .diffusionCount(message.getId() == null ? 0 : diffusionLogRepository.countByEmergencyId(message.getId()))
                 .createdByName(message.getCreatedByUser() != null ? message.getCreatedByUser().getNom() : null)
                 .createdAt(message.getCreatedAt())
+                .approvalStatus(approvalStatus(message).name())
+                .approvalsRequired(requiredApprovals(message))
+                .approvalsRequiredConfigured(approvalPolicy.configuredForEmergency())
+                .approvals(approvals)
+                .approvedAt(message.getApprovedAt())
                 .build();
     }
 }

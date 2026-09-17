@@ -4,7 +4,7 @@ import { ChartColumn } from "lucide-react";
 import { useState } from "react";
 
 import { BarList, ChartTable, DailyColumns, dayLabel } from "@/components/espace/charts";
-import { CsvExportButton } from "@/components/espace/csv-export-button";
+import { ExportMenu } from "@/components/exports/export-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SectionCard } from "@/components/ui/section-card";
@@ -152,7 +152,7 @@ export function CampaignStatsCard({ campaign }: { campaign: CampaignResponse }) 
       description="Mesures issues du journal de diffusion des Porteurs."
       aside={
         enabled && stats.data ? (
-          <CsvExportButton query={{ type: "campaign", campaignId: campaign.id }} />
+          <ExportMenu query={{ type: "campaign", campaignId: campaign.id }} />
         ) : null
       }
     >

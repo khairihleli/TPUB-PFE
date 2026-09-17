@@ -39,6 +39,18 @@ vi.mock("@/lib/api/endpoints", () => ({
   adminApi: { validate: api.validate, reject: api.reject, setPriority: api.setPriority },
 }));
 
+vi.mock("@/lib/api/endpoints-supervision", () => ({
+  approvalsApi: {
+    validateCampaign: async (id: number, body: unknown) => ({
+      kind: "validated" as const,
+      campaign: await (api.validate(id, body) as Promise<unknown>),
+    }),
+    campaign: () => Promise.resolve({ campaignId: 0, required: false, reasons: [], riskScore: null,
+      riskThreshold: 50, approvalsRequired: 1, approvalsRequiredConfigured: 1, approvals: [],
+      cycleKey: null, canApprove: true }),
+  },
+}));
+
 vi.mock("@/components/map", () => ({
   NetworkMap: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
 }));

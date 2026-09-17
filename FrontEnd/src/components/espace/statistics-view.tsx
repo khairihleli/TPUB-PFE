@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { BarList, ChartTable, DailyColumns, dayLabel } from "@/components/espace/charts";
-import { CsvExportButton } from "@/components/espace/csv-export-button";
+import { ExportMenu } from "@/components/exports/export-menu";
 import { PanelHeading } from "@/components/espace/espace-ui";
 import { KpiTiles } from "@/components/espace/kpi-tiles";
 import { mineKpis } from "@/components/espace/kpis";
@@ -68,7 +68,7 @@ export function StatisticsView() {
         description="Affichages, clics et interactions mesurés sur les Porteurs, et estimations de vos réservations."
         secondaryActions={
           result.ok ? (
-            <CsvExportButton
+            <ExportMenu
               query={{ type: "mine", from: effective.from, to: effective.to }}
               size="md"
             />

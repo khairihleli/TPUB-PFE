@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { campaign, reservation } from "@/components/espace/__tests__/fixtures";
@@ -358,7 +359,9 @@ describe("StatisticsView", () => {
     expect(screen.getAllByText((t) => /^2\s?%$/.test(t)).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "7 jours" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Exporter en CSV" }));
+    const exportUser = userEvent.setup();
+    await exportUser.click(screen.getByRole("button", { name: "Exporter" }));
+    await exportUser.click(await screen.findByRole("menuitem", { name: "CSV (tableur)" }));
     await waitFor(() =>
       expect(api.exportCsv).toHaveBeenCalledWith(expect.objectContaining({ type: "mine" })),
     );
@@ -376,6 +379,6 @@ describe("StatisticsView", () => {
     expect(
       await screen.findByText("La date de fin doit suivre la date de début."),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Exporter en CSV" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Exporter" })).toBeNull();
   });
 });

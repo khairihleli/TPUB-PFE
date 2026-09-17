@@ -1,5 +1,7 @@
 package com.example.tpubpfe.controller;
 
+import com.example.tpubpfe.dto.ApprovalCommentRequest;
+import com.example.tpubpfe.dto.ApprovalRefusalRequest;
 import com.example.tpubpfe.dto.EmergencyRequest;
 import com.example.tpubpfe.dto.EmergencyResponse;
 import com.example.tpubpfe.service.EmergencyService;
@@ -33,11 +35,31 @@ public class EmergencyController {
         return ResponseEntity.status(HttpStatus.CREATED).body(emergencyService.create(request));
     }
 
-    @Operation(summary = "List emergency messages, newest first (optional state PROGRAMME, EN_COURS, TERMINE, DESACTIVE)")
+    @Operation(summary = "List emergency messages, newest first (optional state PROGRAMME, EN_COURS, TERMINE, DESACTIVE, EN_ATTENTE_APPROBATION, REFUSE)")
     @PreAuthorize("hasAnyRole('ADMINISTRATEUR', 'SUPERVISEUR', 'OPERATEUR')")
     @GetMapping
     public ResponseEntity<List<EmergencyResponse>> getAll(@RequestParam(required = false) String state) {
         return ResponseEntity.ok(emergencyService.getAll(state));
+    }
+
+    @Operation(summary = "Approve a pending emergency message (multi-level approval)")
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<EmergencyResponse> approve(
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) ApprovalCommentRequest request
+    ) {
+        return ResponseEntity.ok(emergencyService.approve(id, request == null ? null : request.getComment()));
+    }
+
+    @Operation(summary = "Refuse a pending emergency message (reason required, never the creator)")
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    @PostMapping("/{id}/refuse")
+    public ResponseEntity<EmergencyResponse> refuse(
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) ApprovalRefusalRequest request
+    ) {
+        return ResponseEntity.ok(emergencyService.refuse(id, request == null ? null : request.getReason()));
     }
 
     @Operation(summary = "Deactivate an emergency message")

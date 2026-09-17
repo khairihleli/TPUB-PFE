@@ -95,6 +95,19 @@ public class EmergencyMessage {
     @Column(name = "stop_reason", length = 20)
     private EmergencyStopReason stopReason;
 
+    /** Multi-level approval (docs/round2-contract.md §5.4): only APPROUVE messages are broadcast. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false, length = 12)
+    @Builder.Default
+    private EmergencyApprovalStatus approvalStatus = EmergencyApprovalStatus.APPROUVE;
+
+    @Column(name = "approvals_required", nullable = false)
+    @Builder.Default
+    private Short approvalsRequired = 1;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by_user_id", nullable = false)
     private User createdByUser;

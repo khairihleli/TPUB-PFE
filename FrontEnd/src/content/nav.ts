@@ -93,10 +93,23 @@ export type AppNavIcon =
   | "emergency"
   | "users"
   | "journal"
-  | "rules";
+  | "rules"
+  | "supervision"
+  | "approvals"
+  | "heatmap"
+  | "aiQuality"
+  | "notifications"
+  | "account";
 
 /** Shell badge sources (computed by useNavBadges from the shared cache). */
-export type NavBadgeKey = "drafts" | "moderation" | "coherence" | "emergencies" | "conflicts";
+export type NavBadgeKey =
+  | "drafts"
+  | "moderation"
+  | "coherence"
+  | "emergencies"
+  | "conflicts"
+  | "approvals"
+  | "alerts";
 
 export interface AppNavItem {
   label: string;
@@ -164,12 +177,27 @@ export const ADMIN_NAV: readonly AppNavItem[] = [
     tab: { label: "Accueil", order: 1 },
   },
   {
+    label: "Supervision",
+    href: "/admin/supervision",
+    icon: "supervision",
+    group: "Opérer",
+    badgeKey: "alerts",
+  },
+  {
     label: "Modération",
     href: "/admin/moderation",
     icon: "moderation",
     group: "Opérer",
     badgeKey: "moderation",
     tab: { label: "Modération", order: 2 },
+    roles: ADMIN_AND_SUPERVISOR,
+  },
+  {
+    label: "Approbations",
+    href: "/admin/approbations",
+    icon: "approvals",
+    group: "Opérer",
+    badgeKey: "approvals",
     roles: ADMIN_AND_SUPERVISOR,
   },
   {
@@ -197,7 +225,15 @@ export const ADMIN_NAV: readonly AppNavItem[] = [
     tab: { label: "Urgences", order: 4 },
   },
   { label: "Statistiques", href: "/admin/statistiques", icon: "stats", group: "Analyser" },
+  { label: "Carte de chaleur", href: "/admin/carte-chaleur", icon: "heatmap", group: "Analyser" },
   { label: "Journal", href: "/admin/journal", icon: "journal", group: "Analyser" },
+  {
+    label: "Qualité IA",
+    href: "/admin/ia-qualite",
+    icon: "aiQuality",
+    group: "Analyser",
+    roles: ADMIN_AND_SUPERVISOR,
+  },
   {
     label: "Utilisateurs",
     href: "/admin/utilisateurs",
@@ -212,6 +248,12 @@ export const ADMIN_NAV: readonly AppNavItem[] = [
     group: "Administrer",
     roles: ADMIN_AND_SUPERVISOR,
   },
+];
+
+/** Staff account menu (round 2: « Mon compte » and « Notifications »). */
+export const ADMIN_ACCOUNT_NAV: readonly AppNavItem[] = [
+  { label: "Mon compte", href: "/admin/compte", icon: "account" },
+  { label: "Notifications", href: "/admin/notifications", icon: "notifications" },
 ];
 
 /** Entries visible to a role (items without `roles` are visible to every role of the shell). */

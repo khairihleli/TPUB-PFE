@@ -24,6 +24,7 @@ import {
   UrgentSlide,
 } from "@/components/player/player-slides";
 import { useNow } from "@/components/player/use-now";
+import { useHeartbeat } from "@/components/player/use-heartbeat";
 import { diffusionApi } from "@/lib/api/endpoints";
 import { isAbortError, isDeviceKeyError } from "@/lib/api/errors";
 import type { Diffusion } from "@/lib/api/types";
@@ -248,6 +249,7 @@ export function PlayerScreen({
   );
 
   const { diffusion, error } = state;
+  useHeartbeat(supportId, state.diffusion?.diffusionLogId ?? null);
   const offlineError =
     error !== null && (diffusion === null || error.kind === "not-found") ? error : null;
   const now = useNow(offlineError !== null);

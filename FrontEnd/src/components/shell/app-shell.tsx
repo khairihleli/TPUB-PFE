@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  Activity,
   CalendarRange,
   ChartColumn,
+  CheckCheck,
   FileClock,
+  Flame,
   ChevronLeft,
   ChevronRight,
   Gauge,
@@ -15,6 +18,7 @@ import {
   Menu,
   Plus,
   Search,
+  Bell,
   ShieldCheck,
   Siren,
   UserRound,
@@ -31,6 +35,7 @@ import { AccessNotice } from "@/components/shell/access-notice";
 import { BreadcrumbProvider, trailParent, useTrail } from "@/components/shell/breadcrumbs";
 import { CommandPaletteProvider, useCommandPalette } from "@/components/shell/command-palette";
 import { AccountMenu, HelpMenu } from "@/components/shell/menus";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { MobileTabBar, tabBarVisible } from "@/components/shell/mobile-tab-bar";
 import { badgeAriaLabel, type NavBadges, useNavBadges } from "@/components/shell/nav-badges";
 import {
@@ -75,6 +80,12 @@ const ICONS: Record<AppNavIcon, ComponentType<{ className?: string; "aria-hidden
   users: UsersRound,
   journal: FileClock,
   rules: ListChecks,
+  supervision: Activity,
+  approvals: CheckCheck,
+  heatmap: Flame,
+  aiQuality: Gauge,
+  notifications: Bell,
+  account: UserRound,
 };
 
 export type AppShellVariant = "espace" | "admin";
@@ -474,6 +485,8 @@ function ShellFrame({
                 </span>
               </>
             ) : null}
+
+            {variant === "admin" ? <NotificationBell /> : null}
 
             <HelpMenu />
 

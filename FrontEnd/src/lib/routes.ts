@@ -144,6 +144,11 @@ export const routes = {
         porteur: q?.porteur,
       }),
     statistics: () => "/admin/statistiques",
+    supervision: (q?: { porteur?: number }) =>
+      withQuery("/admin/supervision", { porteur: q?.porteur }),
+    approvals: () => "/admin/approbations",
+    notifications: (q?: { nonLues?: boolean }) =>
+      withQuery("/admin/notifications", { nonLues: q?.nonLues }),
   },
   player: (supportId: number) => `/ecran/${supportId}`,
 } as const;

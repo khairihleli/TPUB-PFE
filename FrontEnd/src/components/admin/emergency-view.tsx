@@ -8,15 +8,14 @@ import { EmergencyFormDialog } from "@/components/admin/emergency-form-dialog";
 import {
   emergencyStateOf,
   emergencyTargetLabel,
-  isLiveState,
   priorityLabel,
-  sortEmergencies,
 } from "@/components/admin/emergency-schema";
 import { useRegisterCommands } from "@/components/shell/command-palette";
 import { useSession } from "@/components/shell/session-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Field, Textarea } from "@/components/ui/field";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -26,7 +25,10 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { emergencyApi, supportsApi, zonesApi } from "@/lib/api/endpoints";
+import { approvalsApi } from "@/lib/api/endpoints-supervision";
 import type { EmergencyResponse, SupportResponse, ZoneResponse } from "@/lib/api/types";
+import type { EmergencyStateV2, EmergencyWithApproval } from "@/lib/api/types-supervision";
+import { presentError } from "@/lib/api/errors";
 import { EMERGENCY_STATE, EMERGENCY_STOP_REASON_LABEL } from "@/lib/campaign-status";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { withinKm } from "@/lib/geo";
@@ -72,6 +74,78 @@ const PRINCIPLES = [
   },
 ];
 
+type StateMeta = {
+  label: string;
+  tone: "violet" | "success" | "muted" | "warning" | "danger";
+  description: string;
+  pulse?: boolean;
+};
+
+/** Labels of the two states added by the multi-level approval (docs/round2-contract.md §5.4). */
+const APPROVAL_STATE_META: Record<"EN_ATTENTE_APPROBATION" | "REFUSE", StateMeta> = {
+  EN_ATTENTE_APPROBATION: {
+    label: "En attente d'approbation",
+    tone: "warning",
+    description: "Le message ne sera diffusé qu'une fois approuvé par un second administrateur.",
+  },
+  REFUSE: {
+    label: "Refusé",
+    tone: "danger",
+    description: "Un administrateur a refusé ce message : il ne sera pas diffusé.",
+  },
+};
+
+/** Server state when it is known (it alone knows the approvals), else the local derivation. */
+export function stateOfMessage(message: EmergencyWithApproval, now: Date): EmergencyStateV2 {
+  if (message.state) return message.state;
+  const { state, stopReason, ...rest } = message;
+  void state;
+  return emergencyStateOf(
+    { ...rest, stopReason: stopReason === "REFUSE" ? "MANUEL" : stopReason },
+    now,
+  );
+}
+
+/** « Arrêt manuel », « Arrêt automatique… », « Refusé par un administrateur ». */
+export function stopReasonLabel(reason: "MANUEL" | "AUTO" | "REFUSE" | null | undefined): string {
+  if (!reason) return "";
+  return reason === "REFUSE"
+    ? "Refusé par un administrateur"
+    : EMERGENCY_STOP_REASON_LABEL[reason];
+}
+
+export function stateMeta(state: EmergencyStateV2): StateMeta {
+  return state === "EN_ATTENTE_APPROBATION" || state === "REFUSE"
+    ? APPROVAL_STATE_META[state]
+    : (EMERGENCY_STATE[state] as StateMeta);
+}
+
+/** A message still able to reach a screen, approval included. */
+export function isLiveStateV2(state: EmergencyStateV2): boolean {
+  return state === "EN_COURS" || state === "PROGRAMME" || state === "EN_ATTENTE_APPROBATION";
+}
+
+const STATE_RANK: Record<EmergencyStateV2, number> = {
+  EN_COURS: 0,
+  EN_ATTENTE_APPROBATION: 1,
+  PROGRAMME: 2,
+  TERMINE: 3,
+  REFUSE: 4,
+  DESACTIVE: 5,
+};
+
+/** Same order as round 1, with the pending approvals right after the messages on air. */
+export function sortMessages(
+  messages: readonly EmergencyWithApproval[],
+  now: Date,
+): EmergencyWithApproval[] {
+  return [...messages].sort((a, b) => {
+    const rank = STATE_RANK[stateOfMessage(a, now)] - STATE_RANK[stateOfMessage(b, now)];
+    if (rank !== 0) return rank;
+    return b.id - a.id;
+  });
+}
+
 /** First ACTIF Porteur reached by the message (« Vérifier sur un écran »). */
 export function sampleSupportFor(
   message: Pick<EmergencyResponse, "zoneId" | "latitude" | "longitude" | "radiusKm">,
@@ -99,6 +173,10 @@ export function EmergencyView() {
   const [filter, setFilter] = useState<Filter>("actifs");
   const [createOpen, setCreateOpen] = useState(false);
   const [toDeactivate, setToDeactivate] = useState<EmergencyResponse | null>(null);
+  const [toRefuse, setToRefuse] = useState<EmergencyWithApproval | null>(null);
+  const [refusalReason, setRefusalReason] = useState("");
+  const [refusalError, setRefusalError] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<number | null>(null);
   useRegisterCommands(
     canAct && data
       ? [
@@ -120,24 +198,98 @@ export function EmergencyView() {
     return (id: number) => m.get(id) ?? `Zone n° ${id}`;
   }, [data]);
 
-  const sorted = useMemo(() => sortEmergencies(data?.messages ?? []), [data]);
-  const liveRows = sorted.filter((m) => isLiveState(emergencyStateOf(m, now)));
+  const messages = (data?.messages ?? []) as EmergencyWithApproval[];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sorted = useMemo(() => sortMessages(messages, now), [data]);
+  const liveRows = sorted.filter((m) => isLiveStateV2(stateOfMessage(m, now)));
   const rows = filter === "actifs" ? liveRows : sorted;
-  const currentCount = sorted.filter((m) => emergencyStateOf(m, now) === "EN_COURS").length;
+  const currentCount = sorted.filter((m) => stateOfMessage(m, now) === "EN_COURS").length;
+  const pendingCount = sorted.filter(
+    (m) => stateOfMessage(m, now) === "EN_ATTENTE_APPROBATION",
+  ).length;
 
-  const deactivateButton = (m: EmergencyResponse) =>
-    m.isActive && isLiveState(emergencyStateOf(m, now)) ? (
+  const decide = async (message: EmergencyWithApproval, action: "approve" | "refuse") => {
+    if (action === "refuse") {
+      setToRefuse(message);
+      setRefusalReason("");
+      setRefusalError(null);
+      return;
+    }
+    setDeciding(message.id);
+    try {
+      await approvalsApi.approveEmergency(message.id);
+      toast({ title: `« ${message.title} » approuvé`, variant: "success" });
+      reload();
+    } catch (e) {
+      toast({
+        title: "Approbation impossible",
+        description: presentError(e).message,
+        variant: "danger",
+      });
+    } finally {
+      setDeciding(null);
+    }
+  };
+
+  const confirmRefusal = async () => {
+    if (!toRefuse) return;
+    const reason = refusalReason.trim();
+    if (reason.length < 3) {
+      setRefusalError("Motif de refus obligatoire (3 à 500 caractères).");
+      return;
+    }
+    setDeciding(toRefuse.id);
+    try {
+      await approvalsApi.refuseEmergency(toRefuse.id, reason);
+      toast({ title: `« ${toRefuse.title} » refusé`, variant: "success" });
+      setToRefuse(null);
+      reload();
+    } catch (e) {
+      setRefusalError(presentError(e).message);
+    } finally {
+      setDeciding(null);
+    }
+  };
+
+  const rowActions = (m: EmergencyWithApproval) => {
+    const state = stateOfMessage(m, now);
+    if (state === "EN_ATTENTE_APPROBATION") {
+      return canAct ? (
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            loading={deciding === m.id}
+            loadingLabel="Approbation en cours"
+            onClick={() => void decide(m, "approve")}
+            aria-label={`Approuver le message ${m.title}`}
+          >
+            Approuver
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void decide(m, "refuse")}
+            aria-label={`Refuser le message ${m.title}`}
+          >
+            Refuser
+          </Button>
+        </div>
+      ) : null;
+    }
+    return m.isActive && isLiveStateV2(state) && canAct ? (
       <Button
         size="sm"
         variant="secondary"
-        onClick={() => setToDeactivate(m)}
+        onClick={() => setToDeactivate(m as EmergencyResponse)}
         aria-label={`Arrêter le message ${m.title}`}
       >
         Arrêter
       </Button>
     ) : null;
+  };
 
-  const columns: DataTableColumn<EmergencyResponse>[] = [
+  const columns: DataTableColumn<EmergencyWithApproval>[] = [
     {
       key: "title",
       header: "Message",
@@ -193,16 +345,25 @@ export function EmergencyView() {
       header: "État",
       mobileMeta: true,
       cell: (m) => {
-        const state = emergencyStateOf(m, now);
-        const meta = EMERGENCY_STATE[state];
+        const state = stateOfMessage(m, now);
+        const meta = stateMeta(state);
+        const approvals = m.approvals?.filter((a) => a.decision === "APPROUVE") ?? [];
         return (
           <div className="flex flex-col items-start gap-1">
             <Badge tone={meta.tone} dot pulse={meta.pulse} size="sm" title={meta.description}>
               {meta.label}
+              {state === "EN_ATTENTE_APPROBATION"
+                ? ` (${approvals.length}/${m.approvalsRequired ?? 2})`
+                : ""}
             </Badge>
+            {approvals.length > 0 && state === "EN_ATTENTE_APPROBATION" ? (
+              <span className="text-[0.75rem] text-muted">
+                Approuvé par {approvals.map((a) => a.approverName ?? "un administrateur").join(", ")}
+              </span>
+            ) : null}
             {m.stopReason ? (
               <span className="text-[0.75rem] text-muted md:whitespace-nowrap">
-                {EMERGENCY_STOP_REASON_LABEL[m.stopReason]}
+                {stopReasonLabel(m.stopReason)}
                 {m.stoppedAt ? ` · ${formatDateTime(m.stoppedAt)}` : ""}
               </span>
             ) : null}
@@ -228,17 +389,13 @@ export function EmergencyView() {
         </div>
       ),
     },
-    ...(canAct
-      ? [
-          {
-            key: "actions",
-            header: <span className="sr-only">Actions</span>,
-            align: "right" as const,
-            hideOnMobile: true,
-            cell: deactivateButton,
-          },
-        ]
-      : []),
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right" as const,
+      hideOnMobile: true,
+      cell: rowActions,
+    },
   ];
 
   return (
@@ -247,10 +404,17 @@ export function EmergencyView() {
         title="Messages prioritaires"
         description="Informations d'intérêt général ciblées sur la carte : elles passent avant la publicité sur les écrans concernés pendant leur période."
         meta={
-          currentCount > 0 ? (
-            <Badge tone="warning" dot pulse>
-              {currentCount} en cours
-            </Badge>
+          currentCount > 0 || pendingCount > 0 ? (
+            <span className="flex flex-wrap items-center gap-2">
+              {currentCount > 0 ? (
+                <Badge tone="warning" dot pulse>
+                  {currentCount} en cours
+                </Badge>
+              ) : null}
+              {pendingCount > 0 ? (
+                <Badge tone="warning">{pendingCount} en attente d'approbation</Badge>
+              ) : null}
+            </span>
           ) : null
         }
         primaryAction={
@@ -322,7 +486,7 @@ export function EmergencyView() {
               rows={rows}
               getRowKey={(m) => m.id}
               caption="Messages prioritaires"
-              mobileFooter={canAct ? deactivateButton : undefined}
+              mobileFooter={rowActions}
               empty={
                 <EmptyState
                   icon={<Siren />}
@@ -425,6 +589,31 @@ export function EmergencyView() {
               toast({ title: "Message arrêté", variant: "success" });
             }}
           />
+
+          <ConfirmDialog
+            open={toRefuse !== null}
+            onOpenChange={(open) => {
+              if (!open) setToRefuse(null);
+            }}
+            title={toRefuse ? `Refuser « ${toRefuse.title} » ?` : "Refuser le message ?"}
+            description="Le message ne sera jamais diffusé. Le créateur est prévenu du motif."
+            confirmLabel="Confirmer le refus"
+            tone="danger"
+            confirmDisabled={refusalReason.trim().length < 3 || deciding !== null}
+            onConfirm={confirmRefusal}
+          >
+            <Field label="Motif du refus" error={refusalError} hint="3 à 500 caractères.">
+              <Textarea
+                rows={3}
+                maxLength={500}
+                value={refusalReason}
+                onChange={(e) => {
+                  setRefusalReason(e.target.value);
+                  setRefusalError(null);
+                }}
+              />
+            </Field>
+          </ConfirmDialog>
         </>
       ) : null}
     </>

@@ -32,7 +32,13 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class EmergencyServiceTest {
@@ -47,6 +53,9 @@ class EmergencyServiceTest {
             .longitude(new BigDecimal("10.3240")).radiusKm(new BigDecimal("3")).isActive(true).build();
     private EmergencyMessageRepository repository;
     private DiffusionSupportRepository supportRepository;
+    private com.example.tpubpfe.service.approval.ApprovalPolicy approvalPolicy;
+    private com.example.tpubpfe.service.supervision.AlertService alertService;
+    private com.example.tpubpfe.service.notification.NotificationService notificationService;
     private EmergencyService service;
 
     @BeforeEach
@@ -56,8 +65,16 @@ class EmergencyServiceTest {
         ZoneRepository zoneRepository = mock(ZoneRepository.class);
         ZoneService zoneService = mock(ZoneService.class);
         UserRepository userRepository = mock(UserRepository.class);
+        approvalPolicy = mock(com.example.tpubpfe.service.approval.ApprovalPolicy.class);
+        alertService = mock(com.example.tpubpfe.service.supervision.AlertService.class);
+        notificationService = mock(com.example.tpubpfe.service.notification.NotificationService.class);
+        when(approvalPolicy.configuredForEmergency()).thenReturn(1);
+        when(approvalPolicy.effective(anyInt())).thenReturn(1);
+        when(approvalPolicy.approvals(any(), any(Long.class), anyString())).thenReturn(List.of());
+        when(approvalPolicy.toResponses(anyList())).thenReturn(List.of());
         service = new EmergencyService(repository, zoneService, zoneRepository, userRepository, supportRepository,
-                mock(DiffusionLogRepository.class), mock(AuditService.class),
+                mock(DiffusionLogRepository.class), mock(AuditService.class), approvalPolicy, alertService,
+                notificationService, mock(org.springframework.context.ApplicationEventPublisher.class),
                 Clock.fixed(NOW.atZone(TUNIS).toInstant(), TUNIS));
         when(zoneRepository.findByIsActiveTrue()).thenReturn(List.of(centre, marsa));
         when(zoneService.findZone(1L)).thenReturn(centre);
@@ -149,5 +166,163 @@ class EmergencyServiceTest {
 
         assertThatThrownBy(() -> service.getAll("inconnu"))
                 .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_PARAMETER");
+    }
+    // --- multi-level approval (docs/round2-contract.md §5.4) ------------------------------------------------------
+
+    /** Two administrators required; the recorded approvals are kept in memory. */
+    private java.util.List<com.example.tpubpfe.model.Approval> requireTwoAdministrators() {
+        java.util.List<com.example.tpubpfe.model.Approval> recorded = new java.util.ArrayList<>();
+        when(approvalPolicy.configuredForEmergency()).thenReturn(2);
+        when(approvalPolicy.effective(anyInt())).thenReturn(2);
+        when(approvalPolicy.approvals(any(), any(Long.class), anyString())).thenReturn(recorded);
+        when(approvalPolicy.record(any(), any(), anyString(), any(), any(), any(), any())).thenAnswer(inv -> {
+            com.example.tpubpfe.model.Approval approval = com.example.tpubpfe.model.Approval.builder()
+                    .id((long) recorded.size() + 1)
+                    .entityType(inv.getArgument(0))
+                    .entityId(inv.getArgument(1))
+                    .cycleKey(inv.getArgument(2))
+                    .approverUserId(inv.getArgument(3))
+                    .decision(inv.getArgument(4))
+                    .comment(inv.getArgument(5))
+                    .details(inv.getArgument(6))
+                    .createdAt(java.time.Instant.parse("2026-09-16T08:30:00Z"))
+                    .build();
+            recorded.add(approval);
+            return approval;
+        });
+        when(approvalPolicy.toResponses(anyList())).thenAnswer(inv -> {
+            java.util.List<com.example.tpubpfe.model.Approval> list = inv.getArgument(0);
+            return list.stream().map(a -> com.example.tpubpfe.dto.ApprovalResponse.builder()
+                    .id(a.getId()).approverUserId(a.getApproverUserId())
+                    .approverName("Admin " + a.getApproverUserId())
+                    .decision(a.getDecision().name()).comment(a.getComment()).createdAt(a.getCreatedAt())
+                    .build()).toList();
+        });
+        return recorded;
+    }
+
+    private EmergencyResponse createPending() {
+        requireTwoAdministrators();
+        when(repository.save(any(EmergencyMessage.class))).thenAnswer(inv -> {
+            EmergencyMessage message = inv.getArgument(0);
+            if (message.getId() == null) {
+                message.setId(11L);
+            }
+            return message;
+        });
+        EmergencyResponse response = service.create(request().zoneId(1L).startTime(java.time.LocalTime.of(9, 0))
+                .endTime(java.time.LocalTime.of(23, 0)).build());
+        EmergencyMessage saved = EmergencyMessage.builder().id(11L).title(response.getTitle())
+                .content(response.getContent()).zone(centre).isActive(true)
+                .startDate(TODAY).endDate(TODAY).startTime(java.time.LocalTime.of(9, 0))
+                .endTime(java.time.LocalTime.of(23, 0)).urgencyLevel(UrgencyLevel.HIGH).priority((short) 1)
+                .approvalStatus(com.example.tpubpfe.model.EmergencyApprovalStatus.EN_ATTENTE)
+                .approvalsRequired((short) 2)
+                .createdByUser(User.builder().id(1L).nom("Admin TPUB").build())
+                .build();
+        when(repository.findById(11L)).thenReturn(java.util.Optional.of(saved));
+        return response;
+    }
+
+    @Test
+    void aPendingMessageIsNotBroadcastAndRaisesAnAlert() {
+        EmergencyResponse response = createPending();
+
+        assertThat(response.getApprovalStatus()).isEqualTo("EN_ATTENTE");
+        assertThat(response.getState()).isEqualTo("EN_ATTENTE_APPROBATION");
+        assertThat(response.getApprovalsRequired()).isEqualTo(2);
+        assertThat(response.getApprovalsRequiredConfigured()).isEqualTo(2);
+        assertThat(response.getApprovals()).hasSize(1);
+        assertThat(response.getApprovedAt()).isNull();
+        verify(alertService).openIfAbsent(
+                eq(com.example.tpubpfe.model.SupervisionAlertType.EMERGENCY_PENDING_APPROVAL), any(), anyString(),
+                anyString(), any());
+        verify(notificationService).notifyRoles(anySet(),
+                eq(com.example.tpubpfe.model.NotificationType.EMERGENCY_APPROVAL_REQUIRED), any(), anyString(),
+                anyString(), anyString(), anyString(), anyString(), anySet());
+    }
+
+    @Test
+    void aSingleAdministratorBroadcastsImmediately() {
+        EmergencyResponse response = service.create(request().zoneId(1L).build());
+
+        assertThat(response.getApprovalStatus()).isEqualTo("APPROUVE");
+        assertThat(response.getApprovedAt()).isNotNull();
+        assertThat(response.getApprovalsRequired()).isEqualTo(1);
+        verify(notificationService).notifyRoles(anySet(),
+                eq(com.example.tpubpfe.model.NotificationType.EMERGENCY_BROADCAST), any(), anyString(), anyString(),
+                anyString(), anyString(), anyString(), anySet());
+    }
+
+    @Test
+    void theSecondAdministratorApprovesAndTheMessageIsBroadcast() {
+        createPending();
+        TestAuth.login(2L, "ADMINISTRATEUR");
+
+        EmergencyResponse approved = service.approve(11L, "Vérifié avec la protection civile");
+
+        assertThat(approved.getApprovalStatus()).isEqualTo("APPROUVE");
+        assertThat(approved.getApprovedAt()).isNotNull();
+        assertThat(approved.getState()).isEqualTo("EN_COURS");
+        assertThat(approved.getApprovals()).hasSize(2);
+        verify(alertService).resolve(
+                eq(com.example.tpubpfe.model.SupervisionAlertType.EMERGENCY_PENDING_APPROVAL), any());
+        verify(notificationService).notifyRoles(anySet(),
+                eq(com.example.tpubpfe.model.NotificationType.EMERGENCY_BROADCAST), any(), anyString(), anyString(),
+                anyString(), anyString(), anyString(), anySet());
+    }
+
+    @Test
+    void approvalGuards() {
+        createPending();
+        // The creator already approved through the creation.
+        assertThatThrownBy(() -> service.approve(11L, null))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("APPROVAL_ALREADY_GIVEN");
+
+        TestAuth.login(2L, "ADMINISTRATEUR");
+        service.approve(11L, null);
+        assertThatThrownBy(() -> service.approve(11L, null))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("APPROVAL_NOT_PENDING");
+    }
+
+    @Test
+    void refusalNeedsAReasonAndAnotherAdministrator() {
+        createPending();
+
+        assertThatThrownBy(() -> service.refuse(11L, "  "))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("REFUSAL_REASON_REQUIRED");
+        assertThatThrownBy(() -> service.refuse(11L, "Zone déjà couverte"))
+                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("APPROVAL_SELF_REFUSAL");
+
+        TestAuth.login(2L, "ADMINISTRATEUR");
+        EmergencyResponse refused = service.refuse(11L, "Zone déjà couverte");
+
+        assertThat(refused.getApprovalStatus()).isEqualTo("REFUSE");
+        assertThat(refused.getIsActive()).isFalse();
+        assertThat(refused.getStopReason()).isEqualTo("REFUSE");
+        assertThat(refused.getState()).isEqualTo("REFUSE");
+        verify(notificationService).notifyUser(any(),
+                eq(com.example.tpubpfe.model.NotificationType.EMERGENCY_REFUSED), any(), anyString(), anyString(),
+                anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void pendingStateWinsOverTheSchedule() {
+        EmergencyMessage message = EmergencyMessage.builder().isActive(true).startDate(TODAY).endDate(TODAY)
+                .startTime(java.time.LocalTime.of(9, 0)).endTime(java.time.LocalTime.of(11, 0))
+                .approvalStatus(com.example.tpubpfe.model.EmergencyApprovalStatus.EN_ATTENTE).build();
+        assertThat(EmergencyService.state(message, NOW)).isEqualTo(EmergencyService.State.EN_ATTENTE_APPROBATION);
+        assertThat(EmergencyService.state(message, TODAY.atTime(8, 0)))
+                .isEqualTo(EmergencyService.State.EN_ATTENTE_APPROBATION);
+        // Once the window is over the message is finished, approved or not.
+        assertThat(EmergencyService.state(message, TODAY.atTime(11, 30))).isEqualTo(EmergencyService.State.TERMINE);
+        message.setApprovalStatus(com.example.tpubpfe.model.EmergencyApprovalStatus.REFUSE);
+        message.setIsActive(false);
+        message.setStopReason(EmergencyStopReason.REFUSE);
+        assertThat(EmergencyService.state(message, NOW)).isEqualTo(EmergencyService.State.REFUSE);
+        // A message stored before round 2 has no approval status: it stays broadcastable.
+        EmergencyMessage legacy = EmergencyMessage.builder().isActive(true).startDate(TODAY).endDate(TODAY)
+                .startTime(java.time.LocalTime.of(9, 0)).endTime(java.time.LocalTime.of(11, 0)).build();
+        assertThat(EmergencyService.state(legacy, NOW)).isEqualTo(EmergencyService.State.EN_COURS);
     }
 }
