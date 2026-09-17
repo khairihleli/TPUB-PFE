@@ -333,7 +333,7 @@ export async function refreshSession(req: Request): Promise<NextResponse> {
       ? noStore(UNREACHABLE_BODY, 502)
       : noStore({ user } satisfies SessionResponse, 200);
   }
-  const refreshed = withAccountFlags(user, data as Record<string, unknown>);
+  const refreshed = withAccountFlags(user, data);
   const res = noStore({ user: refreshed } satisfies SessionResponse, 200);
   applySessionCookies(res, token, refreshed);
   return res;

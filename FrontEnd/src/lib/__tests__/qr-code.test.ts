@@ -59,7 +59,7 @@ function decodeBytes(text: string, ecl: QrErrorCorrection = "M"): number[] {
         const y = ((right + 1) & 2) === 0 ? size - 1 - vert : vert;
         if (isFunction(x, y)) continue;
         const dark = modules[y]?.[x] === true;
-        bits.push((dark !== maskBit(qr.mask, x, y) ? 1 : 0) as number);
+        bits.push((dark !== maskBit(qr.mask, x, y) ? 1 : 0));
       }
     }
   }
