@@ -53,8 +53,11 @@ import {
   deactivationBlocker,
   deviceLabel,
   emptyStaffForm,
+  passwordChangeBlocker,
+  securityBadges,
   staffCreateSchema,
   staffUpdateSchema,
+  twoFactorResetBlocker,
   usersQuery,
 } from "@/components/admin/users-model";
 import { ApiError } from "@/lib/api/errors";
@@ -604,5 +607,30 @@ describe("statistics model", () => {
       }).find((f) => f.key === "validation")?.value,
     ).toBe("75 %");
     expect(aiVerdictBreakdown(d)).toBe("7 favorables · 3 revues manuelles · 2 à corriger");
+  });
+});
+
+describe("users model — round 2 account security", () => {
+  it("shows the 2FA and forced password change badges", () => {
+    expect(securityBadges({ twoFactorEnabled: false, mustChangePassword: false })).toEqual([]);
+    expect(securityBadges({}).length).toBe(0);
+    expect(
+      securityBadges({ twoFactorEnabled: true, mustChangePassword: true }).map((b) => b.label),
+    ).toEqual(["2FA active", "Changement de mot de passe requis"]);
+  });
+
+  it("never allows the security actions on one's own account", () => {
+    expect(twoFactorResetBlocker({ userId: 1, twoFactorEnabled: true }, 1)).toMatch(/Mon compte/);
+    expect(twoFactorResetBlocker({ userId: 2, twoFactorEnabled: false }, 1)).toBe(
+      "La double authentification n'est pas active.",
+    );
+    expect(twoFactorResetBlocker({ userId: 2, twoFactorEnabled: true }, 1)).toBeNull();
+    expect(passwordChangeBlocker({ userId: 1, mustChangePassword: false }, 1)).toMatch(
+      /Mon compte/,
+    );
+    expect(passwordChangeBlocker({ userId: 2, mustChangePassword: true }, 1)).toBe(
+      "Un nouveau mot de passe est déjà exigé.",
+    );
+    expect(passwordChangeBlocker({ userId: 2, mustChangePassword: false }, 1)).toBeNull();
   });
 });

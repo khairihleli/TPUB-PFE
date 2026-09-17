@@ -78,6 +78,50 @@ export function deactivationBlocker(
 }
 
 // ---------------------------------------------------------------------------
+// Round 2 — account security (docs/round2-contract.md §3.2, §3.3, §3.7)
+// ---------------------------------------------------------------------------
+export interface SecurityBadge {
+  label: string;
+  tone: "success" | "warning";
+}
+
+/** « 2FA active » and « Changement de mot de passe requis » badges of a row. */
+export function securityBadges(
+  u: Pick<AdminUserResponse, "twoFactorEnabled" | "mustChangePassword">,
+): SecurityBadge[] {
+  const badges: SecurityBadge[] = [];
+  if (u.twoFactorEnabled === true) badges.push({ label: "2FA active", tone: "success" });
+  if (u.mustChangePassword === true) {
+    badges.push({ label: "Changement de mot de passe requis", tone: "warning" });
+  }
+  return badges;
+}
+
+/** Why « Réinitialiser la double authentification » is unavailable, null when it is allowed. */
+export function twoFactorResetBlocker(
+  u: Pick<AdminUserResponse, "userId" | "twoFactorEnabled">,
+  currentUserId: number,
+): string | null {
+  if (u.userId === currentUserId) {
+    return "Gérez votre propre double authentification depuis « Mon compte ».";
+  }
+  if (u.twoFactorEnabled !== true) return "La double authentification n'est pas active.";
+  return null;
+}
+
+/** Why « Exiger un nouveau mot de passe » is unavailable, null when it is allowed. */
+export function passwordChangeBlocker(
+  u: Pick<AdminUserResponse, "userId" | "mustChangePassword">,
+  currentUserId: number,
+): string | null {
+  if (u.userId === currentUserId) {
+    return "Changez votre propre mot de passe depuis « Mon compte ».";
+  }
+  if (u.mustChangePassword === true) return "Un nouveau mot de passe est déjà exigé.";
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Staff account creation / update
 // ---------------------------------------------------------------------------
 export const STAFF_CREATE_FIELDS = [
