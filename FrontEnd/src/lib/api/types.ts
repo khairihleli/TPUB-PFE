@@ -164,9 +164,17 @@ export type AuditAction =
   | "USER_ACTIVATED"
   | "USER_DEACTIVATED"
   | "CLIENT_VALIDATION_CHANGED"
-  | "USER_SESSIONS_REVOKED";
+  | "USER_SESSIONS_REVOKED"
+  // Round 2 (L2): account security and player device keys
+  | "USER_PASSWORD_CHANGE_REQUIRED"
+  | "USER_2FA_ENABLED"
+  | "USER_2FA_DISABLED"
+  | "USER_2FA_RESET"
+  | "SUPPORT_DEVICE_KEY_ISSUED"
+  | "SUPPORT_DEVICE_KEY_ROTATED"
+  | "SUPPORT_DEVICE_KEY_REVOKED";
 export type AuditEntityType =
-  "CAMPAIGN" | "AI_RULE" | "ZONE" | "SUPPORT" | "RESERVATION" | "EMERGENCY" | "USER" | "CLIENT";
+  "CAMPAIGN" | "AI_RULE" | "ZONE" | "SUPPORT" | "RESERVATION" | "EMERGENCY" | "USER" | "CLIENT" | "SUPPORT_DEVICE";
 
 // ---------------------------------------------------------------------------
 // Errors and paging
