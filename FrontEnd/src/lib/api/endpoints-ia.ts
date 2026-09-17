@@ -28,7 +28,7 @@ export function asReportV2(report: AiReport): AiReportV2 {
   const media = arrayOr(report.mediaAnalyses as Partial<AiMediaAnalysisV2>[] | undefined);
   return {
     ...report,
-    engine: report.engine as AiReportV2["engine"],
+    engine: report.engine,
     providerModel: raw.providerModel ?? null,
     calibrationVersion: raw.calibrationVersion ?? null,
     mediaAnalyses: media.map((m) => ({

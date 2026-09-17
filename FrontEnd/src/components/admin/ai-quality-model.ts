@@ -15,7 +15,7 @@ import type {
   AiQualityResponse,
 } from "@/lib/api/types-ia";
 import type { Tone } from "@/lib/campaign-status";
-import { formatDayMonth, formatNumber } from "@/lib/format";
+import { formatDayMonth, formatNumber, normalizeNumberSpaces } from "@/lib/format";
 
 export const FETCH_TESSDATA_HINT =
   "Exécutez BackEnd/scripts/fetch-tessdata.ps1 puis redémarrez le backend";
@@ -66,7 +66,7 @@ const rateFormatter = new Intl.NumberFormat("fr-TN", { maximumFractionDigits: 1 
 /** 0.1234 → "12,3 %", null → "—". */
 export function formatRate(rate: number | null | undefined): string {
   if (typeof rate !== "number" || !Number.isFinite(rate)) return "—";
-  return `${rateFormatter.format(rate * 100).replace(/ /g, " ")} %`;
+  return `${normalizeNumberSpaces(rateFormatter.format(rate * 100))} %`;
 }
 
 export function canManageCalibration(role: RoleCode | null | undefined): boolean {
@@ -225,4 +225,54 @@ export function engineFacts(p: AiProvidersResponse): EngineFact[] {
 /** Hint shown when Tesseract data is missing. */
 export function ocrHint(p: AiProvidersResponse): string | null {
   return p.ocr.tessdataPresent ? null : FETCH_TESSDATA_HINT;
+}
+
+// ---------------------------------------------------------------------------
+// Page state
+// ---------------------------------------------------------------------------
+export const QUALITY_TABS = [
+  { value: "synthese", label: "Synthèse" },
+  { value: "retours", label: "Retours" },
+] as const;
+export type QualityTab = (typeof QUALITY_TABS)[number]["value"];
+export const QUALITY_TAB_VALUES: readonly QualityTab[] = QUALITY_TABS.map((t) => t.value);
+
+/** Backend limit of `GET /ai/quality` (400 INVALID_RANGE beyond). */
+export const MAX_RANGE_DAYS = 366;
+
+/** Inclusive day count of an ISO range, null when a bound is missing or reversed. */
+export function rangeDays(from: string, to: string): number | null {
+  const a = Date.parse(`${from}T12:00:00Z`);
+  const b = Date.parse(`${to}T12:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+/** French message when the period cannot be sent, null when it is valid. */
+export function rangeError(from: string, to: string): string | null {
+  const days = rangeDays(from, to);
+  if (days === null) return "Choisissez une date de fin postérieure à la date de début.";
+  if (days > MAX_RANGE_DAYS) return `La période ne peut pas dépasser ${MAX_RANGE_DAYS} jours.`;
+  return null;
+}
+
+/** Outcome filter from the URL (`?resultat=FALSE_POSITIVE`), empty = every outcome. */
+export function parseOutcome(raw: string | null | undefined): AiFeedbackOutcome | "" {
+  return raw && raw in OUTCOME_META ? (raw as AiFeedbackOutcome) : "";
+}
+
+/** Rule precision as a percentage, « — » without a match. */
+export function formatPrecision(precision: number | null): string {
+  return formatRate(precision);
+}
+
+/** A week of the chart table: label + the four figures of the backend row. */
+export function weeklyTableRows(q: Pick<AiQualityResponse, "weekly">): string[][] {
+  return q.weekly.map((w) => [
+    weekLabel(w.weekStart),
+    formatNumber(w.feedback),
+    formatNumber(w.falsePositives),
+    formatNumber(w.falseNegatives),
+    formatNumber(w.overrides),
+  ]);
 }
