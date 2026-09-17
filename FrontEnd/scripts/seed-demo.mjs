@@ -13,32 +13,39 @@
  * each demo campaign is created only when the advertiser has no campaign with that name. Campaigns
  * left by the pre-v2 seed (no map circle, so they can never be diffused) are replaced once.
  *
- * Usage: node scripts/seed-demo.mjs   (TPUB_API_URL defaults to http://localhost:8080)
+ * Round 2 (docs/round2-contract.md §10): no password literal. The administrator password comes from
+ * TPUB_ADMIN_PASSWORD / TPUB_ADMIN_INITIAL_PASSWORD (or ../.tpub-local.secrets); demo account passwords
+ * from TPUB_DEMO_PASSWORD or scripts/.demo-accounts.json (generated once, gitignored). A second
+ * administrator (admin2@tpub.local) is created for the double approvals. Every ACTIF Porteur without a
+ * device key is paired; keys go to scripts/.demo-device-keys.json and the pairing URLs are printed.
+ *
+ * Usage: node scripts/seed-demo.mjs [--rotate-keys]   (TPUB_API_URL defaults to http://localhost:8080)
  */
+import {
+  adminCredentials,
+  demoPassword,
+  login,
+  pairingUrl,
+  readDeviceKeys,
+  saveDeviceKey,
+  SetupError,
+} from "./lib/demo-auth.mjs";
 import { call, day, items, pngForm, SLOT_PRESETS } from "./lib/tpub-api.mjs";
 
-const ADMIN = { email: "admin@tpub.local", password: "Admin@123" };
+const ROTATE_KEYS = process.argv.includes("--rotate-keys");
+
 const ADVERTISER = {
   email: "demo@annonceur.tn",
-  password: "Demo@1234",
   nom: "Amira Ben Salah",
   societe: "Maison Yasmine SARL",
   telephone: "+216 20 000 000",
   adresse: "La Marsa, Tunis",
 };
 const STAFF = [
-  {
-    email: "operateur@tpub.local",
-    password: "Operateur@123",
-    nom: "Karim Operateur",
-    role: "OPERATEUR",
-  },
-  {
-    email: "superviseur@tpub.local",
-    password: "Superviseur@123",
-    nom: "Nadia Superviseure",
-    role: "SUPERVISEUR",
-  },
+  { email: "operateur@tpub.local", nom: "Karim Operateur", role: "OPERATEUR" },
+  { email: "superviseur@tpub.local", nom: "Nadia Superviseure", role: "SUPERVISEUR" },
+  // Second administrator: emergencies and risky validations need two distinct administrators.
+  { email: "admin2@tpub.local", nom: "Sonia Administratrice", role: "ADMINISTRATEUR" },
 ];
 
 const ZONES = [
@@ -397,7 +404,10 @@ async function seedRules(admin) {
 async function seedAccounts(admin) {
   for (const staff of STAFF) {
     try {
-      await call("POST", "/api/admin/users", { token: admin.token, body: staff });
+      await call("POST", "/api/admin/users", {
+        token: admin.token,
+        body: { ...staff, password: demoPassword(staff.email) },
+      });
       console.log(`+ compte ${staff.role} ${staff.email}`);
     } catch (err) {
       if (err.code !== "EMAIL_ALREADY_REGISTERED") throw err;
@@ -405,14 +415,15 @@ async function seedAccounts(admin) {
   }
 
   let advertiser;
+  const advertiserPassword = demoPassword(ADVERTISER.email);
   try {
-    advertiser = await call("POST", "/api/auth/register", { body: ADVERTISER });
+    advertiser = await call("POST", "/api/auth/register", {
+      body: { ...ADVERTISER, password: advertiserPassword },
+    });
     console.log(`+ compte annonceur ${ADVERTISER.email}`);
   } catch (err) {
     if (err.code !== "EMAIL_ALREADY_REGISTERED") throw err;
-    advertiser = await call("POST", "/api/auth/login", {
-      body: { email: ADVERTISER.email, password: ADVERTISER.password },
-    });
+    advertiser = await login({ email: ADVERTISER.email, password: advertiserPassword });
   }
 
   // Manual validation of the advertiser (only from PENDING, so an admin decision is never undone).
@@ -513,11 +524,44 @@ async function seedCampaign(admin, advertiser, supports, spec) {
   console.log(`+ campagne « ${spec.name} » (IA : ${submitted.aiStatus} → ${status})`);
 }
 
+/**
+ * Pairs every ACTIF Porteur that has no active device key (all of them with --rotate-keys) and
+ * prints the pairing URLs. Keys already known locally are printed again.
+ */
+async function seedDeviceKeys(admin) {
+  const statuses = await call("GET", "/api/supports/device-keys", { token: admin.token });
+  const supports = await call("GET", "/api/supports", { token: admin.token });
+  const active = new Set(supports.filter((s) => s.technicalStatus === "ACTIF").map((s) => s.id));
+  const known = readDeviceKeys();
+  const urls = [];
+  for (const status of statuses) {
+    if (!active.has(status.supportId)) continue;
+    if (status.paired && !ROTATE_KEYS) {
+      const key = known[String(status.supportId)];
+      urls.push(
+        key
+          ? `  #${status.supportId} ${status.supportName} : ${pairingUrl(status.supportId, key)}`
+          : `  #${status.supportId} ${status.supportName} : déjà appairé (clé inconnue ici, --rotate-keys pour la remplacer)`,
+      );
+      continue;
+    }
+    const issued = await call("POST", `/api/supports/${status.supportId}/device-key`, {
+      token: admin.token,
+    });
+    saveDeviceKey(status.supportId, issued.deviceKey);
+    console.log(`${status.paired ? "~ clé remplacée" : "+ écran appairé"} ${status.supportName}`);
+    urls.push(
+      `  #${status.supportId} ${status.supportName} : ${pairingUrl(status.supportId, issued.deviceKey)}`,
+    );
+  }
+  return urls;
+}
+
 async function main() {
   const health = await call("GET", "/actuator/health");
   console.log(`Backend : ${health.status}`);
 
-  const admin = await call("POST", "/api/auth/login", { body: ADMIN });
+  const admin = await login(adminCredentials());
   console.log(`Connecté en admin (${admin.email})`);
 
   const supports = await seedNetwork(admin);
@@ -533,16 +577,30 @@ async function main() {
     if (mine.some((c) => c.name === spec.name)) continue;
     await seedCampaign(admin, advertiser, supports, spec);
   }
+  return { admin, pairing: await seedDeviceKeys(admin) };
 }
 
 main().then(
-  () => {
+  ({ admin, pairing }) => {
     console.log("\nDonnées de démo prêtes.");
-    console.log(`  Admin       : ${ADMIN.email} / ${ADMIN.password}`);
-    for (const s of STAFF) console.log(`  ${s.role.padEnd(11)} : ${s.email} / ${s.password}`);
-    console.log(`  Annonceur   : ${ADVERTISER.email} / ${ADVERTISER.password}`);
+    console.log(
+      `  Admin       : ${admin.email} (mot de passe : TPUB_ADMIN_PASSWORD ou .tpub-local.secrets)`,
+    );
+    for (const s of STAFF) {
+      console.log(`  ${s.role.padEnd(14)} : ${s.email} / ${demoPassword(s.email)}`);
+    }
+    console.log(`  Annonceur      : ${ADVERTISER.email} / ${demoPassword(ADVERTISER.email)}`);
+    console.log("  (mots de passe de démonstration : scripts/.demo-accounts.json)");
+    if (pairing.length > 0) {
+      console.log("\nLiens d'appairage des écrans (à ouvrir sur chaque Porteur) :");
+      for (const line of pairing) console.log(line);
+    }
   },
   (err) => {
+    if (err instanceof SetupError) {
+      console.error(err.message);
+      process.exit(1);
+    }
     console.error(`Échec du seed : ${err.message}`);
     if (err.data?.errors) console.error(JSON.stringify(err.data.errors));
     process.exit(1);
