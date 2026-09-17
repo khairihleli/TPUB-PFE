@@ -2,6 +2,7 @@
 
 import {
   CalendarClock,
+  KeyRound,
   Map as MapIcon,
   MapPinned,
   MonitorPlay,
@@ -16,6 +17,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import { IdChip, ReadOnlyNotice } from "@/components/admin/admin-ui";
+import { DevicePairingDialog, deviceStatusLabel } from "@/components/admin/device-pairing-dialog";
 import { NetworkAdminMap } from "@/components/admin/network-admin-map";
 import {
   networkSummaryItems,
@@ -50,9 +52,14 @@ import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { supportsApi, zonesApi } from "@/lib/api/endpoints";
+import { deviceKeysApi, supportsApi, zonesApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/errors";
-import type { SupportResponse, TechnicalStatus, ZoneResponse } from "@/lib/api/types";
+import type {
+  DeviceKeyStatusResponse,
+  SupportResponse,
+  TechnicalStatus,
+  ZoneResponse,
+} from "@/lib/api/types";
 import { SUPPORT_TYPE_LABEL, TECHNICAL_STATUS } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { formatCount, formatNumber } from "@/lib/format";
@@ -104,7 +111,7 @@ export function NetworkAdminView({
   /** `?panneau=coherence`: open the « Cohérence » side panel. */
   initialPanel?: "coherence" | null;
 }) {
-  const { role, canAct } = useSession();
+  const { role, canAct, isAdmin } = useSession();
   const { toast } = useToast();
   const { data, error, loading, reload, setData } = useResource("admin:network", loadNetwork);
   useEffect(() => {
@@ -134,6 +141,19 @@ export function NetworkAdminView({
   }>({ open: false, support: null });
   // « Disponibilités » (calendar + unavailability blocks)
   const [availabilityOf, setAvailabilityOf] = useState<SupportResponse | null>(null);
+  // Round 2: player device keys (« Appairer l'écran »)
+  const deviceKeys = useResource("admin:device-keys", (signal) => deviceKeysApi.list({ signal }));
+  const [pairingOf, setPairingOf] = useState<SupportResponse | null>(null);
+  const keyStatus = useMemo(
+    () => new Map((deviceKeys.data ?? []).map((k) => [k.supportId, k] as const)),
+    [deviceKeys.data],
+  );
+  const onKeyStatusChange = (next: DeviceKeyStatusResponse) =>
+    deviceKeys.setData((prev) =>
+      prev?.some((k) => k.supportId === next.supportId)
+        ? prev.map((k) => (k.supportId === next.supportId ? next : k))
+        : [...(prev ?? []), next],
+    );
 
   const changeView = (next: NetworkView) => {
     setView(next);
@@ -249,7 +269,10 @@ export function NetworkAdminView({
             ) : null}
             <Button
               variant="secondary"
-              onClick={reload}
+              onClick={() => {
+                reload();
+                deviceKeys.reload();
+              }}
               loading={loading && data !== undefined}
               loadingLabel="Actualisation…"
               iconLeft={<RefreshCw aria-hidden="true" />}
@@ -329,6 +352,8 @@ export function NetworkAdminView({
                     onCreate={() => setSupportDialog({ open: true, support: null })}
                     onEdit={(support) => setSupportDialog({ open: true, support })}
                     onAvailability={setAvailabilityOf}
+                    onPairing={setPairingOf}
+                    keyStatus={deviceKeys.data ? keyStatus : null}
                     onGoToZones={() => changeTab("zones")}
                   />
                 </TabsContent>
@@ -350,6 +375,16 @@ export function NetworkAdminView({
           <Skeleton className="h-16 w-full" />
         </LoadingRegion>
       )}
+
+      <DevicePairingDialog
+        support={pairingOf}
+        status={pairingOf && deviceKeys.data ? keyStatus.get(pairingOf.id) : undefined}
+        canAct={isAdmin}
+        onOpenChange={(open) => {
+          if (!open) setPairingOf(null);
+        }}
+        onStatusChange={onKeyStatusChange}
+      />
 
       {canAct ? (
         <>
@@ -690,6 +725,8 @@ function SupportsPanel({
   onCreate,
   onEdit,
   onAvailability,
+  onPairing,
+  keyStatus,
   onGoToZones,
 }: {
   data: NetworkData;
@@ -697,6 +734,10 @@ function SupportsPanel({
   onCreate: () => void;
   onEdit: (support: SupportResponse) => void;
   onAvailability: (support: SupportResponse) => void;
+  /** Round 2: « Appairer l'écran » (device key status and issue). */
+  onPairing: (support: SupportResponse) => void;
+  /** Device key status per Porteur; null while loading or unavailable. */
+  keyStatus: ReadonlyMap<number, DeviceKeyStatusResponse> | null;
   onGoToZones: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -734,6 +775,24 @@ function SupportsPanel({
       key: "status",
       header: "État",
       cell: (s) => <StatusPill type="support" status={s.technicalStatus} size="sm" />,
+    },
+    {
+      key: "pairing",
+      header: "Écran",
+      mobileMeta: true,
+      cell: (s) =>
+        keyStatus === null ? (
+          <span className="text-muted">—</span>
+        ) : (
+          <span
+            className={cx(
+              "text-[0.8125rem]",
+              keyStatus.get(s.id)?.paired ? "text-ink-soft" : "text-muted",
+            )}
+          >
+            {deviceStatusLabel(keyStatus.get(s.id))}
+          </span>
+        ),
     },
     {
       key: "capacity",
@@ -787,6 +846,9 @@ function SupportsPanel({
           >
             <CalendarClock aria-hidden="true" />
           </IconAction>
+          <IconAction label={`Appairer l'écran du Porteur ${s.name}`} onClick={() => onPairing(s)}>
+            <KeyRound aria-hidden="true" />
+          </IconAction>
           {canAct ? (
             <IconAction label={`Modifier le Porteur ${s.name}`} onClick={() => onEdit(s)}>
               <Pencil aria-hidden="true" />
@@ -800,9 +862,10 @@ function SupportsPanel({
   return (
     <div className="flex flex-col gap-4">
       <Alert tone="info" live="none" icon={<MonitorPlay />}>
-        Le bouton « lecteur » ouvre, dans un nouvel onglet, ce que l&apos;écran diffuserait. Il
-        interroge le service à chaque fin de contenu, et chaque appel ajoute une ligne au journal de
-        diffusion : fermez-le après la démonstration.
+        Le bouton « lecteur » ouvre, dans un nouvel onglet, ce que l&apos;écran diffuserait, une
+        fois l&apos;écran appairé (« Appairer l&apos;écran » génère son lien). Il interroge le
+        service à chaque fin de contenu, et chaque appel ajoute une ligne au journal de diffusion :
+        fermez-le après la démonstration.
       </Alert>
 
       {data.supports.length > 0 ? (
@@ -878,6 +941,14 @@ function SupportsPanel({
               iconLeft={<CalendarClock aria-hidden="true" />}
             >
               Disponibilités
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onPairing(s)}
+              iconLeft={<KeyRound aria-hidden="true" />}
+            >
+              Appairer l&apos;écran
             </Button>
             {canAct ? (
               <Button
