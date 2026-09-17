@@ -77,6 +77,6 @@ export function sessionDestination(
   next: string | string[] | null | undefined,
   user: Pick<SessionUser, "role" | "mustChangePassword">,
 ): string {
-  if (user.mustChangePassword === true) return withNext(PASSWORD_REQUIRED_PATH, next);
+  if (user.mustChangePassword === true) return withNext(PASSWORD_REQUIRED_PATH, safeRedirectPath(next));
   return postAuthDestination(next, user.role);
 }

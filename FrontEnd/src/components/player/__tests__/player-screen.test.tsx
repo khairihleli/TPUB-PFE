@@ -11,6 +11,10 @@ vi.mock("@/lib/api/endpoints", () => ({
 }));
 
 import { PlayerScreen } from "@/components/player/player-screen";
+import { readDeviceKey, storeDeviceKey } from "@/lib/player/device-key";
+
+const KEY = "tpd_" + "A".repeat(43);
+const NEW_KEY = "tpd_" + "b".repeat(43);
 
 const urgent: Diffusion = {
   type: "URGENCE",
@@ -26,6 +30,8 @@ beforeEach(() => {
   api.next.mockReset();
   api.interaction.mockReset();
   api.interaction.mockResolvedValue(undefined);
+  window.localStorage.clear();
+  for (const id of [2, 3, 5, 8, 12, 99]) storeDeviceKey(id, KEY);
 });
 
 afterEach(() => {
@@ -158,7 +164,10 @@ describe("PlayerScreen", () => {
     fireEvent.click(tap);
     fireEvent.click(tap);
     expect(api.interaction).toHaveBeenCalledTimes(1);
-    expect(api.interaction).toHaveBeenCalledWith({ diffusionLogId: 41, type: "CLIC" });
+    expect(api.interaction).toHaveBeenCalledWith(
+      { diffusionLogId: 41, type: "CLIC" },
+      { supportId: 5, deviceKey: KEY },
+    );
     expect(await screen.findByText("Intérêt enregistré, merci")).toBeInTheDocument();
   });
 
@@ -227,5 +236,53 @@ describe("PlayerScreen", () => {
     const [query] = api.next.mock.calls[0] as [{ datetime: string }];
     expect(query.datetime.startsWith("2026-12-24T20:00:0")).toBe(true);
     expect(screen.getByText("Heure simulée (?datetime)")).toBeInTheDocument();
+  });
+
+  it("sends the stored device key of the screen", async () => {
+    api.next.mockResolvedValue(urgent);
+    render(<PlayerScreen supportId={3} />);
+    await waitFor(() => expect(api.next).toHaveBeenCalled());
+    const [, options] = api.next.mock.calls[0] as [unknown, { deviceKey: string }];
+    expect(options.deviceKey).toBe(KEY);
+  });
+
+  it("never polls an unpaired screen and explains how to pair it", async () => {
+    window.localStorage.clear();
+    render(<PlayerScreen supportId={7} />);
+    expect(await screen.findByText("Écran non appairé")).toBeInTheDocument();
+    expect(screen.getByText(/Réseau › Porteur › Appairer l.écran/)).toBeInTheDocument();
+    expect(api.next).not.toHaveBeenCalled();
+  });
+
+  it("stores the pairing key of the URL and removes it from the address bar", async () => {
+    window.localStorage.clear();
+    window.history.replaceState(null, "", `/ecran/7?cle=${NEW_KEY}&datetime=2026-12-24T20:00`);
+    api.next.mockResolvedValue(urgent);
+    render(<PlayerScreen supportId={7} pairingKey={NEW_KEY} />);
+    await waitFor(() => expect(api.next).toHaveBeenCalled());
+    expect(readDeviceKey(7)).toBe(NEW_KEY);
+    expect(window.location.search).toBe("?datetime=2026-12-24T20%3A00");
+    const [, options] = api.next.mock.calls[0] as [unknown, { deviceKey: string }];
+    expect(options.deviceKey).toBe(NEW_KEY);
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("forgets a revoked key and stops polling", async () => {
+    api.next.mockRejectedValue(
+      new ApiError(401, "Clé d'appareil invalide ou révoquée.", { code: "DEVICE_KEY_INVALID" }),
+    );
+    render(<PlayerScreen supportId={3} />);
+    expect(await screen.findByText("Écran non appairé")).toBeInTheDocument();
+    expect(screen.getByText(/a été révoquée ou remplacée/)).toBeInTheDocument();
+    expect(readDeviceKey(3)).toBeNull();
+    expect(api.next).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns when the backend ignored the simulated date-time", async () => {
+    api.next.mockResolvedValue({ ...urgent, type: "DEFAUT", title: "TPUB", simulatedTime: false });
+    render(<PlayerScreen supportId={2} simulatedAt="2026-12-24T20:00:00" />);
+    expect(
+      await screen.findByText("Heure simulée ignorée : le serveur utilise son horloge"),
+    ).toBeInTheDocument();
   });
 });

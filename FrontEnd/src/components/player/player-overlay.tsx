@@ -12,7 +12,11 @@ import {
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import type { PlayerState } from "@/components/player/player-screen";
-import { formatCountdown, secondsUntil } from "@/components/player/player-schedule";
+import {
+  formatCountdown,
+  secondsUntil,
+  simulatedTimeIgnored,
+} from "@/components/player/player-schedule";
 import { useNow } from "@/components/player/use-now";
 import type { DiffusionTypeUpper } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
@@ -230,7 +234,9 @@ export function PlayerOverlay({
             <div className="col-span-2 min-w-0">
               <dt className="text-[0.6875rem] text-muted-2">Heure simulée (?datetime)</dt>
               <dd className="font-label font-semibold text-warning tabular">
-                {state.diffusion?.datetime?.replace("T", " à ") ?? "—"}
+                {simulatedTimeIgnored(simulated, state.diffusion)
+                  ? "Heure simulée ignorée : le serveur utilise son horloge"
+                  : (state.diffusion?.datetime?.replace("T", " à ") ?? "—")}
               </dd>
             </div>
           ) : null}

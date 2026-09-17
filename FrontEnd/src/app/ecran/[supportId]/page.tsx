@@ -7,7 +7,10 @@ import { PlayerScreen } from "@/components/player/player-screen";
 
 interface PageProps {
   params: Promise<{ supportId: string }>;
-  /** `?datetime=2026-09-20T18:30` simulates the local Tunis clock (demo of time windows). */
+  /**
+   * `?datetime=2026-09-20T18:30` simulates the local Tunis clock (demo of time windows, honoured
+   * only by a backend in the `local` profile). `?cle=` is the pairing key (round 2 §3.7).
+   */
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
@@ -21,6 +24,7 @@ export default async function Page({ params, searchParams }: PageProps) {
   const { supportId } = await params;
   const query = (await searchParams) ?? {};
   const rawDatetime = Array.isArray(query.datetime) ? query.datetime[0] : query.datetime;
+  const rawKey = Array.isArray(query.cle) ? query.cle[0] : query.cle;
   const id = parseSupportId(supportId);
 
   if (id === null) {
@@ -43,5 +47,11 @@ export default async function Page({ params, searchParams }: PageProps) {
     );
   }
 
-  return <PlayerScreen supportId={id} simulatedAt={parseSimulatedDateTime(rawDatetime)} />;
+  return (
+    <PlayerScreen
+      supportId={id}
+      simulatedAt={parseSimulatedDateTime(rawDatetime)}
+      pairingKey={rawKey ?? null}
+    />
+  );
 }
