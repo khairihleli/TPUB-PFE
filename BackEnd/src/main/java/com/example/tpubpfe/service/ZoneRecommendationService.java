@@ -9,6 +9,7 @@ import com.example.tpubpfe.model.Zone;
 import com.example.tpubpfe.repository.DiffusionLogRepository;
 import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.ZoneRepository;
+import com.example.tpubpfe.service.pricing.DynamicPricingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,6 +74,7 @@ public class ZoneRecommendationService {
         }
 
         AvailabilityService.Snapshot snapshot = availabilityService.load(window.startDate(), window.endDate());
+        DynamicPricingService.Context pricing = estimationService.pricingContext(window, null);
         List<ZoneFigures> figures = new ArrayList<>();
         for (Zone zone : zoneRepository.findByIsActiveTrue()) {
             List<DiffusionSupport> supports = supportsByZone.getOrDefault(zone.getId(), List.of());
@@ -86,7 +88,7 @@ public class ZoneRecommendationService {
                         snapshot.reservationsOf(support.getId()), snapshot.blocksOf(support.getId()), null);
                 if (result.status() == AvailabilityStatus.DISPONIBLE) {
                     available++;
-                    EstimationService.Estimate estimate = estimationService.estimate(support, window);
+                    EstimationService.Estimate estimate = estimationService.estimate(support, window, pricing);
                     views += estimate.views();
                     cost = cost.add(estimate.cost());
                 }

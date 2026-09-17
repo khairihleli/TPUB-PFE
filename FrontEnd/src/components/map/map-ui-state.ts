@@ -12,7 +12,7 @@ import {
   type ViewMode,
 } from "@/lib/network/map-style";
 
-export type MapTool = "none" | "measure" | "catchment" | "place" | "zone";
+export type MapTool = "none" | "measure" | "catchment" | "place" | "zone" | "polygon";
 export type MapPanelId = "basemap" | "layers" | "filters" | "legend" | "list" | "tools";
 
 export const CATCHMENT_MIN_KM = 0.2;

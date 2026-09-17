@@ -4,6 +4,7 @@ import com.example.tpubpfe.config.TpubProperties;
 import com.example.tpubpfe.dto.CampaignEstimateResponse;
 import com.example.tpubpfe.dto.EstimateRequest;
 import com.example.tpubpfe.dto.EstimateResponse;
+import com.example.tpubpfe.dto.PriceBreakdown;
 import com.example.tpubpfe.model.Campaign;
 import com.example.tpubpfe.model.DiffusionSupport;
 import com.example.tpubpfe.model.Reservation;
@@ -11,6 +12,7 @@ import com.example.tpubpfe.model.ReservationStatus;
 import com.example.tpubpfe.model.SupportType;
 import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
+import com.example.tpubpfe.service.pricing.DynamicPricingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ import java.util.stream.Collectors;
 
 /**
  * Views and cost estimation (contract §2.6). The constants are internal simulation values ({@code tpub.pricing}).
+ * Round 2 (docs/round2-contract.md §4.6): the cost is the dynamic {@code finalCost}; the R1 cost is the base cost.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,12 +44,46 @@ public class EstimationService {
     private final DiffusionSupportRepository supportRepository;
     private final ReservationRepository reservationRepository;
     private final CampaignAccessGuard accessGuard;
+    private final DynamicPricingService pricingService;
 
-    public record Estimate(long views, BigDecimal cost) {
+    /**
+     * @param cost      dynamic final cost (R1 cost when pricing is disabled)
+     * @param breakdown price breakdown ({@code breakdown.baseCost} = R1 cost), null for a base estimate
+     */
+    public record Estimate(long views, BigDecimal cost, PriceBreakdown breakdown) {
+
+        public BigDecimal baseCost() {
+            return breakdown != null ? breakdown.getBaseCost() : cost;
+        }
+
+        public BigDecimal multiplier() {
+            return breakdown != null ? breakdown.getMultiplier() : BigDecimal.ONE;
+        }
     }
 
-    /** Estimated views and cost of one support over a window. */
+    /** Estimated views and dynamic cost of one support over a window (no campaign excluded from occupancy). */
     public Estimate estimate(DiffusionSupport support, TimeWindow window) {
+        return estimate(support, window, (Long) null);
+    }
+
+    /** Same, excluding the reservations of {@code excludeCampaignId} from occupancy and availability. */
+    public Estimate estimate(DiffusionSupport support, TimeWindow window, Long excludeCampaignId) {
+        return estimate(support, window, pricingService.context(window, excludeCampaignId));
+    }
+
+    /** Same with a preloaded pricing snapshot of {@code window} (reuse it for many supports). */
+    public Estimate estimate(DiffusionSupport support, TimeWindow window, DynamicPricingService.Context context) {
+        Estimate base = baseEstimate(support, window);
+        PriceBreakdown breakdown = pricingService.price(support, base.cost(), context);
+        return new Estimate(base.views(), breakdown.getFinalCost(), breakdown);
+    }
+
+    public DynamicPricingService.Context pricingContext(TimeWindow window, Long excludeCampaignId) {
+        return pricingService.context(window, excludeCampaignId);
+    }
+
+    /** R1 estimate: views and {@code views × cpm / 1000}, without dynamic pricing (breakdown null). */
+    public Estimate baseEstimate(DiffusionSupport support, TimeWindow window) {
         long minutes = Math.max(0, window.minutesPerDay());
         long days = Math.max(0, window.days());
         BigDecimal base = BigDecimal.valueOf(baseViewsPerHour(support.getSupportType()));
@@ -57,7 +94,7 @@ public class EstimationService {
                 .divide(SIXTY.multiply(BigDecimal.valueOf(capacity)), 10, RoundingMode.HALF_UP)
                 .setScale(0, RoundingMode.FLOOR);
         long viewCount = views.longValueExact();
-        return new Estimate(viewCount, cost(support.getSupportType(), viewCount));
+        return new Estimate(viewCount, cost(support.getSupportType(), viewCount), null);
     }
 
     /** {@code round(views × cpm / 1000, 2, HALF_UP)}. */
@@ -65,9 +102,16 @@ public class EstimationService {
         return BigDecimal.valueOf(views).multiply(cpm(type)).divide(THOUSAND, 2, RoundingMode.HALF_UP);
     }
 
-    /** Cost of one diffusion: {@code round(cpm / 1000, 4, HALF_UP)}. */
+    /** Cost of one diffusion: {@code round(cpm / 1000, 4, HALF_UP)} (multiplier 1). */
     public BigDecimal unitCost(DiffusionSupport support) {
         return cpm(support.getSupportType()).divide(THOUSAND, 4, RoundingMode.HALF_UP);
+    }
+
+    /** Cost of one diffusion under a reservation: {@code round(R1 unit cost × priceMultiplier, 4, HALF_UP)}. */
+    public BigDecimal unitCost(DiffusionSupport support, Reservation reservation) {
+        BigDecimal multiplier = reservation == null || reservation.getPriceMultiplier() == null
+                ? BigDecimal.ONE : reservation.getPriceMultiplier();
+        return cpm(support.getSupportType()).multiply(multiplier).divide(THOUSAND, 4, RoundingMode.HALF_UP);
     }
 
     static BigDecimal visibilityFactor(BigDecimal visibilityScore) {
@@ -94,12 +138,16 @@ public class EstimationService {
         Map<Long, DiffusionSupport> supports = supportRepository.findAllById(ids).stream()
                 .collect(Collectors.toMap(DiffusionSupport::getId, Function.identity()));
         List<EstimateResponse.Line> lines = new ArrayList<>();
+        DynamicPricingService.Context context = null;
         for (Long id : ids) {
             DiffusionSupport support = supports.get(id);
             if (support == null) {
                 throw NetworkErrors.supportNotFound();
             }
-            Estimate estimate = estimate(support, window);
+            if (context == null) {
+                context = pricingService.context(window, request.getCampaignId());
+            }
+            Estimate estimate = estimate(support, window, context);
             lines.add(EstimateResponse.Line.builder()
                     .supportId(support.getId())
                     .supportName(support.getName())
@@ -107,6 +155,8 @@ public class EstimationService {
                     .zoneName(support.getZone().getName())
                     .estimatedViews(estimate.views())
                     .estimatedCost(estimate.cost())
+                    .baseCost(estimate.baseCost())
+                    .pricing(estimate.breakdown())
                     .build());
         }
         return EstimateResponse.builder()
@@ -115,6 +165,7 @@ public class EstimationService {
                 .lines(lines)
                 .totalViews(lines.stream().mapToLong(EstimateResponse.Line::getEstimatedViews).sum())
                 .totalCost(lines.stream().map(EstimateResponse.Line::getEstimatedCost).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .totalBaseCost(lines.stream().map(EstimateResponse.Line::getBaseCost).reduce(BigDecimal.ZERO, BigDecimal::add))
                 .build();
     }
 
@@ -136,6 +187,10 @@ public class EstimationService {
                         .endTime(r.getEndTime())
                         .estimatedViews(r.getEstimatedViews() == null ? 0 : r.getEstimatedViews())
                         .estimatedCost(r.getEstimatedCost() == null ? BigDecimal.ZERO : r.getEstimatedCost())
+                        .baseCost(r.getBaseCost() != null ? r.getBaseCost()
+                                : (r.getEstimatedCost() == null ? BigDecimal.ZERO : r.getEstimatedCost()))
+                        .priceMultiplier(r.getPriceMultiplier() == null ? BigDecimal.ONE : r.getPriceMultiplier())
+                        .pricing(r.getPricingBreakdown())
                         .build())
                 .toList();
         BigDecimal budget = campaign.getBudget() == null ? BigDecimal.ZERO : campaign.getBudget();

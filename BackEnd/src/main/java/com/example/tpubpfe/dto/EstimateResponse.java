@@ -19,6 +19,8 @@ public class EstimateResponse {
     private List<Line> lines;
     private long totalViews;
     private BigDecimal totalCost;
+    /** Σ baseCost (round 2). */
+    private BigDecimal totalBaseCost;
 
     @Data
     @Builder
@@ -30,6 +32,9 @@ public class EstimateResponse {
         private String supportType;
         private String zoneName;
         private long estimatedViews;
+        /** Dynamic final cost. */
         private BigDecimal estimatedCost;
+        private BigDecimal baseCost;
+        private PriceBreakdown pricing;
     }
 }

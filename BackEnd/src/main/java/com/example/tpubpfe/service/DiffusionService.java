@@ -32,7 +32,7 @@ import com.example.tpubpfe.repository.PaymentSimulationRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.repository.SupportAvailabilityRepository;
 import com.example.tpubpfe.service.storage.FileStorageService;
-import com.example.tpubpfe.util.GeoUtils;
+import com.example.tpubpfe.util.TargetingGeometry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,8 +81,11 @@ public class DiffusionService {
     private final TpubProperties properties;
     private final Clock clock;
 
-    /** An eligible campaign with its first reservation and score. */
-    record Candidate(Campaign campaign, Reservation reservation, int score, Instant lastDiffusion) {
+    /**
+     * An eligible campaign with its first reservation, score and the unit cost of one diffusion under that
+     * reservation (R1 unit cost × the reservation's price multiplier, docs/round2-contract.md §4.6).
+     */
+    record Candidate(Campaign campaign, Reservation reservation, int score, Instant lastDiffusion, BigDecimal unitCost) {
     }
 
     @Transactional
@@ -123,11 +126,10 @@ public class DiffusionService {
 
         // 2. support gate, 3-5. candidates and rotation
         if (supportOpen(support, blockRepository.findBySupportIdAndAvailabilityDate(support.getId(), date), time)) {
-            BigDecimal unitCost = estimationService.unitCost(support);
-            List<Candidate> candidates = candidates(support, dateTime, at, unitCost);
+            List<Candidate> candidates = candidates(support, dateTime, at);
             Optional<Candidate> chosen = pick(candidates);
             if (chosen.isPresent()) {
-                return diffuseAd(support, chosen.get(), unitCost, dateTime, at);
+                return diffuseAd(support, chosen.get(), dateTime, at);
             }
         }
 
@@ -152,9 +154,10 @@ public class DiffusionService {
                 .build();
     }
 
-    private DiffusionResponse diffuseAd(DiffusionSupport support, Candidate candidate, BigDecimal unitCost,
-                                        LocalDateTime dateTime, Instant at) {
+    private DiffusionResponse diffuseAd(DiffusionSupport support, Candidate candidate, LocalDateTime dateTime,
+                                        Instant at) {
         Campaign campaign = candidate.campaign();
+        BigDecimal unitCost = candidate.unitCost();
         MediaFile media = mediaFileRepository.findByCampaignIdOrderBySortOrderAscIdAsc(campaign.getId()).stream()
                 .findFirst().orElse(null);
         String mediaUrl = media != null ? MediaService.publicUrl(storage, media.getFilePath()) : null;
@@ -190,7 +193,7 @@ public class DiffusionService {
                 .build();
     }
 
-    List<Candidate> candidates(DiffusionSupport support, LocalDateTime dateTime, Instant at, BigDecimal unitCost) {
+    List<Candidate> candidates(DiffusionSupport support, LocalDateTime dateTime, Instant at) {
         LocalDate date = dateTime.toLocalDate();
         LocalTime time = dateTime.toLocalTime();
         Map<Long, Reservation> firstByCampaign = new LinkedHashMap<>();
@@ -203,6 +206,7 @@ public class DiffusionService {
         List<Candidate> result = new ArrayList<>();
         for (Reservation reservation : firstByCampaign.values()) {
             Campaign campaign = reservation.getCampaign();
+            BigDecimal unitCost = estimationService.unitCost(support, reservation);
             if (!isCampaignEligible(campaign, date, time, unitCost)) {
                 continue;
             }
@@ -221,7 +225,7 @@ public class DiffusionService {
                     .orElse(null);
             Instant last = diffusionLogRepository.findLastDiffusion(DiffusionContentType.PUBLICITE, campaign.getId(),
                     support.getId());
-            result.add(new Candidate(campaign, reservation, score(campaign.getPriorityScore(), quality), last));
+            result.add(new Candidate(campaign, reservation, score(campaign.getPriorityScore(), quality), last, unitCost));
         }
         return result;
     }
@@ -249,12 +253,9 @@ public class DiffusionService {
         return e.getEndDate().atTime(e.getEndTime() != null ? e.getEndTime() : LocalTime.of(23, 59, 59));
     }
 
+    /** Polygon &gt; circle &gt; zone (docs/round2-contract.md §4.4). */
     static boolean targets(EmergencyMessage e, DiffusionSupport support) {
-        if (e.getLatitude() != null && e.getLongitude() != null && e.getRadiusKm() != null) {
-            return GeoUtils.within(support.getLatitude().doubleValue(), support.getLongitude().doubleValue(),
-                    e.getLatitude().doubleValue(), e.getLongitude().doubleValue(), e.getRadiusKm().doubleValue());
-        }
-        return e.getZone() != null && support.getZone() != null && e.getZone().getId().equals(support.getZone().getId());
+        return TargetingGeometry.emergencyTargets(e, support);
     }
 
     static int urgencyRank(UrgencyLevel level) {
@@ -306,8 +307,9 @@ public class DiffusionService {
         return budget.signum() > 0 && consumed.add(unitCost).compareTo(budget) <= 0;
     }
 
-    static boolean supportInsideCampaignZones(DiffusionSupport support, List<CampaignZone> circles) {
-        return ReservationService.insideAnyCircle(support, circles);
+    /** Inside any circle or polygon of the campaign. */
+    static boolean supportInsideCampaignZones(DiffusionSupport support, List<CampaignZone> zones) {
+        return ReservationService.insideAnyCircle(support, zones);
     }
 
     /** {@code priorityScore × 10 + round(0.2 × quality)} (quality 0 when no check), 0..120. */

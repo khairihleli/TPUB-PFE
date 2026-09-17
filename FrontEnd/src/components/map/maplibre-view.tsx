@@ -33,6 +33,13 @@ import {
   zonesToFeatureCollection,
 } from "@/lib/network/geojson";
 import {
+  closeDraft,
+  heatmapFeatureCollection,
+  moveDraftVertex,
+  polygonDraftFeatureCollection,
+  polygonsFeatureCollection,
+} from "@/lib/network/overlays";
+import {
   buildMapStyle,
   layerVisibility,
   MAP_LAYER_IDS,
@@ -139,6 +146,10 @@ export function MapLibreView(props: EngineProps) {
     dispatch,
     chrome = "full",
     availability,
+    polygons,
+    polygonDraft = null,
+    onDraftChange,
+    heatmap = null,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -152,6 +163,7 @@ export function MapLibreView(props: EngineProps) {
   const draggingRef = useRef(false);
 
   // latest values for MapLibre listeners registered once
+  const drawing = { polygonDraft, onDraftChange };
   const latest = useRef({
     onMapPoint,
     onZoneActivate,
@@ -163,6 +175,7 @@ export function MapLibreView(props: EngineProps) {
     setCardSupportId,
     pickPoints: props.pickPoints === true,
     compactChrome: chrome === "compact",
+    ...drawing,
   });
   latest.current = {
     onMapPoint,
@@ -175,6 +188,7 @@ export function MapLibreView(props: EngineProps) {
     setCardSupportId,
     pickPoints: props.pickPoints === true,
     compactChrome: chrome === "compact",
+    ...drawing,
   };
   const [initialValues] = useState(() => ({
     basemap: ui.basemap,
@@ -232,6 +246,22 @@ export function MapLibreView(props: EngineProps) {
       if (target instanceof Element && target.closest(".maplibregl-marker")) return;
       const l = latest.current;
       const point = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      // click on the first vertex closes the ring (docs/round2-contract.md §4.8)
+      if (l.ui.tool === "polygon" && l.polygonDraft && !l.polygonDraft.closed && l.onDraftChange) {
+        const hit = instance.getLayer(MAP_LAYER_IDS.polygonDraftVertices)
+          ? instance.queryRenderedFeatures(
+              [
+                [e.point.x - 8, e.point.y - 8],
+                [e.point.x + 8, e.point.y + 8],
+              ],
+              { layers: [MAP_LAYER_IDS.polygonDraftVertices] },
+            )
+          : [];
+        if (hit.some((f) => f.properties?.first === true) && l.polygonDraft.vertices.length >= 3) {
+          l.onDraftChange(closeDraft(l.polygonDraft));
+          return;
+        }
+      }
       if (l.ui.tool !== "none" || l.pickPoints) {
         l.onMapPoint(point);
         return;
@@ -252,6 +282,10 @@ export function MapLibreView(props: EngineProps) {
         e.preventDefault();
         l.dispatch({ type: "measure-finish" });
       }
+      if (l.ui.tool === "polygon" && l.polygonDraft && l.onDraftChange) {
+        e.preventDefault();
+        l.onDraftChange(closeDraft(l.polygonDraft));
+      }
     };
     const onMouseMove = (e: MapMouseEvent) => {
       const l = latest.current;
@@ -260,6 +294,43 @@ export function MapLibreView(props: EngineProps) {
       const hit = instance.queryRenderedFeatures(e.point, { layers: [MAP_LAYER_IDS.zonesFill] });
       instance.getCanvas().style.cursor = hit.length > 0 ? "pointer" : "";
     };
+
+    // drag a vertex of a closed draft (custom handles, no MapLibre plugin)
+    let dragIndex: number | null = null;
+    const onVertexDown = (e: MapMouseEvent) => {
+      const l = latest.current;
+      if (!l.polygonDraft?.closed || !l.onDraftChange) return;
+      if (!instance.getLayer(MAP_LAYER_IDS.polygonDraftVertices)) return;
+      const hit = instance.queryRenderedFeatures(
+        [
+          [e.point.x - 8, e.point.y - 8],
+          [e.point.x + 8, e.point.y + 8],
+        ],
+        { layers: [MAP_LAYER_IDS.polygonDraftVertices] },
+      );
+      const index: unknown = hit[0]?.properties?.index;
+      if (typeof index !== "number") return;
+      e.preventDefault();
+      dragIndex = index;
+      instance.dragPan.disable();
+      instance.getCanvas().style.cursor = "grabbing";
+    };
+    const onVertexMove = (e: MapMouseEvent) => {
+      const l = latest.current;
+      if (dragIndex === null || !l.polygonDraft || !l.onDraftChange) return;
+      l.onDraftChange(
+        moveDraftVertex(l.polygonDraft, dragIndex, { lng: e.lngLat.lng, lat: e.lngLat.lat }),
+      );
+    };
+    const onVertexUp = () => {
+      if (dragIndex === null) return;
+      dragIndex = null;
+      instance.dragPan.enable();
+      instance.getCanvas().style.cursor = latest.current.ui.tool === "none" ? "" : "crosshair";
+    };
+    instance.on("mousedown", onVertexDown);
+    instance.on("mousemove", onVertexMove);
+    instance.on("mouseup", onVertexUp);
 
     instance.on("style.load", onLoad);
     instance.on("load", onLoad);
@@ -363,6 +434,19 @@ export function MapLibreView(props: EngineProps) {
       measureFeatureCollection(ui.tool === "measure" ? ui.measure.points : []),
     );
   }, [setData, ui.tool, ui.measure.points]);
+
+  // ---- round 2 overlays --------------------------------------------------------------------
+  useEffect(() => {
+    setData(MAP_SOURCE_IDS.polygons, polygonsFeatureCollection(polygons ?? []));
+  }, [setData, polygons]);
+
+  useEffect(() => {
+    setData(MAP_SOURCE_IDS.polygonDraft, polygonDraftFeatureCollection(polygonDraft));
+  }, [setData, polygonDraft]);
+
+  useEffect(() => {
+    setData(MAP_SOURCE_IDS.heatmap, heatmapFeatureCollection(heatmap));
+  }, [setData, heatmap]);
 
   // ---- style state -----------------------------------------------------------------------
   useEffect(() => {

@@ -253,6 +253,60 @@ Round 2, lane L1 (`docs/round2-contract.md` §2). Types in `src/lib/api/types-ia
 
 Estimates (internal simulation constants, shown only as « Estimation », never on marketing pages): `views = floor(baseViewsPerHour(type) × (0.5 + visibility/100) × hoursPerDay × days / capacity)`, `cost = views × CPM(type) / 1000`.
 
+### 5.5b Polygones, cartes de chaleur, tarification dynamique
+
+Round 2, lane L3 (docs/round2-contract.md §4). Front : `src/lib/api/types-carte.ts` + `endpoints-carte.ts`,
+géométrie partagée avec le backend dans `src/lib/polygon.ts` (mêmes limites, mêmes messages).
+
+**Zones de campagne (§4.3)** — `PUT /api/campaigns/{id}/zones` accepte désormais cercles **et** polygones :
+
+```ts
+{ zones: ({ type?: "CERCLE"; latitude; longitude; radiusKm /*0.1..50*/; label? }
+        | { type: "POLYGONE"; polygon: GeoJsonPolygon | GeoJsonMultiPolygon; label? })[] }  // 1..5
+```
+
+La réponse (`CampaignZoneResponse`) gagne `type`, `polygon` et `areaKm2` ; pour un polygone,
+`latitude`/`longitude` sont le **centroïde** et `radiusKm` le **rayon circonscrit** (tout lecteur qui ne
+connaît que les cercles reste correct). Validation (première erreur gagnante, 400 `INVALID_POLYGON`,
+`errors = { "zones[i].polygon": "<raison française>" }`) : géométrie GeoJSON, coordonnées dans les
+bornes, 3 sommets distincts minimum, limites (100 sommets par anneau, 200 au total, 5 parties,
+5 trous), tracé non croisé et trou contenu, aire 0,01–2 000 km², rayon circonscrit ≤ 50 km.
+L'appartenance d'un Porteur (réservation, diffusion, disponibilité, annulation des réservations
+temporaires) utilise le point-dans-polygone pour un `POLYGONE` et la haversine pour un `CERCLE`.
+
+**Urgences (§4.4)** — `POST /api/emergency` gagne `polygon` (exclusif avec le cercle :
+400 `EMERGENCY_TARGET_CONFLICT`). Priorité de ciblage : polygone > cercle > zone. Sans `zoneId`, la
+zone est déduite du centroïde. `EmergencyResponse` gagne `targetPolygon`.
+
+**Cartes de chaleur (§4.5)** — points GeoJSON `FeatureCollection<Point>`, `properties.weight ≥ 0` ;
+`to < from` ou période > 366 jours → 400 `INVALID_RANGE`.
+
+| Endpoint | Rôles | Contenu |
+|---|---|---|
+| `GET /api/heatmap/diffusions?from&to&contentType&zoneId` | ADMIN, SUPERVISEUR, OPERATEUR | 30 derniers jours et `PUBLICITE` par défaut ; un point par Porteur diffusé, `weight` = nombre de diffusions, `properties` : `supportId, supportName, zoneId, zoneName, weight, clicks` |
+| `GET /api/heatmap/demand?from&to&zoneId` | ADMIN, SUPERVISEUR, OPERATEUR | aujourd'hui → +29 jours par défaut ; `reservations` (heures-créneau réservées par Porteur, `occupancy`), `targets` (zones ciblées des campagnes non brouillon), `byZone` (`reservedHours`, `capacityHours = jours × 16 h × capacité`, `occupancy`, `targets`) |
+| `GET /api/heatmap/demand/public?startDate&endDate&startTime&endTime` | + ANNONCEUR | assistant de campagne : un point par Porteur ACTIF, `weight` = occupation 0..1 du créneau, `byZone` (`occupancy`, `availableSupports`, `totalSupports`) ; **aucune donnée campagne ou client**. `startTime ≥ endTime` → 400 `INVALID_TIME_RANGE` |
+
+**Tarification dynamique (§4.6)** — le coût estimé est `base × multiplicateur` :
+
+```
+hour  = moyenne pondérée des tranches horaires du créneau     (00:00–07:00 ×0,70 · 07:00–10:00 ×1,15 ·
+                                                               10:00–16:00 ×1,00 · 16:00–20:00 ×1,25 ·
+                                                               20:00–24:00 ×0,90)
+day   = moyenne des multiplicateurs de jour (VEN ×1,05, SAM ×1,15, DIM ×0,90, sinon ×1,00)
+demand   = 1 + 0,30 × (0,60 × occupation du Porteur + 0,40 × occupation de la zone)
+scarcity = 1 + 0,20 × (1 − part de Porteurs disponibles de la zone)
+multiplicateur = borné à [0,70 ; 1,60], 4 décimales ; coût final = round(base × multiplicateur, 2)
+```
+
+`POST /api/estimates` accepte `campaignId` (exclu de l'occupation) et renvoie `baseCost` +
+`pricing: PriceBreakdown` par ligne ainsi que `totalBaseCost`. `GET /api/estimates/campaign/{id}`
+renvoie `baseCost`, `priceMultiplier` et le `pricing` **figé à la réservation** (null avant V8).
+`GET /api/availability` ajoute `priceMultiplier` par Porteur, `GET /api/pricing/config` (4 rôles)
+expose tranches, multiplicateurs de jour, poids et bornes. Le prix d'une réservation n'est jamais
+recalculé après coup, et la consommation de budget d'une diffusion vaut
+`coût unitaire R1 × priceMultiplier` de la réservation.
+
 ### 5.6 Reservations `/api/reservations`
 
 | Endpoint | Notes |

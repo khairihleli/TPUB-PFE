@@ -5,7 +5,13 @@
  */
 export { NetworkMap } from "@/components/map/network-map";
 export { NetworkMapSkeleton } from "@/components/map/network-map-skeleton";
-export { AvailabilityLegend, MapLegend, type MapLegendProps } from "@/components/map/map-legend";
+export {
+  AvailabilityLegend,
+  HeatmapLegend,
+  MapLegend,
+  type MapLegendProps,
+} from "@/components/map/map-legend";
+export { PolygonVertexEditor } from "@/components/map/polygon-vertex-editor";
 export {
   MapToolbar,
   MapToolButton,

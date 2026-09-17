@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   activeSupportsInCircle,
+  activeSupportsInPolygon,
   activeSupportsInZone,
   emergencySchema,
   emergencyStateOf,
@@ -9,6 +10,9 @@ import {
   emptyEmergencyForm,
   isEmergencyFormDirty,
   normalizeEmergencyDraft,
+  parsePolygonField,
+  polygonFieldError,
+  serializePolygonField,
   sortEmergencies,
 } from "@/components/admin/emergency-schema";
 import type { EmergencyResponse, SupportResponse } from "@/lib/api/types";
@@ -184,5 +188,66 @@ describe("emergency list model", () => {
     expect(
       emergencyTargetLabel(message({ latitude: 36.8, longitude: 10.1, radiusKm: 2.5 }), name),
     ).toBe("Cercle de 2,5 km · Tunis Centre");
+  });
+});
+
+describe("emergency polygon target (docs/round2-contract.md §4.4)", () => {
+  const SQUARE = "10.17,36.79;10.19,36.79;10.19,36.81;10.17,36.81";
+
+  it("serialises and parses the polygon field", () => {
+    expect(parsePolygonField(SQUARE)).toHaveLength(4);
+    expect(serializePolygonField(parsePolygonField(SQUARE))).toBe(SQUARE);
+    expect(parsePolygonField("")).toEqual([]);
+    expect(parsePolygonField("abc")).toEqual([]);
+  });
+
+  it("posts a GeoJSON polygon and keeps the zone optional", () => {
+    const parsed = emergencySchema(NOW).safeParse(form({ polygon: SQUARE }));
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).toMatchObject({ zoneId: null });
+    expect(parsed.data).toHaveProperty("polygon.type", "Polygon");
+  });
+
+  it("refuses a polygon together with a circle and an invalid tracing", () => {
+    const conflict = emergencySchema(NOW).safeParse(
+      form({ polygon: SQUARE, latitude: "36.8", longitude: "10.18" }),
+    );
+    expect(conflict.success).toBe(false);
+    if (!conflict.success) {
+      expect(conflict.error.issues[0]?.message).toBe(
+        "Choisissez un cercle ou un polygone, pas les deux.",
+      );
+    }
+    expect(polygonFieldError("10.17,36.79;10.19,36.81;10.19,36.79;10.17,36.81")).toBe(
+      "Le tracé du polygone se croise.",
+    );
+    expect(polygonFieldError("10.17,36.79;10.19,36.79")).toBe(
+      "Un polygone doit avoir au moins 3 sommets.",
+    );
+    expect(polygonFieldError(SQUARE)).toBeNull();
+  });
+
+  it("counts the active Porteurs inside the polygon and labels the target", () => {
+    const vertices = parsePolygonField(SQUARE);
+    expect(
+      activeSupportsInPolygon(
+        [
+          { latitude: 36.8, longitude: 10.18, technicalStatus: "ACTIF" },
+          { latitude: 36.8, longitude: 10.18, technicalStatus: "MAINTENANCE" },
+          { latitude: 36.9, longitude: 10.4, technicalStatus: "ACTIF" },
+        ] as SupportResponse[],
+        vertices,
+      ),
+    ).toBe(1);
+    expect(
+      emergencyTargetLabel(
+        {
+          ...message(),
+          targetPolygon: { type: "Polygon", coordinates: [] },
+        },
+        () => "Tunis Centre",
+      ),
+    ).toBe("Polygone · Tunis Centre");
   });
 });

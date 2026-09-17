@@ -20,7 +20,8 @@ import com.example.tpubpfe.repository.ClientRepository;
 import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.security.UserDetailsImpl;
-import com.example.tpubpfe.util.GeoUtils;
+import com.example.tpubpfe.service.pricing.DynamicPricingService;
+import com.example.tpubpfe.util.TargetingGeometry;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -30,6 +31,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -90,7 +92,8 @@ public class ReservationService {
         if (code != null) {
             throw NetworkErrors.byCode(code);
         }
-        Reservation saved = reservationRepository.save(build(campaign, support, window));
+        Reservation saved = reservationRepository.save(build(campaign, support, window,
+                estimationService.pricingContext(window, campaign.getId())));
         reservationSync.recomputeEstimatedViews(campaign);
         return toResponse(saved, CampaignAccessGuard.currentUser());
     }
@@ -107,13 +110,14 @@ public class ReservationService {
                 .collect(Collectors.toMap(DiffusionSupport::getId, s -> s));
         Map<String, String> errors = new LinkedHashMap<>();
         List<Reservation> toSave = new ArrayList<>();
+        DynamicPricingService.Context pricing = estimationService.pricingContext(window, campaign.getId());
         for (Long id : ids) {
             DiffusionSupport support = supports.get(id);
             String code = support == null ? "SUPPORT_NOT_FOUND" : supportRefusal(campaign, support, window, circles);
             if (code != null) {
                 errors.put(String.valueOf(id), code);
             } else {
-                toSave.add(build(campaign, support, window));
+                toSave.add(build(campaign, support, window, pricing));
             }
         }
         if (!errors.isEmpty()) {
@@ -199,15 +203,18 @@ public class ReservationService {
                 && (campaign.getEndTime() == null || !window.endTime().isAfter(campaign.getEndTime()));
     }
 
-    static boolean insideAnyCircle(DiffusionSupport support, List<CampaignZone> circles) {
-        double lat = support.getLatitude().doubleValue();
-        double lng = support.getLongitude().doubleValue();
-        return circles.stream().anyMatch(c -> GeoUtils.within(lat, lng, c.getLatitude().doubleValue(),
-                c.getLongitude().doubleValue(), c.getRadiusKm().doubleValue()));
+    /**
+     * Inside any target of the campaign: haversine for a CERCLE, point-in-polygon for a POLYGONE
+     * (docs/round2-contract.md §4.3). The name is kept for callers.
+     */
+    static boolean insideAnyCircle(DiffusionSupport support, List<CampaignZone> zones) {
+        return TargetingGeometry.insideAny(support, zones);
     }
 
-    private Reservation build(Campaign campaign, DiffusionSupport support, TimeWindow window) {
-        EstimationService.Estimate estimate = estimationService.estimate(support, window);
+    /** Prices are computed once, at booking time, and never recomputed (docs/round2-contract.md §4.6). */
+    private Reservation build(Campaign campaign, DiffusionSupport support, TimeWindow window,
+                              DynamicPricingService.Context pricing) {
+        EstimationService.Estimate estimate = estimationService.estimate(support, window, pricing);
         return Reservation.builder()
                 .campaign(campaign)
                 .zone(support.getZone())
@@ -220,6 +227,9 @@ public class ReservationService {
                 .reservationStatus(ReservationStatus.TEMPORAIRE)
                 .estimatedViews(estimate.views())
                 .estimatedCost(estimate.cost())
+                .baseCost(estimate.baseCost())
+                .priceMultiplier(estimate.multiplier())
+                .pricingBreakdown(estimate.breakdown())
                 .build();
     }
 
@@ -488,6 +498,8 @@ public class ReservationService {
                 .reservationStatus(reservation.getReservationStatus().name())
                 .estimatedViews(reservation.getEstimatedViews())
                 .estimatedCost(reservation.getEstimatedCost())
+                .baseCost(reservation.getBaseCost() != null ? reservation.getBaseCost() : reservation.getEstimatedCost())
+                .priceMultiplier(reservation.getPriceMultiplier() != null ? reservation.getPriceMultiplier() : BigDecimal.ONE)
                 .createdAt(reservation.getCreatedAt())
                 .cancelledAt(reservation.getCancelledAt())
                 .cancelReason(reservation.getCancelReason())

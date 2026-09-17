@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   submit: vi.fn(),
   setZones: vi.fn(),
+  demandPublic: vi.fn(),
   byCampaign: vi.fn(),
   createBatch: vi.fn(),
   cancel: vi.fn(),
@@ -34,7 +35,6 @@ vi.mock("@/lib/api/endpoints", () => ({
     create: mocks.create,
     update: mocks.update,
     submit: mocks.submit,
-    setZones: mocks.setZones,
   },
   reservationsApi: {
     byCampaign: mocks.byCampaign,
@@ -47,6 +47,11 @@ vi.mock("@/lib/api/endpoints", () => ({
   zonesApi: { active: mocks.zonesActive, recommendations: mocks.recommendations },
   supportsApi: { all: mocks.supportsAll },
   estimatesApi: { campaign: mocks.estimate },
+}));
+
+vi.mock("@/lib/api/endpoints-carte", () => ({
+  campaignZonesApi: { set: mocks.setZones },
+  heatmapApi: { demandPublic: mocks.demandPublic },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -453,9 +458,16 @@ describe("CampaignWizard — step 3 Zone & Porteurs", () => {
     await user.click(screen.getByRole("button", { name: "Enregistrer les zones" }));
 
     await waitFor(() =>
-      expect(mocks.setZones).toHaveBeenCalledWith(7, [
-        expect.objectContaining({ latitude: 36.80071, longitude: 10.18012, radiusKm: 5 }),
-      ]),
+      expect(mocks.setZones).toHaveBeenCalledWith(7, {
+        zones: [
+          expect.objectContaining({
+            type: "CERCLE",
+            latitude: 36.80071,
+            longitude: 10.18012,
+            radiusKm: 5,
+          }),
+        ],
+      }),
     );
     await waitFor(() => expect(mocks.availability).toHaveBeenCalled());
     expect(mocks.availability).toHaveBeenCalledWith(

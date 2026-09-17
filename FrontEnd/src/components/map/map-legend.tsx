@@ -5,6 +5,7 @@ import type { AvailabilityStatus, TechnicalStatus } from "@/lib/api/types";
 import { AVAILABILITY_STATUS, AVAILABILITY_STATUS_ORDER } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { TECHNICAL_STATUS_CODES } from "@/lib/network/filters";
+import { heatmapGradientCss } from "@/lib/network/overlays";
 import {
   DESIGN_INTENTION_NOTICE,
   PORTEUR_TYPE_CODES,
@@ -45,6 +46,8 @@ export interface MapLegendProps {
   show3d?: boolean;
   /** Show the count bubble entry (« Regrouper les Porteurs proches » on). */
   showClusters?: boolean;
+  /** Title of the density layer when a heatmap is displayed (round 2 §4.8). */
+  heatmapLabel?: string | null;
   className?: string;
 }
 
@@ -53,6 +56,7 @@ export function MapLegend({
   showSelection = true,
   show3d = false,
   showClusters = false,
+  heatmapLabel = null,
   className,
 }: MapLegendProps) {
   return (
@@ -201,8 +205,44 @@ export function MapLegend({
           </Row>
         ) : null}
       </ul>
+      {heatmapLabel ? (
+        <>
+          <Heading>{heatmapLabel}</Heading>
+          <HeatmapLegend className="mt-1" />
+        </>
+      ) : null}
       <p className="mt-3 border-t border-line pt-2.5 text-[0.75rem] leading-snug text-muted-2">
         {DESIGN_INTENTION_NOTICE}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Gradient legend of a heatmap layer (round 2 §4.8): « Faible » → « Forte ». The gradient uses the
+ * same colour ramp as the MapLibre layer and the SVG fallback circles.
+ */
+export function HeatmapLegend({
+  label,
+  className,
+}: {
+  /** Optional title above the gradient. */
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cx("flex flex-col gap-1", className)}>
+      {label ? (
+        <p className="font-label text-[0.75rem] font-semibold text-muted-2">{label}</p>
+      ) : null}
+      <span
+        aria-hidden="true"
+        className="block h-2 w-full rounded-full border border-line"
+        style={{ backgroundImage: heatmapGradientCss() }}
+      />
+      <p className="flex items-center justify-between text-[0.75rem] text-muted">
+        <span>Faible</span>
+        <span>Forte</span>
       </p>
     </div>
   );

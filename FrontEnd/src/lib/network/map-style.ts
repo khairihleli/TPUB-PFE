@@ -3,8 +3,13 @@
  * rendering when tiles are unreachable). No glyphs/sprites: texts are HTML markers.
  * All paint colours come from `@/lib/network/theme`.
  */
-import type { LayerSpecification, StyleSpecification } from "maplibre-gl";
+import type {
+  DataDrivenPropertyValueSpecification,
+  LayerSpecification,
+  StyleSpecification,
+} from "maplibre-gl";
 
+import { HEATMAP_RAMP } from "@/lib/network/overlays";
 import { BASEMAP_PAINT, MAP_COLORS, MAP_OPACITY } from "@/lib/network/theme";
 
 export type BasemapId = "sombre" | "clair" | "satellite";
@@ -61,6 +66,10 @@ export const MAP_SOURCE_IDS = {
   extrusions: "tpub-extrusions",
   catchment: "tpub-catchment",
   measure: "tpub-measure",
+  /** Round 2 (docs/round2-contract.md §4.8). */
+  polygons: "tpub-polygons",
+  polygonDraft: "tpub-polygon-draft",
+  heatmap: "tpub-heatmap",
 } as const;
 
 export const MAP_LAYER_IDS = {
@@ -80,6 +89,13 @@ export const MAP_LAYER_IDS = {
   measureHalo: "measure-halo",
   measureLine: "measure-line",
   measureVertices: "measure-vertices",
+  heatmap: "heatmap-density",
+  heatmapPoints: "heatmap-points",
+  polygonsFill: "polygons-fill",
+  polygonsLine: "polygons-line",
+  polygonDraftFill: "polygon-draft-fill",
+  polygonDraftLine: "polygon-draft-line",
+  polygonDraftVertices: "polygon-draft-vertices",
 } as const;
 
 export type MapLayerId = (typeof MAP_LAYER_IDS)[keyof typeof MAP_LAYER_IDS];
@@ -140,6 +156,9 @@ export function buildMapStyle(
       [MAP_SOURCE_IDS.extrusions]: { type: "geojson", data: EMPTY_GEOJSON },
       [MAP_SOURCE_IDS.catchment]: { type: "geojson", data: EMPTY_GEOJSON },
       [MAP_SOURCE_IDS.measure]: { type: "geojson", data: EMPTY_GEOJSON },
+      [MAP_SOURCE_IDS.polygons]: { type: "geojson", data: EMPTY_GEOJSON },
+      [MAP_SOURCE_IDS.polygonDraft]: { type: "geojson", data: EMPTY_GEOJSON },
+      [MAP_SOURCE_IDS.heatmap]: { type: "geojson", data: EMPTY_GEOJSON },
     },
     layers: [
       {
@@ -180,9 +199,55 @@ export function buildMapStyle(
   };
 }
 
+/** `tone` → colour (same tokens as the zone circles). */
+const polygonColor = (): DataDrivenPropertyValueSpecification<string> => [
+  "match",
+  ["get", "tone"],
+  "urgent",
+  MAP_COLORS.typeC,
+  "muted",
+  MAP_COLORS.zoneInactive,
+  MAP_COLORS.zoneLine,
+];
+
 /** TPUB overlay layers, bottom → top. */
 export function overlayLayers(): LayerSpecification[] {
   return [
+    {
+      id: MAP_LAYER_IDS.heatmap,
+      type: "heatmap",
+      source: MAP_SOURCE_IDS.heatmap,
+      paint: {
+        "heatmap-weight": ["get", "w"],
+        "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 6, 0.8, 14, 1.6],
+        "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 6, 12, 14, 40],
+        "heatmap-opacity": 0.75,
+        "heatmap-color": [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          ...HEATMAP_RAMP.flatMap(([stop, color]) => [stop, color]),
+        ],
+      },
+    },
+    {
+      id: MAP_LAYER_IDS.heatmapPoints,
+      type: "circle",
+      source: MAP_SOURCE_IDS.heatmap,
+      minzoom: 13,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["get", "w"], 0, 4, 1, 14],
+        "circle-color": [
+          "interpolate",
+          ["linear"],
+          ["get", "w"],
+          ...HEATMAP_RAMP.flatMap(([stop, color]) => [stop, color]),
+        ],
+        "circle-opacity": 0.85,
+        "circle-stroke-color": MAP_COLORS.background,
+        "circle-stroke-width": 1,
+      },
+    },
     {
       id: MAP_LAYER_IDS.zonesFill,
       type: "fill",
@@ -337,6 +402,53 @@ export function overlayLayers(): LayerSpecification[] {
       paint: { "line-color": MAP_COLORS.measure, "line-width": 2.5 },
     },
     {
+      id: MAP_LAYER_IDS.polygonsFill,
+      type: "fill",
+      source: MAP_SOURCE_IDS.polygons,
+      paint: {
+        "fill-color": polygonColor(),
+        "fill-opacity": ["case", ["get", "active"], MAP_OPACITY.zoneFillSelected, MAP_OPACITY.zoneFill],
+      },
+    },
+    {
+      id: MAP_LAYER_IDS.polygonsLine,
+      type: "line",
+      source: MAP_SOURCE_IDS.polygons,
+      layout: { "line-join": "round" },
+      paint: {
+        "line-color": polygonColor(),
+        "line-width": ["case", ["get", "active"], 2.4, 1.4],
+        "line-opacity": MAP_OPACITY.zoneLine,
+      },
+    },
+    {
+      id: MAP_LAYER_IDS.polygonDraftFill,
+      type: "fill",
+      source: MAP_SOURCE_IDS.polygonDraft,
+      filter: ["==", ["get", "kind"], "fill"],
+      paint: { "fill-color": MAP_COLORS.selected, "fill-opacity": MAP_OPACITY.zoneFillSelected },
+    },
+    {
+      id: MAP_LAYER_IDS.polygonDraftLine,
+      type: "line",
+      source: MAP_SOURCE_IDS.polygonDraft,
+      filter: ["==", ["get", "kind"], "line"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": MAP_COLORS.selected, "line-width": 2.2, "line-dasharray": [2, 1.4] },
+    },
+    {
+      id: MAP_LAYER_IDS.polygonDraftVertices,
+      type: "circle",
+      source: MAP_SOURCE_IDS.polygonDraft,
+      filter: ["==", ["get", "kind"], "vertex"],
+      paint: {
+        "circle-radius": ["case", ["get", "first"], 7, 5],
+        "circle-color": ["case", ["get", "first"], MAP_COLORS.zoneLine, MAP_COLORS.selected],
+        "circle-stroke-color": MAP_COLORS.background,
+        "circle-stroke-width": 2,
+      },
+    },
+    {
       id: MAP_LAYER_IDS.measureVertices,
       type: "circle",
       source: MAP_SOURCE_IDS.measure,
@@ -398,6 +510,13 @@ export function layerVisibility(
     [MAP_LAYER_IDS.measureHalo]: "visible",
     [MAP_LAYER_IDS.measureLine]: "visible",
     [MAP_LAYER_IDS.measureVertices]: "visible",
+    [MAP_LAYER_IDS.heatmap]: "visible",
+    [MAP_LAYER_IDS.heatmapPoints]: "visible",
+    [MAP_LAYER_IDS.polygonsFill]: v(toggles.zones),
+    [MAP_LAYER_IDS.polygonsLine]: v(toggles.zones),
+    [MAP_LAYER_IDS.polygonDraftFill]: "visible",
+    [MAP_LAYER_IDS.polygonDraftLine]: "visible",
+    [MAP_LAYER_IDS.polygonDraftVertices]: "visible",
   };
 }
 

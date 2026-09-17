@@ -17,12 +17,15 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Map;
 
 @Entity
 @Table(name = "emergency_messages")
@@ -54,6 +57,8 @@ public class EmergencyMessage {
 
     @Column(name = "radius_km", precision = 8, scale = 3)
     private BigDecimal radiusKm;
+
+    @JdbcTypeCode(SqlTypes.JSON) @Column(name = "target_polygon", columnDefinition = "jsonb") private Map<String, Object> targetPolygon;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;

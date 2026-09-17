@@ -45,7 +45,9 @@ public class AvailabilityResponse {
         private Long campaignReservationId;
         private List<SupportAvailabilitySlot> conflicts;
         private long estimatedViews;
+        /** Dynamic cost on the queried window (docs/round2-contract.md §4.6). */
         private BigDecimal estimatedCost;
+        private BigDecimal priceMultiplier;
     }
 
     @Data

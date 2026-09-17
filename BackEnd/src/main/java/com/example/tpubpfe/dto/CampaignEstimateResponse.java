@@ -49,5 +49,9 @@ public class CampaignEstimateResponse {
         private LocalTime endTime;
         private long estimatedViews;
         private BigDecimal estimatedCost;
+        private BigDecimal baseCost;
+        private BigDecimal priceMultiplier;
+        /** Breakdown stored at booking time; null for reservations created before V8. */
+        private PriceBreakdown pricing;
     }
 }

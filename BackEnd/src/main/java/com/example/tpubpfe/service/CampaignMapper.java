@@ -10,13 +10,14 @@ import com.example.tpubpfe.model.DiffusionSupport;
 import com.example.tpubpfe.model.MediaFile;
 import com.example.tpubpfe.model.Reservation;
 import com.example.tpubpfe.model.ReservationStatus;
+import com.example.tpubpfe.model.ZoneGeometryType;
 import com.example.tpubpfe.repository.AiContentCheckRepository;
 import com.example.tpubpfe.repository.CampaignZoneRepository;
 import com.example.tpubpfe.repository.DiffusionSupportRepository;
 import com.example.tpubpfe.repository.MediaFileRepository;
 import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.service.storage.FileStorageService;
-import com.example.tpubpfe.util.GeoUtils;
+import com.example.tpubpfe.util.TargetingGeometry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -127,21 +128,21 @@ public class CampaignMapper {
     }
 
     CampaignZoneResponse toZoneResponse(CampaignZone zone, List<DiffusionSupport> supports) {
-        double lat = zone.getLatitude().doubleValue();
-        double lng = zone.getLongitude().doubleValue();
-        double radius = zone.getRadiusKm().doubleValue();
         long inside = supports.stream()
-                .filter(s -> s.getLatitude() != null && s.getLongitude() != null)
-                .filter(s -> GeoUtils.within(s.getLatitude().doubleValue(), s.getLongitude().doubleValue(), lat, lng, radius))
+                .filter(s -> TargetingGeometry.inside(s, zone))
                 .count();
+        ZoneGeometryType type = zone.getGeometryType() == null ? ZoneGeometryType.CERCLE : zone.getGeometryType();
         return CampaignZoneResponse.builder()
                 .id(zone.getId())
                 .zoneId(zone.getZone() != null ? zone.getZone().getId() : null)
                 .zoneName(zone.getZone() != null ? zone.getZone().getName() : null)
                 .label(zone.getLabel())
+                .type(type.name())
                 .latitude(zone.getLatitude())
                 .longitude(zone.getLongitude())
                 .radiusKm(zone.getRadiusKm())
+                .polygon(type == ZoneGeometryType.POLYGONE ? zone.getPolygon() : null)
+                .areaKm2(zone.getAreaKm2() != null ? zone.getAreaKm2() : CampaignZoneService.circleArea(zone.getRadiusKm()))
                 .supportsInside(inside)
                 .build();
     }

@@ -19,6 +19,7 @@ import {
   Minimize,
   Minus,
   Plus,
+  PenTool,
   Ruler,
   SlidersHorizontal,
   X,
@@ -67,6 +68,14 @@ import {
   toggleZone,
   type Selection,
 } from "@/lib/network/selection";
+import {
+  addDraftVertex,
+  closeDraft,
+  draftStatus,
+  EMPTY_POLYGON_DRAFT,
+  removeLastDraftVertex,
+  type PolygonDraft,
+} from "@/lib/network/overlays";
 import { useReducedMotion } from "@/lib/use-reduced-motion";
 
 import { MapLegend } from "@/components/map/map-legend";
@@ -162,9 +171,14 @@ export function NetworkMapClient(props: NetworkMapProps) {
     focusZoneId = null,
     chrome = "full",
     availability,
+    polygons,
+    polygonDraft = null,
+    onPolygonDraftChange,
+    heatmap = null,
     height,
     className,
   } = props;
+  const canDrawPolygon = polygonDraft !== null && onPolygonDraftChange !== undefined;
 
   const reducedMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -396,8 +410,19 @@ export function NetworkMapClient(props: NetworkMapProps) {
     [onPlacePoint, onCreateZoneAt, announce],
   );
 
+  const applyDraft = useCallback(
+    (next: PolygonDraft) => {
+      if (next !== polygonDraft) onPolygonDraftChange?.(next);
+    },
+    [polygonDraft, onPolygonDraftChange],
+  );
+
   const onMapPoint = useCallback(
     (point: LngLat) => {
+      if (ui.tool === "polygon") {
+        if (polygonDraft) applyDraft(addDraftVertex(polygonDraft, point));
+        return;
+      }
       switch (ui.tool) {
         case "measure":
           dispatch({ type: "measure-add", point });
@@ -415,7 +440,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
           break;
       }
     },
-    [ui.tool, runPlace, onMapClick],
+    [ui.tool, runPlace, onMapClick, polygonDraft, applyDraft],
   );
 
   const onReady = useCallback((controller: MapController) => {
@@ -490,6 +515,8 @@ export function NetworkMapClient(props: NetworkMapProps) {
     if (!turningOn) return;
     const messages: Record<MapTool, string> = {
       none: "",
+      polygon:
+        "Dessin de polygone activé. Cliquez pour ajouter des sommets, Entrée pour fermer, Retour arrière pour annuler le dernier, Échap pour tout effacer.",
       measure:
         "Outil de mesure activé. Cliquez sur la carte pour ajouter des points, Échap pour terminer.",
       catchment: "Zone de chalandise : cliquez sur la carte pour placer le centre.",
@@ -500,14 +527,40 @@ export function NetworkMapClient(props: NetworkMapProps) {
   };
 
   // keyboard shortcuts + Escape on the map root
-  const shortcutState = useRef({ ui, engine, setTool, openPanel });
-  shortcutState.current = { ui, engine, setTool, openPanel };
+  const shortcutState = useRef({ ui, engine, setTool, openPanel, polygonDraft, applyDraft, announce });
+  shortcutState.current = { ui, engine, setTool, openPanel, polygonDraft, applyDraft, announce };
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      const draw = shortcutState.current;
+      if (draw.ui.tool === "polygon" && draw.polygonDraft) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const next = closeDraft(draw.polygonDraft);
+          draw.applyDraft(next);
+          draw.announce(
+            next.closed
+              ? "Polygone fermé."
+              : "Ajoutez au moins 3 sommets avant de fermer le polygone.",
+          );
+          return;
+        }
+        if (e.key === "Backspace") {
+          e.preventDefault();
+          draw.applyDraft(removeLastDraftVertex(draw.polygonDraft));
+          draw.announce("Dernier sommet supprimé.");
+          return;
+        }
+        if (e.key === "Escape" && draw.polygonDraft.vertices.length > 0) {
+          e.preventDefault();
+          draw.applyDraft(EMPTY_POLYGON_DRAFT);
+          draw.announce("Tracé du polygone annulé.");
+          return;
+        }
+      }
       if (e.key === "Escape") {
         const s = shortcutState.current.ui;
         if (s.panel !== null || s.tool !== "none") {
@@ -633,6 +686,10 @@ export function NetworkMapClient(props: NetworkMapProps) {
     pickPoints: onMapClick !== undefined,
     chrome,
     availability,
+    polygons,
+    polygonDraft,
+    onDraftChange: canDrawPolygon ? applyDraft : undefined,
+    heatmap,
   };
   const compact = chrome === "compact";
 
@@ -742,6 +799,18 @@ export function NetworkMapClient(props: NetworkMapProps) {
           active={ui.tool === "catchment"}
           onClick={() => setTool("catchment")}
         />
+        {canDrawPolygon ? (
+          <>
+            <MapToolDivider />
+            <MapToolButton
+              {...common}
+              label="Dessiner un polygone"
+              icon={<PenTool />}
+              active={ui.tool === "polygon"}
+              onClick={() => setTool("polygon")}
+            />
+          </>
+        ) : null}
         {mode === "admin" && (onPlacePoint || onCreateZoneAt) ? (
           <>
             <MapToolDivider />
@@ -795,6 +864,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
       : ui.tool === "zone"
         ? "Cliquez sur la carte pour placer le centre de la nouvelle zone."
         : null;
+  const drawStatus = ui.tool === "polygon" && polygonDraft ? draftStatus(polygonDraft) : null;
 
   return (
     <div
@@ -934,6 +1004,38 @@ export function NetworkMapClient(props: NetworkMapProps) {
           </p>
         ) : null}
 
+        {drawStatus ? (
+          <div className="tpub-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-card px-3 py-2 text-xs text-ink">
+            <span
+              aria-live="polite"
+              className={cx(drawStatus.state === "invalid" && "font-semibold text-warning")}
+            >
+              {drawStatus.message}
+            </span>
+            {polygonDraft && polygonDraft.vertices.length >= 3 && !polygonDraft.closed ? (
+              <button
+                type="button"
+                onClick={() => applyDraft(closeDraft(polygonDraft))}
+                className="min-h-8 cursor-pointer rounded-control border border-line-strong px-2.5 font-label font-semibold hover:bg-overlay-hover focus-visible:outline-2 focus-visible:outline-brand-blue-text"
+              >
+                Fermer le polygone
+              </button>
+            ) : null}
+            {polygonDraft && polygonDraft.vertices.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  applyDraft(EMPTY_POLYGON_DRAFT);
+                  announce("Tracé du polygone effacé.");
+                }}
+                className="min-h-8 cursor-pointer rounded-control px-2.5 font-label font-semibold text-muted hover:text-ink-strong focus-visible:outline-2 focus-visible:outline-brand-blue-text"
+              >
+                Effacer le tracé
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         {placeHint ? (
           <div className="tpub-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-card px-3 py-2 text-xs text-ink">
             <span>{placeHint}</span>
@@ -1039,6 +1141,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
               showSelection={canSelect || ui.tool === "catchment"}
               show3d={ui.viewMode === "3d"}
               showClusters={ui.clusterPorteurs}
+              heatmapLabel={heatmap?.label ?? null}
             />
           </MapPanel>
         ) : null}

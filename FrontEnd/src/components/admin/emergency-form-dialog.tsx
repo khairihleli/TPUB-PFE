@@ -5,6 +5,7 @@ import { type FormEvent, useId, useMemo, useRef, useState } from "react";
 
 import {
   activeSupportsInCircle,
+  activeSupportsInPolygon,
   activeSupportsInZone,
   CONTENT_MAX,
   DURATION_MAX,
@@ -16,10 +17,12 @@ import {
   emptyEmergencyForm,
   isEmergencyFormDirty,
   normalizeEmergencyDraft,
+  parsePolygonField,
   PRIORITY_MAX,
   priorityLabel,
   RADIUS_MAX_KM,
   RADIUS_MIN_KM,
+  serializePolygonField,
   TITLE_MAX,
   TITLE_RECOMMENDED,
   URGENCY_LEVELS,
@@ -33,6 +36,7 @@ import {
   serverFieldErrors,
 } from "@/components/admin/form-utils";
 import { ZoneMapPicker } from "@/components/admin/zone-map-picker";
+import { PolygonVertexEditor } from "@/components/map/polygon-vertex-editor";
 import { urgencyTheme } from "@/components/player/urgency-theme";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -40,19 +44,20 @@ import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { DraftRestoreNotice } from "@/components/ui/draft-restore-notice";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { StatusPill } from "@/components/ui/status-pill";
-import { emergencyApi } from "@/lib/api/endpoints";
+import { emergencyCarteApi } from "@/lib/api/endpoints-carte";
 import { ApiError, hasErrorCode, presentError } from "@/lib/api/errors";
 import type {
-  EmergencyCreateRequest,
   EmergencyResponse,
   SupportResponse,
   UrgencyLevel,
   ZoneResponse,
 } from "@/lib/api/types";
+import type { EmergencyRequestCarte } from "@/lib/api/types-carte";
 import { URGENCY_LEVEL } from "@/lib/campaign-status";
 import { cx } from "@/lib/cx";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { useFormDraft } from "@/lib/forms/form-draft";
+import { partsToDraft, type PolygonDraft } from "@/lib/network/overlays";
 
 export const EMERGENCY_DRAFT_KEY = "admin:emergency:new";
 const DRAFT_VERSION = 3;
@@ -158,6 +163,13 @@ export function EmergencyScreenPreview({
 }
 
 type Step = "edit" | "confirm";
+type TargetKind = "ZONE" | "CERCLE" | "POLYGONE";
+
+const TARGET_LABELS: Record<TargetKind, string> = {
+  ZONE: "Zone TPUB",
+  CERCLE: "Cercle",
+  POLYGONE: "Polygone",
+};
 
 function EmergencyForm({
   zones,
@@ -175,7 +187,7 @@ function EmergencyForm({
   const [values, setValues] = useState<EmergencyFormValues>(() => emptyEmergencyForm());
   const [errors, setErrors] = useState<FormErrors<EmergencyField>>({});
   const [step, setStep] = useState<Step>("edit");
-  const [body, setBody] = useState<EmergencyCreateRequest | null>(null);
+  const [body, setBody] = useState<EmergencyRequestCarte | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
@@ -201,17 +213,43 @@ function EmergencyForm({
   const lng = parseDecimal(values.longitude);
   const radius = parseDecimal(values.radiusKm);
   const zoneId = parseInteger(values.zoneId);
-  const hasPoint = lat !== null && lng !== null;
+  const polygonVertices = useMemo(() => parsePolygonField(values.polygon), [values.polygon]);
+  const hasPolygon = polygonVertices.length > 0;
+  const hasPoint = lat !== null && lng !== null && !hasPolygon;
+  const target: TargetKind = hasPolygon ? "POLYGONE" : hasPoint ? "CERCLE" : "ZONE";
   const inCircle = activeSupportsInCircle(supports, lat, lng, radius);
   const inZone = activeSupportsInZone(supports, zoneId);
-  const impact = hasPoint
-    ? `${formatNumber(inCircle)} Porteur${inCircle > 1 ? "s" : ""} actif${inCircle > 1 ? "s" : ""} dans le cercle`
-    : zoneId !== null
-      ? `${formatNumber(inZone)} Porteur${inZone > 1 ? "s" : ""} actif${inZone > 1 ? "s" : ""} dans la zone ${zoneName(zoneId)}`
-      : "Placez un point sur la carte ou choisissez une zone.";
-  const place = hasPoint
-    ? `${zoneName(zoneId) ?? "Cercle"} · ${values.radiusKm || "?"} km`
-    : zoneName(zoneId);
+  const inPolygon = activeSupportsInPolygon(supports, polygonVertices);
+  const plural = (n: number) => (n > 1 ? "s" : "");
+  const impact = hasPolygon
+    ? polygonVertices.length < 3
+      ? "Placez au moins 3 sommets pour délimiter le polygone."
+      : `${formatNumber(inPolygon)} Porteur${plural(inPolygon)} actif${plural(inPolygon)} dans le polygone`
+    : hasPoint
+      ? `${formatNumber(inCircle)} Porteur${plural(inCircle)} actif${plural(inCircle)} dans le cercle`
+      : zoneId !== null
+        ? `${formatNumber(inZone)} Porteur${plural(inZone)} actif${plural(inZone)} dans la zone ${zoneName(zoneId)}`
+        : "Choisissez une cible : zone TPUB, cercle ou polygone.";
+  const place = hasPolygon
+    ? `Polygone${zoneName(zoneId) ? ` · ${zoneName(zoneId)}` : ""}`
+    : hasPoint
+      ? `${zoneName(zoneId) ?? "Cercle"} · ${values.radiusKm || "?"} km`
+      : zoneName(zoneId);
+
+  const setTarget = (kind: TargetKind) => {
+    setValues((v) => ({
+      ...v,
+      latitude: kind === "CERCLE" ? v.latitude : "",
+      longitude: kind === "CERCLE" ? v.longitude : "",
+      polygon: kind === "POLYGONE" ? v.polygon : "",
+    }));
+    setErrors((e) => ({ ...e, latitude: undefined, longitude: undefined, polygon: undefined }));
+  };
+
+  const setPolygonDraft = (draft: PolygonDraft) => {
+    setValues((v) => ({ ...v, polygon: serializePolygonField(draft.vertices) }));
+    setErrors((e) => ({ ...e, polygon: undefined }));
+  };
 
   const set = <K extends EmergencyField>(key: K, value: string) => {
     setValues((v) => ({ ...v, [key]: value }));
@@ -246,7 +284,7 @@ function EmergencyForm({
     setSending(true);
     setSendError(null);
     try {
-      const created = await emergencyApi.create(body);
+      const created = await emergencyCarteApi.create(body);
       saved.clear();
       onCreated(created);
       onClose();
@@ -317,9 +355,11 @@ function EmergencyForm({
             <div className="min-w-0 min-[420px]:col-span-2">
               <dt className="text-[0.8125rem] font-medium text-muted">Cible</dt>
               <dd className="mt-0.5 text-ink-strong">
-                {circle
-                  ? `Cercle de ${body.radiusKm} km${bodyZone ? ` · zone ${bodyZone}` : " · zone déterminée automatiquement"}`
-                  : `Zone ${bodyZone ?? "—"}`}
+                {"polygon" in body && body.polygon
+                  ? `Polygone de ${polygonVertices.length} sommets${bodyZone ? ` · zone ${bodyZone}` : " · zone déterminée automatiquement"}`
+                  : circle
+                    ? `Cercle de ${body.radiusKm} km${bodyZone ? ` · zone ${bodyZone}` : " · zone déterminée automatiquement"}`
+                    : `Zone ${bodyZone ?? "—"}`}
               </dd>
             </div>
             <div>
@@ -527,6 +567,28 @@ function EmergencyForm({
           <legend className="mb-2 font-label text-[0.8125rem] font-semibold text-ink-strong">
             Zone ciblée
           </legend>
+          <div
+            role="group"
+            aria-label="Type de cible"
+            className="inline-flex self-start rounded-full border border-line-strong p-0.5"
+          >
+            {(["ZONE", "CERCLE", "POLYGONE"] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={target === kind}
+                onClick={() => setTarget(kind)}
+                className={cx(
+                  "min-h-8 cursor-pointer rounded-full px-3 text-[0.8125rem] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text",
+                  target === kind
+                    ? "bg-blue-soft text-ink-strong"
+                    : "text-muted hover:text-ink-strong",
+                )}
+              >
+                {TARGET_LABELS[kind]}
+              </button>
+            ))}
+          </div>
           <ZoneMapPicker
             name={values.title.trim() || "Message prioritaire"}
             latitude={lat}
@@ -535,11 +597,15 @@ function EmergencyForm({
             otherZones={zones}
             supports={supports}
             height="16rem"
-            ariaLabel="Carte : point et rayon du message prioritaire"
+            ariaLabel="Carte : cible du message prioritaire"
+            polygonDraft={target === "POLYGONE" ? partsToDraft([[polygonVertices]]) : null}
+            onPolygonDraftChange={target === "POLYGONE" ? setPolygonDraft : undefined}
             hint={
-              hasPoint
-                ? "Cliquez sur la carte pour déplacer le point, glissez la poignée pour ajuster le rayon."
-                : "Cliquez sur la carte pour placer le centre du message."
+              target === "POLYGONE"
+                ? "Activez « Dessiner un polygone » dans les outils de la carte, puis cliquez pour placer les sommets."
+                : hasPoint
+                  ? "Cliquez sur la carte pour déplacer le point, glissez la poignée pour ajuster le rayon."
+                  : "Cliquez sur la carte pour placer le centre du message."
             }
             onPick={setPoint}
             onRadius={(km) =>
@@ -555,7 +621,26 @@ function EmergencyForm({
           >
             {impact}
           </p>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {target === "POLYGONE" ? (
+            <div className="flex flex-col gap-2">
+              <PolygonVertexEditor
+                draft={partsToDraft([[polygonVertices]])}
+                label="Sommets du polygone ciblé"
+                onChange={setPolygonDraft}
+              />
+              {errors.polygon ? (
+                <p className="text-[0.8125rem] font-semibold text-danger">{errors.polygon}</p>
+              ) : null}
+            </div>
+          ) : null}
+          <div
+            className={cx(
+              "grid grid-cols-2 gap-4 sm:grid-cols-4",
+              target === "POLYGONE" && "sm:grid-cols-1",
+            )}
+          >
+            {target === "POLYGONE" ? null : (
+              <>
             <Field label="Latitude" error={errors.latitude}>
               <Input
                 inputMode="decimal"
@@ -583,6 +668,8 @@ function EmergencyForm({
                 onChange={(e) => set("radiusKm", e.target.value)}
               />
             </Field>
+              </>
+            )}
             <Field label="Zone (facultatif)" hint="Sans point : zone entière" error={errors.zoneId}>
               <Select value={values.zoneId} onChange={(e) => set("zoneId", e.target.value)}>
                 <option value="">Automatique</option>
@@ -595,15 +682,17 @@ function EmergencyForm({
               </Select>
             </Field>
           </div>
-          {hasPoint ? (
+          {hasPoint || hasPolygon ? (
             <div>
               <Button
                 size="sm"
                 variant="ghost"
                 iconLeft={<Eraser aria-hidden="true" />}
-                onClick={() => setValues((v) => ({ ...v, latitude: "", longitude: "" }))}
+                onClick={() => setTarget("ZONE")}
               >
-                Retirer le point (cibler la zone entière)
+                {hasPolygon
+                  ? "Retirer le polygone (cibler la zone entière)"
+                  : "Retirer le point (cibler la zone entière)"}
               </Button>
             </div>
           ) : null}

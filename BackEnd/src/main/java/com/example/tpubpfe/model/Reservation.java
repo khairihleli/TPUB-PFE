@@ -2,6 +2,7 @@ package com.example.tpubpfe.model;
 
 import com.example.tpubpfe.model.AvailabilityStatus;
 import com.example.tpubpfe.model.ReservationStatus;
+import com.example.tpubpfe.dto.PriceBreakdown;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -18,7 +19,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -78,6 +81,20 @@ public class Reservation {
     @Column(name = "estimated_cost", nullable = false, precision = 14, scale = 2)
     @Builder.Default
     private BigDecimal estimatedCost = BigDecimal.ZERO;
+
+    /** Dynamic pricing multiplier frozen at booking time (docs/round2-contract.md §4.6); 1 before V8. */
+    @Column(name = "price_multiplier", nullable = false, precision = 6, scale = 4)
+    @Builder.Default
+    private BigDecimal priceMultiplier = BigDecimal.ONE;
+
+    /** R1 cost before the multiplier. */
+    @Column(name = "base_cost", precision = 12, scale = 2)
+    private BigDecimal baseCost;
+
+    /** Breakdown computed at booking time; null for reservations created before V8. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "pricing_breakdown", columnDefinition = "jsonb")
+    private PriceBreakdown pricingBreakdown;
 
     @Column(name = "cancelled_at")
     private Instant cancelledAt;

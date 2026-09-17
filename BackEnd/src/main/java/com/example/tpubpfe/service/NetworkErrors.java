@@ -156,6 +156,18 @@ public final class NetworkErrors {
                 "La fin de diffusion doit être postérieure au début et à l'instant présent.");
     }
 
+    public static ApiException emergencyTargetConflict() {
+        return new ApiException(HttpStatus.BAD_REQUEST, "EMERGENCY_TARGET_CONFLICT",
+                "Choisissez un cercle ou un polygone, pas les deux.");
+    }
+
+    // --- polygons (round 2, docs/round2-contract.md §4.2) ----------------------------------------------------------
+
+    /** 400 INVALID_POLYGON with {@code errors = {field: reason}}; the message is the reason itself. */
+    public static ApiException invalidPolygon(String field, String reason) {
+        return new ApiException(HttpStatus.BAD_REQUEST, "INVALID_POLYGON", reason, Map.of(field, reason));
+    }
+
     // --- statistics ----------------------------------------------------------------------------------------------
 
     public static ApiException exportTypeInvalid() {

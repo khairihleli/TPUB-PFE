@@ -39,4 +39,7 @@ public class EstimateRequest {
     @Schema(type = "string", example = "23:00")
     @JsonFormat(pattern = "HH:mm[:ss]")
     private LocalTime endTime;
+
+    /** Round 2: reservations of this campaign are excluded from the occupancy (docs/round2-contract.md §4.6). */
+    private Long campaignId;
 }

@@ -6,7 +6,9 @@ import {
   CircleAlert,
   CircleCheck,
   Crosshair,
+  Flame,
   MapPinPlus,
+  PenTool,
   RotateCcw,
   Save,
   Sparkles,
@@ -18,31 +20,38 @@ import { type Ref, useEffect, useMemo, useRef, useState } from "react";
 import {
   availabilityMap,
   batchConflictMessages,
+  isPolygonZone,
+  multiplierLabel,
+  newZoneKey,
+  sameZones,
+  supportsInsideZone,
+  toZonesRequest,
+  zoneAreaLabel,
+  zoneDraft,
+  zoneError,
+  zonesAsMapPolygons,
+  zonesAsMapZones,
+  zonesFromResponse,
+  type DraftZone,
   campaignWindow,
   circleFromRecommendation,
   circleIndexOfMapId,
   circleMapId,
   circleName,
-  circlesAsMapZones,
-  circlesFromZones,
   DEFAULT_RADIUS_KM,
-  type DraftCircle,
   filterByAvailability,
   filterByType,
   isSelectable,
   MAX_CIRCLES,
-  newCircleKey,
   RADIUS_MAX_KM,
   RADIUS_MIN_KM,
   RADIUS_STEP_KM,
   roundCoordinate,
-  sameCircles,
   selectionTotals,
   snapRadius,
   sortAvailability,
   statusCounts,
   summaryParts,
-  toZoneRequests,
   windowKey,
   alternativeLabel,
   presentTypes,
@@ -50,7 +59,8 @@ import {
 import { loadScreenCatalogue } from "@/components/campaign/campaign-data";
 import { SUPPORT_TYPE_ICON } from "@/components/campaign/campaign-ui";
 import { WizardStepHeading } from "@/components/campaign/wizard-chrome";
-import { AvailabilityLegend, NetworkMap } from "@/components/map";
+import { AvailabilityLegend, HeatmapLegend, NetworkMap } from "@/components/map";
+import { PolygonVertexEditor } from "@/components/map/polygon-vertex-editor";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +72,8 @@ import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { ESTIMATE_COST_RULE } from "@/content/glossary";
 import { availabilityApi, campaignsApi, reservationsApi, zonesApi } from "@/lib/api/endpoints";
+import { campaignZonesApi, heatmapApi } from "@/lib/api/endpoints-carte";
+import type { SupportAvailabilityItemCarte } from "@/lib/api/types-carte";
 import { batchConflicts, presentError } from "@/lib/api/errors";
 import type {
   AlternativeSlot,
@@ -74,6 +86,7 @@ import { cx } from "@/lib/cx";
 import { useUnsavedChangesGuard } from "@/lib/forms/unsaved-guard";
 import { formatCount, formatDateRange, formatNumber, formatTND } from "@/lib/format";
 import { invalidate, resourceKeys } from "@/lib/resource-cache";
+import type { MapHeatmap, PolygonDraft } from "@/lib/network/overlays";
 import { formatSlot } from "@/lib/time-slots";
 import { useResource } from "@/lib/use-resource";
 
@@ -98,6 +111,18 @@ function zonesSignature(campaign: CampaignResponse): string {
     .join("|");
 }
 
+/** Server field errors of PUT /zones (`zones[i].polygon`) → message per zone index. */
+export function zoneFieldErrors(
+  fieldErrors: Readonly<Record<string, string>>,
+): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const [field, message] of Object.entries(fieldErrors)) {
+    const index = /^zones\[(\d+)\]/.exec(field)?.[1];
+    if (index !== undefined && !out.has(Number(index))) out.set(Number(index), message);
+  }
+  return out;
+}
+
 /**
  * Wizard step 3 « Zone & Porteurs » (contract §5 F2): circles placed on the map (≤ 5, radius
  * slider), availability of the Porteurs inside them for the campaign window, batch booking,
@@ -115,50 +140,84 @@ export function StepZones({
 }: StepZonesProps) {
   const { toast } = useToast();
   const win = useMemo(() => campaignWindow(campaign), [campaign]);
-  const savedCircles = useMemo(() => circlesFromZones(campaign.zones), [campaign.zones]);
+  const savedZones = useMemo(() => zonesFromResponse(campaign.zones), [campaign.zones]);
 
-  // ---- circles -------------------------------------------------------------------------
-  const [circles, setCircles] = useState<DraftCircle[]>(savedCircles);
-  const [activeKey, setActiveKey] = useState<string | null>(savedCircles[0]?.key ?? null);
-  const [placing, setPlacing] = useState(savedCircles.length === 0);
+  // ---- zones: circles and polygons (docs/round2-contract.md §4.3) -----------------------
+  const [circles, setCircles] = useState<DraftZone[]>(savedZones);
+  const [activeKey, setActiveKey] = useState<string | null>(savedZones[0]?.key ?? null);
+  const [placing, setPlacing] = useState(savedZones.length === 0);
+  const [drawingKey, setDrawingKey] = useState<string | null>(null);
   const [focusZoneId, setFocusZoneId] = useState<number | null>(null);
   const [savingZones, setSavingZones] = useState(false);
   const [zonesError, setZonesError] = useState<string | null>(null);
-  const [seenSaved, setSeenSaved] = useState(savedCircles);
-  if (seenSaved !== savedCircles) {
+  const [serverZoneErrors, setServerZoneErrors] = useState<Map<number, string>>(() => new Map());
+  const [showDemand, setShowDemand] = useState(false);
+  const [seenSaved, setSeenSaved] = useState(savedZones);
+  if (seenSaved !== savedZones) {
     // The campaign's zones changed from outside (save, reload): adopt them.
-    setSeenSaved(savedCircles);
-    setCircles(savedCircles);
-    setActiveKey((k) =>
-      savedCircles.some((c) => c.key === k) ? k : (savedCircles[0]?.key ?? null),
-    );
+    setSeenSaved(savedZones);
+    setCircles(savedZones);
+    setDrawingKey(null);
+    setActiveKey((k) => (savedZones.some((c) => c.key === k) ? k : (savedZones[0]?.key ?? null)));
   }
-  const zonesDirty = !sameCircles(circles, savedCircles);
+  const zonesDirty = !sameZones(circles, savedZones);
   const activeIndex = circles.findIndex((c) => c.key === activeKey);
   const active = activeIndex >= 0 ? circles[activeIndex] : null;
+  const drawing = circles.find((c) => c.key === drawingKey && isPolygonZone(c)) ?? null;
+  const zoneErrors = useMemo(() => circles.map(zoneError), [circles]);
+  const firstZoneError = zoneErrors.find((e) => e !== null) ?? null;
 
-  const updateCircle = (key: string, patch: Partial<DraftCircle>) =>
-    setCircles((list) => list.map((c) => (c.key === key ? { ...c, ...patch } : c)));
+  const updateCircle = (key: string, patch: Partial<DraftZone>) =>
+    setCircles((list) => list.map((c) => (c.key === key ? ({ ...c, ...patch } as DraftZone) : c)));
 
-  const addCircle = (circle: DraftCircle) => {
+  const addCircle = (circle: DraftZone) => {
     setCircles((list) => (list.length >= MAX_CIRCLES ? list : [...list, circle]));
     setActiveKey(circle.key);
     setPlacing(false);
   };
 
+  /** Switches a zone between a circle and a polygon, keeping its label. */
+  const setZoneType = (key: string, type: DraftZone["type"]) =>
+    setCircles((list) =>
+      list.map((c) => {
+        if (c.key !== key || c.type === type) return c;
+        if (type === "POLYGONE") {
+          setDrawingKey(key);
+          return { type: "POLYGONE", key, vertices: [], label: c.label };
+        }
+        setDrawingKey((k) => (k === key ? null : k));
+        const point = isPolygonZone(c) ? c.vertices[0] : null;
+        return {
+          type: "CERCLE",
+          key,
+          latitude: roundCoordinate(point?.lat ?? 36.8),
+          longitude: roundCoordinate(point?.lng ?? 10.18),
+          radiusKm: DEFAULT_RADIUS_KM,
+          label: c.label,
+        };
+      }),
+    );
+
+  const setDraft = (key: string, draft: PolygonDraft) =>
+    setCircles((list) =>
+      list.map((c) => (c.key === key && isPolygonZone(c) ? { ...c, vertices: draft.vertices } : c)),
+    );
+
   const onMapClick = (point: { lat: number; lng: number }) => {
+    if (drawing) return; // the polygon tool owns the clicks
     if (placing || circles.length === 0) {
       if (circles.length >= MAX_CIRCLES) return;
       addCircle({
-        key: newCircleKey(),
+        type: "CERCLE",
+        key: newZoneKey(),
         latitude: roundCoordinate(point.lat),
         longitude: roundCoordinate(point.lng),
-        radiusKm: active?.radiusKm ?? DEFAULT_RADIUS_KM,
+        radiusKm: active && !isPolygonZone(active) ? active.radiusKm : DEFAULT_RADIUS_KM,
         label: null,
       });
       return;
     }
-    if (active) {
+    if (active && !isPolygonZone(active)) {
       updateCircle(active.key, {
         latitude: roundCoordinate(point.lat),
         longitude: roundCoordinate(point.lng),
@@ -170,19 +229,22 @@ export function StepZones({
     setCircles((list) => {
       const next = list.filter((c) => c.key !== key);
       if (activeKey === key) setActiveKey(next[0]?.key ?? null);
+      if (drawingKey === key) setDrawingKey(null);
       if (next.length === 0) setPlacing(true);
       return next;
     });
   };
 
   const saveZones = async () => {
-    if (savingZones || circles.length === 0) return;
+    if (savingZones || circles.length === 0 || firstZoneError !== null) return;
     setSavingZones(true);
     setZonesError(null);
+    setServerZoneErrors(new Map());
     try {
-      const res = await campaignsApi.setZones(campaign.id, toZoneRequests(circles));
+      const res = await campaignZonesApi.set(campaign.id, { zones: toZonesRequest(circles) });
       invalidate(resourceKeys.campaignsMine);
       invalidate(resourceKeys.reservationsByCampaign(campaign.id));
+      setDrawingKey(null);
       onCampaignChange({ ...campaign, zones: res.zones });
       const cancelled = res.cancelledReservationIds.length;
       toast({
@@ -195,7 +257,9 @@ export function StepZones({
       });
       if (cancelled > 0) onReservationsChange();
     } catch (e) {
-      setZonesError(presentError(e).message);
+      const presented = presentError(e);
+      setZonesError(presented.message);
+      setServerZoneErrors(zoneFieldErrors(presented.fieldErrors));
     } finally {
       setSavingZones(false);
     }
@@ -206,7 +270,7 @@ export function StepZones({
   const [types, setTypes] = useState<SupportType[]>([]);
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const typesKey = types.join(",");
-  const hasSavedZones = savedCircles.length > 0;
+  const hasSavedZones = savedZones.length > 0;
   const availability = useResource(
     win && hasSavedZones
       ? `availability:${campaign.id}:${windowKey(win)}:${zonesSignature(campaign)}:${typesKey}`
@@ -221,6 +285,21 @@ export function StepZones({
         { signal },
       ),
   );
+  const demand = useResource(win && showDemand ? `demande:${windowKey(win)}` : null, (signal) =>
+    heatmapApi.demandPublic({ ...(win as NonNullable<typeof win>) }, { signal }),
+  );
+  const demandHeatmap = useMemo<MapHeatmap | null>(
+    () =>
+      showDemand && demand.data
+        ? {
+            points: demand.data.points,
+            maxWeight: demand.data.maxWeight,
+            label: "Occupation des Porteurs sur votre créneau",
+          }
+        : null,
+    [showDemand, demand.data],
+  );
+
   const recommendations = useResource(
     win ? `zones-reco:${windowKey(win)}:${typesKey}` : null,
     (signal) => zonesApi.recommendations({ ...(win ?? {}), supportType: types, limit: 3, signal }),
@@ -364,7 +443,11 @@ export function StepZones({
   };
 
   // ---- render --------------------------------------------------------------------------
-  const mapZones = useMemo(() => circlesAsMapZones(circles), [circles]);
+  const mapZones = useMemo(() => zonesAsMapZones(circles), [circles]);
+  const mapPolygons = useMemo(
+    () => zonesAsMapPolygons(circles, { activeKey, editingKey: drawingKey }),
+    [circles, activeKey, drawingKey],
+  );
   const mapSupports = useMemo(() => {
     const byId = new Map((catalogue.data?.network ?? []).map((s) => [s.id, s]));
     for (const i of availability.data?.supports ?? []) byId.set(i.support.id, i.support);
@@ -434,11 +517,16 @@ export function StepZones({
             focusZoneId={focusZoneId}
             height="clamp(22rem, 60vh, 36rem)"
             ariaLabel="Carte de ciblage : cliquez pour placer ou déplacer la zone"
+            polygons={mapPolygons}
+            polygonDraft={drawing ? zoneDraft(drawing) : null}
+            onPolygonDraftChange={drawing ? (draft) => setDraft(drawing.key, draft) : undefined}
+            heatmap={demandHeatmap}
             onMapClick={onMapClick}
             onZoneRadiusChange={(zoneId, km) => {
               const index = circleIndexOfMapId(zoneId);
               const target = index === null ? undefined : circles[index];
-              if (target) updateCircle(target.key, { radiusKm: snapRadius(km) });
+              if (target && !isPolygonZone(target))
+                updateCircle(target.key, { radiusKm: snapRadius(km) });
             }}
             onOpenPorteur={(supportId) => {
               if (selectableIds.has(supportId)) toggle(supportId);
@@ -448,11 +536,45 @@ export function StepZones({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="flex items-center gap-1.5 text-[0.8125rem] text-muted">
               <Crosshair aria-hidden="true" className="size-4 shrink-0 text-brand-orange-text" />
-              {placing || circles.length === 0
-                ? "Cliquez sur la carte pour placer une zone."
-                : `Cliquez sur la carte pour déplacer « ${active ? circleName(active, activeIndex) : ""} ».`}
+              {drawing
+                ? "Activez « Dessiner un polygone » dans les outils de la carte, puis cliquez pour placer les sommets."
+                : placing || circles.length === 0
+                  ? "Cliquez sur la carte pour placer une zone."
+                  : `Cliquez sur la carte pour déplacer « ${active ? circleName(active, activeIndex) : ""} ».`}
             </p>
             <AvailabilityLegend counts={availability.data ? counts : undefined} />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              aria-pressed={showDemand}
+              onClick={() => setShowDemand((v) => !v)}
+              disabled={!win}
+              className={cx(
+                "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-[0.8125rem] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text disabled:cursor-not-allowed disabled:opacity-60",
+                showDemand
+                  ? "border-brand-blue-text bg-blue-soft text-ink-strong"
+                  : "border-line-strong text-ink-soft hover:border-muted-2",
+              )}
+            >
+              <Flame aria-hidden="true" className="size-4" />
+              Afficher la demande
+            </button>
+            {showDemand ? (
+              demand.error && !demand.data ? (
+                <span className="text-[0.8125rem] text-danger">
+                  Demande indisponible pour le moment.
+                </span>
+              ) : !demand.data ? (
+                <span className="text-[0.8125rem] text-muted">Chargement de la demande…</span>
+              ) : (
+                <HeatmapLegend
+                  label="Occupation des Porteurs sur votre créneau"
+                  className="min-w-40 max-w-64"
+                />
+              )
+            ) : null}
           </div>
 
           {circles.length > 0 ? (
@@ -485,7 +607,22 @@ export function StepZones({
                         {circleName(c, i)}
                       </Button>
                       <span className="text-[0.8125rem] text-muted tabular">
-                        {c.latitude.toFixed(4)}, {c.longitude.toFixed(4)}
+                        {isPolygonZone(c)
+                          ? `${formatCount(c.vertices.length, "sommet", "sommets")}`
+                          : `${c.latitude.toFixed(4)}, ${c.longitude.toFixed(4)}`}
+                      </span>
+                      {zoneAreaLabel(c) ? (
+                        <span className="text-[0.8125rem] text-muted tabular">
+                          · {zoneAreaLabel(c)}
+                        </span>
+                      ) : null}
+                      <span className="text-[0.8125rem] text-muted tabular">
+                        ·{" "}
+                        {formatCount(
+                          supportsInsideZone(c, mapSupports).length,
+                          "Porteur à l'intérieur",
+                          "Porteurs à l'intérieur",
+                        )}
                       </span>
                       <Button
                         variant="ghost"
@@ -497,31 +634,85 @@ export function StepZones({
                         Retirer<span className="sr-only"> : {circleName(c, i)}</span>
                       </Button>
                     </div>
-                    <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
-                      <div className="flex flex-col gap-2">
-                        <label
-                          htmlFor={sliderId}
-                          className="flex items-baseline justify-between font-label text-[0.8125rem] font-medium text-ink-soft"
+                    <div
+                      role="group"
+                      aria-label={`Forme de ${circleName(c, i)}`}
+                      className="mt-3 inline-flex rounded-full border border-line-strong p-0.5"
+                    >
+                      {(["CERCLE", "POLYGONE"] as const).map((shape) => (
+                        <button
+                          key={shape}
+                          type="button"
+                          aria-pressed={c.type === shape}
+                          onClick={() => setZoneType(c.key, shape)}
+                          className={cx(
+                            "min-h-8 cursor-pointer rounded-full px-3 text-[0.8125rem] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text",
+                            c.type === shape
+                              ? "bg-blue-soft text-ink-strong"
+                              : "text-muted hover:text-ink-strong",
+                          )}
                         >
-                          Rayon
-                          <span className="text-ink-strong tabular">
-                            {formatNumber(c.radiusKm)} km
-                          </span>
-                        </label>
-                        <input
-                          id={sliderId}
-                          type="range"
-                          min={RADIUS_MIN_KM}
-                          max={RADIUS_MAX_KM}
-                          step={RADIUS_STEP_KM}
-                          value={c.radiusKm}
-                          aria-valuetext={`${formatNumber(c.radiusKm)} kilomètres`}
-                          onChange={(e) =>
-                            updateCircle(c.key, { radiusKm: snapRadius(Number(e.target.value)) })
-                          }
-                          className="w-full accent-[var(--color-brand-blue)]"
-                        />
-                      </div>
+                          {shape === "CERCLE" ? "Cercle" : "Polygone"}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+                      {isPolygonZone(c) ? (
+                        <div className="flex flex-col gap-2 sm:col-span-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              variant={drawingKey === c.key ? "secondary" : "ghost"}
+                              size="sm"
+                              aria-pressed={drawingKey === c.key}
+                              iconLeft={<PenTool aria-hidden="true" />}
+                              onClick={() => {
+                                setActiveKey(c.key);
+                                setDrawingKey((k) => (k === c.key ? null : c.key));
+                              }}
+                            >
+                              {drawingKey === c.key
+                                ? "Terminer le dessin"
+                                : "Dessiner sur la carte"}
+                            </Button>
+                            {zoneErrors[i] ? (
+                              <span className="text-[0.8125rem] font-semibold text-warning">
+                                {zoneErrors[i]}
+                              </span>
+                            ) : null}
+                          </div>
+                          <PolygonVertexEditor
+                            draft={zoneDraft(c)}
+                            label={`Sommets de ${circleName(c, i)}`}
+                            onChange={(draft) => setDraft(c.key, draft)}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <label
+                            htmlFor={sliderId}
+                            className="flex items-baseline justify-between font-label text-[0.8125rem] font-medium text-ink-soft"
+                          >
+                            Rayon
+                            <span className="text-ink-strong tabular">
+                              {formatNumber(c.radiusKm)} km
+                            </span>
+                          </label>
+                          <input
+                            id={sliderId}
+                            type="range"
+                            min={RADIUS_MIN_KM}
+                            max={RADIUS_MAX_KM}
+                            step={RADIUS_STEP_KM}
+                            value={c.radiusKm}
+                            aria-valuetext={`${formatNumber(c.radiusKm)} kilomètres`}
+                            onChange={(e) =>
+                              updateCircle(c.key, { radiusKm: snapRadius(Number(e.target.value)) })
+                            }
+                            className="w-full accent-[var(--color-brand-blue)]"
+                          />
+                        </div>
+                      )}
                       <Field label="Nom (facultatif)" id={`nom-${c.key}`}>
                         <Input
                           value={c.label ?? ""}
@@ -531,6 +722,11 @@ export function StepZones({
                         />
                       </Field>
                     </div>
+                    {serverZoneErrors.get(i) ? (
+                      <p className="mt-2 text-[0.8125rem] font-semibold text-danger">
+                        {serverZoneErrors.get(i)}
+                      </p>
+                    ) : null}
                   </li>
                 );
               })}
@@ -558,7 +754,9 @@ export function StepZones({
                   loading={savingZones}
                   loadingLabel="Enregistrement des zones"
                   iconLeft={<Save aria-hidden="true" />}
-                  disabledReason={circles.length === 0 ? "Placez au moins une zone." : null}
+                  disabledReason={
+                    circles.length === 0 ? "Placez au moins une zone." : (firstZoneError ?? null)
+                  }
                   onClick={() => void saveZones()}
                 >
                   Enregistrer les zones
@@ -568,9 +766,11 @@ export function StepZones({
                   size="sm"
                   iconLeft={<RotateCcw aria-hidden="true" />}
                   onClick={() => {
-                    setCircles(savedCircles);
-                    setActiveKey(savedCircles[0]?.key ?? null);
-                    setPlacing(savedCircles.length === 0);
+                    setCircles(savedZones);
+                    setActiveKey(savedZones[0]?.key ?? null);
+                    setPlacing(savedZones.length === 0);
+                    setDrawingKey(null);
+                    setServerZoneErrors(new Map());
                   }}
                 >
                   Annuler les modifications
@@ -651,7 +851,10 @@ export function StepZones({
                       circles.length >= MAX_CIRCLES ? `${MAX_CIRCLES} zones maximum.` : null
                     }
                     onClick={() => {
-                      const circle = circleFromRecommendation(rec, catalogue.data?.network ?? []);
+                      const circle = {
+                        type: "CERCLE" as const,
+                        ...circleFromRecommendation(rec, catalogue.data?.network ?? []),
+                      };
                       const index = circles.length;
                       addCircle(circle);
                       setFocusZoneId(null);
@@ -812,6 +1015,9 @@ export function StepZones({
                   const outcome = outcomes.get(s.id);
                   const Icon = SUPPORT_TYPE_ICON[s.supportType];
                   const statusId = `dispo-${s.id}`;
+                  const multiplier = multiplierLabel(
+                    (item as SupportAvailabilityItemCarte).priceMultiplier,
+                  );
                   return (
                     <li
                       key={s.id}
@@ -867,6 +1073,15 @@ export function StepZones({
                             {formatNumber(item.estimatedViews)} affichages ·{" "}
                             {formatTND(item.estimatedCost)}
                           </span>
+                          {multiplier ? (
+                            <Badge
+                              tone="brand"
+                              size="sm"
+                              title="Tarif ajusté selon le créneau, le jour et la demande"
+                            >
+                              {multiplier}
+                            </Badge>
+                          ) : null}
                           {!item.reservedByCampaign &&
                           item.status !== "DISPONIBLE" &&
                           item.conflicts.length > 0 ? (
