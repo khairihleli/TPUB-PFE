@@ -24,6 +24,7 @@ import com.example.tpubpfe.repository.ReservationRepository;
 import com.example.tpubpfe.repository.SupervisionAlertRepository;
 import com.example.tpubpfe.repository.SupportPresenceRepository;
 import com.example.tpubpfe.repository.ZoneRepository;
+import com.example.tpubpfe.service.AuditService;
 import com.example.tpubpfe.service.CampaignErrors;
 import com.example.tpubpfe.service.EmergencyService;
 import com.example.tpubpfe.service.SecurityUtils;
@@ -78,6 +79,7 @@ public class SupervisionService {
     private final EmergencyService emergencyService;
     private final AlertService alertService;
     private final NotificationService notificationService;
+    private final AuditService auditService;
     private final SupervisionProperties.Supervision properties;
     private final Clock clock;
 
@@ -226,6 +228,8 @@ public class SupervisionService {
             alert.setAcknowledgedByUserId(SecurityUtils.getCurrentUser().getId());
             alert = alertRepository.save(alert);
             alertService.publish(alert);
+            auditService.record("ALERT_ACKNOWLEDGED", "ALERT", alert.getId(),
+                    "Prise en compte de l'alerte « " + alert.getTitle() + " »", null);
         }
         return alertService.toResponse(alert);
     }

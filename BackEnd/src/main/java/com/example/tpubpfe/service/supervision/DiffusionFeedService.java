@@ -35,8 +35,8 @@ public class DiffusionFeedService {
             return;
         }
         hub.broadcast(SseHub.Channel.SUPERVISION, "diffusion", toEvent(log));
-        presenceService.touch(event.supportId(), null, null, event.diffusionLogId())
-                .ifPresent(presence -> hub.broadcast(SseHub.Channel.SUPERVISION, "presence", presence));
+        // The presence change is published as an event: the relay broadcasts it once, after commit.
+        presenceService.touch(event.supportId(), null, null, event.diffusionLogId());
     }
 
     /** Pushes a notification and the new unread counter to its recipient. */
