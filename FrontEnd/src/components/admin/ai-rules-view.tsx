@@ -1,12 +1,17 @@
 "use client";
 
 import { ListChecks, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { type FormEvent, useRef, useState } from "react";
 
 import { RoleRestricted } from "@/components/admin/admin-controls";
 import { IdChip, ReadOnlyNotice } from "@/components/admin/admin-ui";
 import {
+  activeCalibration,
   filterRules,
+  formatWeight,
+  learnedWeight,
+  weightedPoints,
   keywordList,
   RULE_DESCRIPTION_MAX,
   RULE_FIELDS,
@@ -43,9 +48,11 @@ import { PageHeader } from "@/components/ui/page-header";
 import { LoadingRegion, Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { aiApi } from "@/lib/api/endpoints";
+import { aiQualityApi } from "@/lib/api/endpoints-ia";
 import { presentError } from "@/lib/api/errors";
 import { AI_SECTORS, type AiRuleResponse } from "@/lib/api/types";
 import { AI_SECTOR_LABEL, AI_SEVERITY } from "@/lib/campaign-status";
+import { cx } from "@/lib/cx";
 import { formatDateTime } from "@/lib/format";
 import { useResource } from "@/lib/use-resource";
 
@@ -74,6 +81,10 @@ function RulesContent({
 }) {
   const { toast } = useToast();
   const rules = useResource("admin:ai-rules", (signal) => aiApi.rules.list({ signal }));
+  const calibrations = useResource("admin:ai-calibrations", (signal) =>
+    aiQualityApi.calibrations({ signal }),
+  );
+  const calibration = activeCalibration(calibrations.data);
   const [filters, setFilters] = useState<RuleFilters>(EMPTY_FILTERS);
   const [editing, setEditing] = useState<{ open: boolean; rule: AiRuleResponse | null }>({
     open: false,
@@ -164,6 +175,32 @@ function RulesContent({
       ),
     },
     {
+      key: "weight",
+      header: "Poids appris",
+      align: "right",
+      nowrap: true,
+      cell: (r) => {
+        if (calibrations.data === undefined) {
+          return calibrations.error ? (
+            <span className="text-muted" title="Poids indisponibles">
+              —
+            </span>
+          ) : (
+            <Skeleton className="ml-auto h-4 w-10" />
+          );
+        }
+        const weight = learnedWeight(calibration, r.id);
+        return (
+          <span
+            className={cx("tabular", weight === 1 ? "text-muted" : "font-semibold text-ink-strong")}
+            title={`+${weightedPoints(r.severity, weight)} points de risque après pondération`}
+          >
+            {formatWeight(weight)}
+          </span>
+        );
+      },
+    },
+    {
       key: "sector",
       header: "Secteur",
       cell: (r) =>
@@ -236,6 +273,35 @@ function RulesContent({
 
       {rules.data ? (
         <div className="flex flex-col gap-4">
+          {calibrations.error && calibrations.data === undefined ? (
+            <Alert
+              tone="warning"
+              title="Poids appris indisponibles"
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  iconLeft={<RefreshCw aria-hidden="true" />}
+                  loading={calibrations.loading}
+                  loadingLabel="Nouvel essai…"
+                  onClick={calibrations.reload}
+                >
+                  Réessayer
+                </Button>
+              }
+            >
+              {presentError(calibrations.error).message} Les règles restent consultables.
+            </Alert>
+          ) : calibration ? (
+            <p className="text-[0.8125rem] text-muted">
+              Poids appris de la calibration v{calibration.version} : revue à partir d&apos;un
+              risque de {calibration.approveThreshold}, refus au-delà de{" "}
+              {calibration.rejectThreshold}.{" "}
+              <Link href="/admin/ia-qualite" className="font-semibold text-brand-blue-text underline">
+                Qualité de l&apos;IA
+              </Link>
+            </p>
+          ) : null}
           <FilterBar
             search={{
               value: filters.q,

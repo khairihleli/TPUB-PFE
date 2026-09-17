@@ -8,6 +8,7 @@ public enum AiIssueSource {
     OCR,
     REGLE,
     OPENAI,
+    ANTHROPIC,
     SECTEUR,
     DOUBLON
 }

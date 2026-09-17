@@ -1,24 +1,31 @@
 package com.example.tpubpfe.service.ai;
 
-import com.example.tpubpfe.config.TpubProperties;
+import com.example.tpubpfe.config.AiAnalysisProperties;
+import com.example.tpubpfe.model.OcrEngine;
+import com.example.tpubpfe.service.ai.ocr.Tess4jOcrService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.awt.image.BufferedImage;
 import java.nio.file.Path;
 import java.util.Locale;
 
 /**
- * Picks the OCR engine from {@code tpub.ai.ocr.mode}: {@code tesseract}, {@code simulated}, or {@code auto}
- * (Tesseract when {@code tesseract --version} succeeds, else simulated).
+ * Picks the OCR engine from {@code tpub.analysis.ocr.mode} (docs/round2-contract.md §2.2): {@code tess4j}
+ * (legacy {@code tesseract}), {@code simulated}, or {@code auto} (Tess4J when its probe succeeds, else simulated).
  */
 @Primary
 @Component
 @RequiredArgsConstructor
 public class OcrServiceResolver implements OcrService {
 
-    private final TpubProperties properties;
-    private final TesseractOcrService tesseract;
+    /** Effective OCR engine, for {@code GET /api/ai/providers}. */
+    public record OcrStatus(OcrEngine engine, String languages, boolean tessdataPresent, String reason) {
+    }
+
+    private final AiAnalysisProperties properties;
+    private final Tess4jOcrService tess4j;
     private final SimulatedOcrService simulated;
 
     @Override
@@ -26,13 +33,31 @@ public class OcrServiceResolver implements OcrService {
         return select().extract(file, originalFileName);
     }
 
+    @Override
+    public OcrResult extractImage(BufferedImage image, Path file, String originalFileName) {
+        return select().extractImage(image, file, originalFileName);
+    }
+
     OcrService select() {
-        String mode = properties.getAi().getOcr().getMode();
-        mode = mode == null ? "auto" : mode.trim().toLowerCase(Locale.ROOT);
-        return switch (mode) {
-            case "tesseract" -> tesseract;
+        return switch (mode()) {
+            case "tess4j", "tesseract" -> tess4j;
             case "simulated", "simule" -> simulated;
-            default -> tesseract.isAvailable() ? tesseract : simulated;
+            default -> tess4j.isAvailable() ? tess4j : simulated;
         };
+    }
+
+    public OcrStatus status() {
+        if ("simulated".equals(mode()) || "simule".equals(mode())) {
+            return new OcrStatus(OcrEngine.SIMULE, tess4j.languages(), tess4j.tessdataPresent(),
+                    "OCR simulé imposé par la configuration (tpub.analysis.ocr.mode)");
+        }
+        Tess4jOcrService.Status status = tess4j.status();
+        return new OcrStatus(status.available() ? OcrEngine.TESSERACT : OcrEngine.SIMULE, tess4j.languages(),
+                status.tessdataPresent(), status.reason());
+    }
+
+    private String mode() {
+        String mode = properties.getOcr().getMode();
+        return mode == null ? "auto" : mode.trim().toLowerCase(Locale.ROOT);
     }
 }

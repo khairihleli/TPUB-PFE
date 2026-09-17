@@ -46,6 +46,7 @@ import {
   validationBody,
   validationNeedsOverride,
 } from "@/components/admin/moderation-model";
+import { AiMediaInsights } from "@/components/ai/ai-media-insights";
 import { useShortcut } from "@/components/shell/shortcuts";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -838,7 +839,7 @@ function ReviewContent({
           ) : null}
           <div className="mt-4" aria-live="polite">
             {report.data ? (
-              <AiReportBlock report={report.data} />
+              <><AiReportBlock report={report.data} /><AiMediaInsights report={report.data} /></>
             ) : report.error ? (
               <ErrorState error={report.error} onRetry={report.reload} scope="section" />
             ) : report.loading ? (

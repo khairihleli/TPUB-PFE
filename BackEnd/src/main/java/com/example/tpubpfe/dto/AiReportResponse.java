@@ -2,7 +2,6 @@ package com.example.tpubpfe.dto;
 
 import com.example.tpubpfe.model.AiIssue;
 import com.example.tpubpfe.model.AiMatchedRule;
-import com.example.tpubpfe.model.AiMediaAnalysis;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -32,8 +31,12 @@ public class AiReportResponse {
     private String extractedText;
     private String ocrEngine;
     private String engine;
-    private List<AiMediaAnalysis> mediaAnalyses;
+    private List<AiMediaAnalysisResponse> mediaAnalyses;
     private List<AiMatchedRule> matchedRules;
+    /** Model answered by the vision provider (round 2), null for a local analysis. */
+    private String providerModel;
+    /** Calibration version applied (round 2). */
+    private Integer calibrationVersion;
     private boolean preview;
     private String adminDecision;
     private Instant checkedAt;

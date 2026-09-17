@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 
+import { AiMediaInsights } from "@/components/ai/ai-media-insights";
+import { engineLabel, issueSourceLabel } from "@/components/ai/image-metrics-model";
 import type { SubmitFlowState } from "@/components/campaign/use-submit-flow";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -34,8 +36,6 @@ import type {
 } from "@/lib/api/types";
 import {
   AI_CONTENT_TYPE_LABEL,
-  AI_ENGINE_LABEL,
-  AI_ISSUE_SOURCE_LABEL,
   AI_REPORT_STATUS,
   AI_SECTOR_LABEL,
   AI_SEVERITY,
@@ -190,7 +190,7 @@ export function groupIssues(report: Pick<AiReport, "issues" | "detectedIssues">)
   return [...groups.entries()]
     .map(([source, list]) => ({
       source,
-      label: AI_ISSUE_SOURCE_LABEL[source] ?? source,
+      label: issueSourceLabel(source),
       issues: [...list].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
     }))
     .sort((a, b) => worst(a.issues) - worst(b.issues) || a.label.localeCompare(b.label, "fr"));
@@ -255,7 +255,7 @@ export function AiReportBody({ report }: { report: AiReport }) {
         {report.engine ? (
           <div className="flex items-center gap-1.5">
             <dt className="text-muted">Moteur</dt>
-            <dd className="text-ink-soft">{AI_ENGINE_LABEL[report.engine]}</dd>
+            <dd className="text-ink-soft">{engineLabel(report.engine)}</dd>
           </div>
         ) : null}
         {report.checkedAt ? (
@@ -315,6 +315,8 @@ export function AiReportBody({ report }: { report: AiReport }) {
           ) : null}
         </Panel>
       </div>
+
+      <AiMediaInsights report={report} className="" />
 
       <Panel icon={<ScanText />} title="Texte détecté dans les visuels">
         <p className="mb-2">
