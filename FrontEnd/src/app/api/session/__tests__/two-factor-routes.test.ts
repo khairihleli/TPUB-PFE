@@ -49,7 +49,7 @@ function setCookie(res: Response, name: string): string | undefined {
 
 function sentBody(call = 0): Record<string, unknown> {
   const init = fetchMock.mock.calls[call]?.[1];
-  return JSON.parse(String(init?.body)) as Record<string, unknown>;
+  return JSON.parse(init?.body as string) as Record<string, unknown>;
 }
 
 const auth = {
