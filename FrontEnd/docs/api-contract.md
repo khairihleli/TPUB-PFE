@@ -201,6 +201,27 @@ Lifecycle scheduler: `VALIDATED_BY_ADMIN` → `ACTIVE` on the start date; `ACTIV
 
 `AiReportResponse`: `riskScore`, `qualityScore` (0..100), `issues[]` (label, severity, source), `detectedIssues[]`, `recommendation` + `recommendations[]`, `sector`, `contentType`, `extractedText` + `ocrEngine` (Tesseract when on PATH, else simulated from the file name), `mediaAnalyses[]` (dimensions, duration, per-media issues), `matchedRules[]`, `engine`, `preview`, `adminDecision`, `checkedAt`. Status: REJECTED on a CRITICAL rule or risk > 70; REVIEW_REQUIRED on risk ≥ 31, a HIGH rule or quality < 40; else APPROVED.
 
+### 5.4b IA : qualité, calibration, moteurs
+
+Round 2, lane L1 (`docs/round2-contract.md` §2). Types in `src/lib/api/types-ia.ts`, calls in `src/lib/api/endpoints-ia.ts` (`aiQualityApi`, `asReportV2`), imported by path.
+
+| Endpoint | Roles | Notes |
+|---|---|---|
+| `GET /providers` | ADMINISTRATEUR, SUPERVISEUR | Effective engines, never a key: `provider` (`LOCAL`\|`OPENAI`\|`ANTHROPIC`), `configured`, `model`, `ocr { engine TESSERACT\|SIMULE, languages, tessdataPresent, reason }`, `video { mp4, webm }`, `learning { enabled, autoApply, cron }` |
+| `GET /quality?from&to` | ADMINISTRATEUR, SUPERVISEUR | `AiQualityResponse`: counts per outcome, `falsePositiveRate`, `falseNegativeRate`, `accuracy`, `overrideRate` (null when the denominator is 0), `perRule[]` (matches desc, raw precision TP/(TP+FP), learnt weight), `weekly[]` (ISO weeks, zero-filled), `activeCalibration`. Defaults to the last 90 days; more than 366 days or a reversed range → 400 `INVALID_RANGE` |
+| `GET /feedback?outcome&ruleId&from&to&page&size` | ADMINISTRATEUR, SUPERVISEUR | `PageResponse<AiFeedbackResponse>`, newest first; `outcome` is a comma list of `CONFIRMED_APPROVAL`, `FALSE_NEGATIVE`, `FALSE_POSITIVE`, `CONFIRMED_FLAG` |
+| `GET /calibrations` | ADMINISTRATEUR, SUPERVISEUR | `AiCalibrationResponse[]`, version desc, at most 50 |
+| `POST /calibrations/recalibrate` | ADMINISTRATEUR | 201, trigger `MANUEL`; active only when `auto-apply` is on and the thresholds or weights changed. Audit `AI_RECALIBRATED` |
+| `POST /calibrations/{version}/activate` | ADMINISTRATEUR | 200; unknown version → 404 `CALIBRATION_NOT_FOUND`. Audit `AI_CALIBRATION_ACTIVATED` |
+
+**Report additions.** `AiReportResponse` gains `providerModel` and `calibrationVersion`; `engine` may be `ANTHROPIC` or `LOCAL_ANTHROPIC`; issue `source` may be `ANTHROPIC`. Each `mediaAnalyses[]` item gains `ocrEngine`, `ocrConfidence` (mean word confidence 0..100), `metrics` (`width`, `height`, `aspectRatio`, `aspectFit` `16:9`\|`9:16`\|`CARRE`\|`PROCHE`\|`AUTRE`, `sharpness` = Laplacian variance, `brightness` = mean luma, `contrast` = luma standard deviation, `textCoverage` 0..1, `dominantColors[] { hex, share }`), `frames[]` (`DEBUT`\|`MILIEU`\|`FIN`, `positionSeconds`, `extractedText`, `metrics`), `thumbnailUrl` (built by `publicUrl`, signed once media signing lands), `videoSupported`, `containerDurationSeconds`. Reports stored before round 2 lack these fields: read them through `asReportV2`.
+
+**Analysis.** OCR runs Tess4J (`fra+eng+ara`, tessdata_fast from `BackEnd/scripts/fetch-tessdata.ps1`, path `TPUB_OCR_TESSDATA`); without tessdata or the native library the simulated OCR answers (`ocrEngine: SIMULE`) and the backend logs one WARN. MP4 videos: container duration and size, frames at 0 s, middle and end (OCR + image metrics, worst frame kept), thumbnail `campaigns/{id}/thumbs/{mediaId}.jpg`; WebM → « analyse vidéo impossible (format WebM) ». Pixel thresholds: flou < 50, netteté limitée < 100, trop sombre < 50, surexposé > 215, contraste faible < 30, texte > 35 % (> 50 % adds risk), quasi uniforme ≥ 90 %. Optional vision provider (`TPUB_AI_PROVIDER=openai|anthropic` + key): risk = max, quality = min, most severe status, `engine` `LOCAL_OPENAI`/`LOCAL_ANTHROPIC`; on failure the local result is kept with « (<Fournisseur> indisponible : analyse locale appliquée) ».
+
+**Learning.** Every effective administrator decision in `ai_decision_logs` becomes one `ai_feedback` row (sync every 10 min and before `/quality` and each recalibration). The nightly recalibration (03:30) moves the review threshold A (21..45) and the reject threshold R (60..85, R ≥ A + 20) by at most 5 per version and each rule weight (0.5..1.5) by at most 0.25; with fewer than 20 decisions A = 31 and R = 70. Rule points = round(severity points × weight). Status: REJECTED on a CRITICAL rule or risk > R; REVIEW_REQUIRED on risk ≥ A, a HIGH rule or quality < 40; else APPROVED.
+
+**Screens.** `/admin/ia-qualite` « Qualité de l'IA » (ADMINISTRATEUR, SUPERVISEUR read-only; OPERATEUR restricted): KPI tiles, weekly charts, « Précision par règle », « Calibration » (history, « Recalibrer maintenant », « Activer cette version »), « Moteurs », tab « Retours ». `/admin/regles-ia` shows « Poids appris ». Campaign AI reports (advertiser and review dialog) show `AiMediaInsights`: thumbnail, frames, metric chips, colours, OCR and provider badges.
+
 ### 5.5 Zones, supports, availability, estimates
 
 | Endpoint | Notes |

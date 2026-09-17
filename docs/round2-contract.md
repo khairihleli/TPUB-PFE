@@ -1579,7 +1579,16 @@ _Lanes append entries under their own heading as `YYYY-MM-DD · lane · what cha
 
 ### L1 `ia-ocr`
 
-_None yet._
+- 2026-09-17 · L1 · Work branch is `lane/ia-ocr` (not `r2/ia-ocr`) · the orchestration harness names lane branches `lane/*`.
+- 2026-09-17 · L1 · `GET /api/ai/quality`: when only `to` is given, `from` defaults to `to − 89` (not `today − 89`); a reversed range also gives 400 `INVALID_RANGE`. `GET /api/ai/feedback` rejects a reversed range with the same code · keeps the default window valid for any `to` and gives one error code for every bad period.
+- 2026-09-17 · L1 · `VisionModerationProvider` has an extra `String model()` (configured model) and `ProviderException` is a nested class · `GET /api/ai/providers` needs the model without calling the provider.
+- 2026-09-17 · L1 · `OcrService` gains a default `extractImage(BufferedImage, Path, String)` next to `extract(Path, String)` · video frames and already decoded images are OCR'd without re-reading a file; the simulated OCR keeps using the file name.
+- 2026-09-17 · L1 · `AiProvidersResponse.configured` is `true` for `LOCAL`; `video.webm` is always `false` · the local analysis needs no key; JCodec only reads MP4.
+- 2026-09-17 · L1 · Worst-frame metrics of a video take width, height, aspect and dominant colours from the middle frame (sharpness/contrast min, brightness farthest from 127.5, text coverage max, as §2.3) · §2.3 does not say which frame supplies the non-"worst" fields.
+- 2026-09-17 · L1 · `AiCalibrationService` creates version 1 (`INITIAL`, 31/70) when `ai_calibrations` is empty · H2 tests have no Flyway seed; on PostgreSQL V6 already inserts it, so nothing happens.
+- 2026-09-17 · L1 · Dockerfile `tessdata` stage is `alpine:3.20` with `curl` + `coreutils` running `fetch-tessdata.sh /tessdata` · the script needs `sha256sum` and a downloader, absent from the Maven build image.
+- 2026-09-17 · L1 · `/admin/ia-qualite` puts the KPI tiles, charts, « Précision par règle », « Calibration » and « Moteurs » under a « Synthèse » tab next to « Retours »; the period defaults to 90 days, and a custom period over 366 days is refused client-side before any call. The weekly chart is two `ColumnChart`s (decisions, errors) plus one data table with the four weekly figures · the existing chart primitives draw one series per chart.
+- 2026-09-17 · L1 · `AiMediaInsights` takes an optional `className` (default `mt-6`); `AiReportBody` renders it after the scores/issues grid with no extra margin · the advertiser report lays its blocks out in a flex gap.
 
 ### L2 `securite`
 
