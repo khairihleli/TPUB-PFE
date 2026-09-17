@@ -36,7 +36,11 @@ public class ReservationResponse {
     private String availabilityStatus;
     private String reservationStatus;
     private Long estimatedViews;
+    /** Dynamic cost frozen at booking time (docs/round2-contract.md §4.6). */
     private BigDecimal estimatedCost;
+    /** R1 cost before the multiplier (equals estimatedCost for reservations created before V8). */
+    private BigDecimal baseCost;
+    private BigDecimal priceMultiplier;
     private Instant createdAt;
     private Instant cancelledAt;
     private String cancelReason;

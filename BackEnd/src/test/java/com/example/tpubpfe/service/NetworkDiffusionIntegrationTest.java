@@ -160,7 +160,15 @@ class NetworkDiffusionIntegrationTest {
             assertThat(r.getReservationStatus()).isEqualTo("TEMPORAIRE");
             assertThat(r.isCancellable()).isTrue();
         });
-        assertThat(booked.get(0).getEstimatedCost()).isEqualByComparingTo("19.20");
+        // R1 base: 2400 views × 8 TND CPM / 1000 = 19.20, then the dynamic multiplier frozen at booking time
+        // (the dates are relative to today, so the day-of-week factor varies: assert the formula, not a constant)
+        BigDecimal multiplier = booked.get(0).getPriceMultiplier();
+        assertThat(booked.get(0).getBaseCost()).isEqualByComparingTo("19.20");
+        assertThat(multiplier).isBetween(new BigDecimal("0.70"), new BigDecimal("1.60"));
+        assertThat(booked.get(0).getEstimatedCost())
+                .isEqualByComparingTo(new BigDecimal("19.20").multiply(multiplier).setScale(2, java.math.RoundingMode.HALF_UP));
+        assertThat(availability.getSupports().get(0).getPriceMultiplier()).isEqualByComparingTo(multiplier);
+        BigDecimal unitCost = new BigDecimal("8").multiply(multiplier).divide(new BigDecimal("1000"), 4, java.math.RoundingMode.HALF_UP);
         assertThatThrownBy(() -> reservationService.createBatch(ReservationBatchRequest.builder()
                 .campaignId(campaignId).supportIds(List.of(screen.getId())).startTime(LocalTime.of(20, 0)).endTime(late).build()))
                 .isInstanceOfSatisfying(ApiException.class, ex -> {
@@ -172,6 +180,9 @@ class NetworkDiffusionIntegrationTest {
         assertThat(cancelled.getCancelReason()).isEqualTo("Budget recentré");
         CampaignEstimateResponse estimate = estimationService.campaign(campaignId);
         assertThat(estimate.getLines()).hasSize(1);
+        assertThat(estimate.getLines().get(0).getPriceMultiplier()).isEqualByComparingTo(multiplier);
+        assertThat(estimate.getLines().get(0).getPricing()).isNotNull();
+        assertThat(estimate.getLines().get(0).getBaseCost()).isEqualByComparingTo("19.20");
         assertThat(estimate.getTotalViews()).isEqualTo(2400);
         assertThat(estimate.isBudgetSufficient()).isTrue();
         assertThat(campaignService.getById(campaignId).getEstimatedViews()).isEqualTo(2400);
@@ -219,9 +230,9 @@ class NetworkDiffusionIntegrationTest {
         assertThat(ad.getMediaType()).isEqualTo("IMAGE");
         assertThat(ad.getDuration()).isEqualTo(10);
         Campaign afterAd = campaignRepository.findById(campaignId).orElseThrow();
-        assertThat(afterAd.getConsumedBudget()).isEqualByComparingTo("0.0080");
+        assertThat(afterAd.getConsumedBudget()).isEqualByComparingTo(unitCost);
         assertThat(paymentRepository.findByCampaignId(campaignId)).singleElement()
-                .extracting(PaymentSimulation::getBudgetConsumed).satisfies(v -> assertThat(v).isEqualByComparingTo("0.0080"));
+                .extracting(PaymentSimulation::getBudgetConsumed).satisfies(v -> assertThat(v).isEqualByComparingTo(unitCost));
 
         DiffusionResponse morningDefault = diffusionService.getNextAd(screen.getId(), null, start.atTime(10, 0));
         assertThat(morningDefault.getType()).isEqualTo("defaut");
@@ -238,7 +249,7 @@ class NetworkDiffusionIntegrationTest {
         assertThat(logs.getItems()).hasSize(2);
         assertThat(logs.getItems().get(0).getContentType()).isEqualTo("PUBLICITE");
         assertThat(logs.getItems().get(0).getClicks()).isEqualTo(1);
-        assertThat(logs.getItems().get(0).getCost()).isEqualByComparingTo("0.0080");
+        assertThat(logs.getItems().get(0).getCost()).isEqualByComparingTo(unitCost);
 
         // --- emergency takeover ---------------------------------------------------------------------------------------
         EmergencyResponse alert = emergencyService.create(EmergencyRequest.builder().title("Alerte " + suffix)
@@ -281,7 +292,7 @@ class NetworkDiffusionIntegrationTest {
         assertThat(mine.getByZone()).singleElement().satisfies(z -> assertThat(z.getViews()).isEqualTo(1));
         StatisticsCampaignResponse campaignStats = statisticsService.campaign(campaignId, today, end);
         assertThat(campaignStats.getViews()).isEqualTo(1);
-        assertThat(campaignStats.getConsumedBudget()).isEqualByComparingTo("0.0080");
+        assertThat(campaignStats.getConsumedBudget()).isEqualByComparingTo(unitCost);
         assertThat(campaignStats.getLastDiffusionAt()).isNotNull();
         String csv = new String(csvExportService.export(new CsvExportService.ExportQuery("mine", today, end, null, null)).content(),
                 StandardCharsets.UTF_8);

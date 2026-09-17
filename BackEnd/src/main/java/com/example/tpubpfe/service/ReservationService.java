@@ -31,6 +31,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -497,6 +498,8 @@ public class ReservationService {
                 .reservationStatus(reservation.getReservationStatus().name())
                 .estimatedViews(reservation.getEstimatedViews())
                 .estimatedCost(reservation.getEstimatedCost())
+                .baseCost(reservation.getBaseCost() != null ? reservation.getBaseCost() : reservation.getEstimatedCost())
+                .priceMultiplier(reservation.getPriceMultiplier() != null ? reservation.getPriceMultiplier() : BigDecimal.ONE)
                 .createdAt(reservation.getCreatedAt())
                 .cancelledAt(reservation.getCancelledAt())
                 .cancelReason(reservation.getCancelReason())
