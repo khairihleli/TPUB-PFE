@@ -68,6 +68,8 @@ public class SignedMediaFilter extends OncePerRequestFilter {
             case INVALID -> reject(request, response, "MEDIA_SIGNATURE_INVALID", INVALID_MESSAGE);
             case EXPIRED -> reject(request, response, "MEDIA_URL_EXPIRED", EXPIRED_MESSAGE);
             case VALID -> {
+                // Refills the local cache from R2 when the file is gone (ephemeral disk) before it is served.
+                storage.resolve(path.get());
                 long maxAge = Math.max(0, Math.min(Long.parseLong(exp) - now, 3600));
                 chain.doFilter(request, new CacheControlResponse(response, "private, max-age=" + maxAge));
             }

@@ -52,3 +52,8 @@ services:
         sync: false
       - key: ZELQANE_ADMIN_INITIAL_PASSWORD
         sync: false
+      # Uploads copied to Cloudflare R2 through the zelqane-media Worker (deploy/media-store)
+      - key: MEDIA_REMOTE_URL
+        value: https://zelqane-media.tukai.workers.dev
+      - key: MEDIA_REMOTE_TOKEN
+        sync: false

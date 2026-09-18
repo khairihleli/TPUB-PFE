@@ -37,6 +37,7 @@ public class FileThumbnailStore implements ThumbnailStore {
                 JpegEncoder.write(JpegEncoder.fitWidth(frame, MAX_WIDTH), out);
             }
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            storage.publish(relative);
             return relative;
         } catch (Exception ex) {
             log.warn("Miniature de la vidéo {} impossible à écrire : {}", mediaId, ex.getMessage());

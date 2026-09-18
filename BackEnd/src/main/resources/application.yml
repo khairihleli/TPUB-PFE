@@ -83,6 +83,9 @@ zelqane:
     # Signed media URLs (empty secret → derived from JWT_SECRET)
     signing-secret: ${MEDIA_SIGNING_SECRET:}
     signed-url-ttl-seconds: ${MEDIA_SIGNED_URL_TTL_SECONDS:3600}
+    # Durable copy on Cloudflare R2 via the zelqane-media Worker (empty → local disk only)
+    remote-url: ${MEDIA_REMOTE_URL:}
+    remote-token: ${MEDIA_REMOTE_TOKEN:}
   # AI analysis (docs/round2-contract.md §2.1), bound by config/AiAnalysisProperties
   analysis:
     ocr:

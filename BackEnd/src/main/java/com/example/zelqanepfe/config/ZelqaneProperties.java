@@ -128,6 +128,12 @@ public class ZelqaneProperties {
         /** Round 2 (L2): HMAC key of signed media URLs; empty or shorter than 32 bytes → derived from the JWT secret. */
         private String signingSecret;
         private long signedUrlTtlSeconds = 3600;
+        /**
+         * Durable copy of the uploads (Cloudflare R2 through the zelqane-media Worker, deploy/media-store). Empty
+         * URL → local disk only. The local directory then acts as a cache refilled on demand.
+         */
+        private String remoteUrl;
+        private String remoteToken;
     }
 
     @Data

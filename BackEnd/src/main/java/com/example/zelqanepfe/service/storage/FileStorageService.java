@@ -28,6 +28,8 @@ import java.util.stream.Stream;
 
 /**
  * Local file storage under {@code zelqane.media.upload-dir}. Every path is normalised and must stay inside the root.
+ * When {@code zelqane.media.remote-url} is set, every write is copied to Cloudflare R2 ({@link RemoteMediaStore}) and a
+ * file missing locally (ephemeral disk after a restart) is downloaded again on first read.
  */
 @Slf4j
 @Service
@@ -39,6 +41,7 @@ public class FileStorageService {
     private final ZelqaneProperties properties;
     private final Clock clock;
     private final MediaUrlSigner signer;
+    private final RemoteMediaStore remote;
 
     /** Hand-built instances (unit tests): system clock, keys from the given properties. */
     public FileStorageService(ZelqaneProperties properties) {
@@ -51,6 +54,8 @@ public class FileStorageService {
         this.clock = clock;
         this.signer = new MediaUrlSigner(SecretKeys.mediaSigningKey(properties),
                 properties.getMedia().getSignedUrlTtlSeconds(), properties.getMedia().getBaseUrl());
+        this.remote = RemoteMediaStore.fromConfig(properties.getMedia().getRemoteUrl(),
+                properties.getMedia().getRemoteToken());
     }
 
     public MediaUrlSigner signer() {
@@ -60,20 +65,44 @@ public class FileStorageService {
     public StoredFile store(MultipartFile file, String directory, String extension) {
         String fileName = UUID.randomUUID() + "." + extension;
         String relativePath = joinRelative(directory, fileName);
-        Path target = resolve(relativePath);
+        Path target = localPath(relativePath);
         try {
             Files.createDirectories(target.getParent());
             MessageDigest digest = sha256();
             try (InputStream in = new DigestInputStream(file.getInputStream(), digest)) {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
             }
+            publish(relativePath);
             return new StoredFile(relativePath, Files.size(target), HexFormat.of().formatHex(digest.digest()));
         } catch (IOException ex) {
             throw new UncheckedIOException("Unable to store file " + relativePath, ex);
         }
     }
 
+    /** Local path of a stored file; downloaded from R2 first when it is missing locally. */
     public Path resolve(String relativePath) {
+        Path path = localPath(relativePath);
+        if (remote != null && !Files.exists(path) && !path.equals(root())) {
+            remote.fetch(key(path), path);
+        }
+        return path;
+    }
+
+    /** Copies a file written directly under the root (e.g. thumbnails) to R2. */
+    public void publish(String relativePath) {
+        if (remote != null) {
+            Path path = localPath(relativePath);
+            if (Files.isRegularFile(path)) {
+                remote.put(key(path), path);
+            }
+        }
+    }
+
+    private String key(Path path) {
+        return root().relativize(path).toString().replace('\\', '/');
+    }
+
+    private Path localPath(String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
             throw invalidPath();
         }
@@ -153,15 +182,25 @@ public class FileStorageService {
 
     public void delete(String relativePath) {
         try {
-            Files.deleteIfExists(resolve(relativePath));
+            Path path = localPath(relativePath);
+            Files.deleteIfExists(path);
+            if (remote != null) {
+                remote.delete(key(path));
+            }
         } catch (IOException ex) {
             log.warn("Unable to delete {}: {}", relativePath, ex.getMessage());
         }
     }
 
     public void deleteDirectory(String relativeDir) {
-        Path dir = resolve(relativeDir);
-        if (dir.equals(root()) || !Files.isDirectory(dir)) {
+        Path dir = localPath(relativeDir);
+        if (dir.equals(root())) {
+            return;
+        }
+        if (remote != null) {
+            remote.deletePrefix(key(dir));
+        }
+        if (!Files.isDirectory(dir)) {
             return;
         }
         try (Stream<Path> walk = Files.walk(dir)) {
@@ -183,10 +222,11 @@ public class FileStorageService {
         int dot = name.lastIndexOf('.');
         String extension = dot >= 0 ? name.substring(dot + 1) : "bin";
         String targetRelative = joinRelative(targetDirectory, UUID.randomUUID() + "." + extension);
-        Path target = resolve(targetRelative);
+        Path target = localPath(targetRelative);
         try {
             Files.createDirectories(target.getParent());
             Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+            publish(targetRelative);
             return targetRelative;
         } catch (IOException ex) {
             throw new UncheckedIOException("Unable to copy " + relativePath, ex);
