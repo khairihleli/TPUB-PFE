@@ -22,3 +22,4 @@ Thumbs.db
 # Uploads (runtime data)
 BackEnd/uploads/
 *.log.err
+cloudflared.log

@@ -5,10 +5,13 @@
 #   2. Spring Boot backend JAR (port 8080, profile "local": simulated player time), secrets from
 #      .zelqane-local.secrets (generated on first run, gitignored), local AI analysis by default
 #   3. Next.js frontend (port 3000)
-# Usage:  powershell -ExecutionPolicy Bypass -File .\start-local.ps1 [-Seed] [-Stop]
+#   4. -Public only: Cloudflare Tunnel "zelqane" publishing the frontend on https://zelqane.com
+#      (backend and database stay reachable from this PC only; see deploy\cloudflare\README.md)
+# Usage:  powershell -ExecutionPolicy Bypass -File .\start-local.ps1 [-Seed] [-Public] [-Stop]
 # =============================================================================
 param(
   [switch]$Seed,
+  [switch]$Public,
   [switch]$Stop
 )
 
@@ -23,6 +26,14 @@ $DbUser = "zelqane_user"
 $DbPassword = "zelqane_local_dev"
 $BackendLog = Join-Path $Root "BackEnd\backend.log"
 $FrontendLog = Join-Path $Root "FrontEnd\frontend.log"
+$PublicUrl = "https://zelqane.com"
+$TunnelConfig = Join-Path $env:USERPROFILE ".cloudflared\zelqane.yml"
+$TunnelLog = Join-Path $Root "cloudflared.log"
+
+function Get-TunnelProcess {
+  Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*zelqane.yml*" }
+}
 
 function Test-Port([int]$Port) {
   [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
@@ -42,6 +53,7 @@ function Wait-Http([string]$Url, [int]$Seconds) {
 }
 
 if ($Stop) {
+  Get-TunnelProcess | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
   Stop-Port 3000
   Stop-Port 8080
   # pg_ctl writes to stderr when the server is already stopped (stale postmaster.pid): not an error here.
@@ -162,7 +174,8 @@ if (-not (Test-Port 8080)) {
     Pop-Location
     $jar = Get-ChildItem (Join-Path $Root "BackEnd\target") -Filter "*.jar" | Where-Object { $_.Name -notlike "*plain*" } | Select-Object -First 1
   }
-  $env:SPRING_PROFILES_ACTIVE = "local"
+  # "local" allows the simulated player time (?datetime=) for demos: never on the public site.
+  $env:SPRING_PROFILES_ACTIVE = if ($Public) { "default" } else { "local" }
   $env:DB_HOST = "localhost"
   $env:DB_PORT = "5432"
   $env:POSTGRES_DB = $DbName
@@ -203,14 +216,33 @@ if ($Seed) {
 # --- 4. Frontend -------------------------------------------------------------
 if (-not (Test-Port 3000)) {
   $fe = Join-Path $Root "FrontEnd"
+  # SITE_URL is baked into the static pages (metadata, sitemap): rebuild when it changes.
+  $siteUrl = if ($Public) { $PublicUrl } else { "http://localhost:3000" }
+  $env:SITE_URL = $siteUrl
+  $siteUrlMarker = Join-Path $fe ".next\zelqane-site-url"
+  $builtFor = if (Test-Path $siteUrlMarker) { (Get-Content $siteUrlMarker -Raw).Trim() } else { "" }
+  if ((Test-Path (Join-Path $fe ".next\BUILD_ID")) -and $builtFor -ne $siteUrl) {
+    Remove-Item (Join-Path $fe ".next\BUILD_ID") -Force
+  }
   if (-not (Test-Path (Join-Path $fe ".next\BUILD_ID"))) {
-    Write-Host "Build du frontend (première fois)..."
+    Write-Host "Build du frontend..."
     Push-Location $fe; npm run build; Pop-Location
+    Set-Content -Path $siteUrlMarker -Value $siteUrl -Encoding ascii
   }
   $env:ZELQANE_API_URL = "http://localhost:8080"
   Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run start > `"$FrontendLog`" 2>&1" -WorkingDirectory $fe -WindowStyle Hidden
 }
 if (-not (Wait-Http "http://localhost:3000/" 60)) { throw "Le frontend ne répond pas. Consultez $FrontendLog" }
+
+# --- 5. Cloudflare Tunnel (-Public) ------------------------------------------
+if ($Public -and -not (Get-TunnelProcess)) {
+  if (-not (Test-Path $TunnelConfig)) {
+    throw "Configuration du tunnel introuvable ($TunnelConfig). Suivez deploy\cloudflare\README.md."
+  }
+  Write-Host "Démarrage du tunnel Cloudflare..."
+  Start-Process -FilePath "cloudflared" -ArgumentList @("tunnel", "--config", "`"$TunnelConfig`"", "--logfile", "`"$TunnelLog`"", "run") -WindowStyle Hidden
+}
+if ($Public) { Write-Host "Site public : $PublicUrl (journal du tunnel : $TunnelLog)" }
 
 Write-Host ""
 Write-Host "ZELQANE est lancé : http://localhost:3000"

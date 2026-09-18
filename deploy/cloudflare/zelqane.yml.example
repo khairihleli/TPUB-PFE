@@ -1,0 +1,12 @@
+# Cloudflare Tunnel "zelqane" -> copy to %USERPROFILE%\.cloudflared\zelqane.yml
+# and replace <TUNNEL_ID> with the id printed by `cloudflared tunnel create zelqane`.
+tunnel: <TUNNEL_ID>
+credentials-file: C:\Users\busin\.cloudflared\<TUNNEL_ID>.json
+
+ingress:
+  # Only the Next.js frontend is published; it reaches the backend on localhost:8080 server-side.
+  - hostname: zelqane.com
+    service: http://localhost:3000
+  - hostname: www.zelqane.com
+    service: http://localhost:3000
+  - service: http_status:404
