@@ -90,7 +90,7 @@ export function CampaignZonesMap({
                   {polygon
                     ? `polygone${area ? ` (${area})` : ""}`
                     : `rayon ${formatNumber(z.radiusKm)} km`}{" "}
-                  · zone TPUB {z.zoneName} ·{" "}
+                  · zone ZELQANE {z.zoneName} ·{" "}
                   {formatCount(
                     z.supportsInside,
                     polygon ? "Porteur dans le polygone" : "Porteur dans le cercle",

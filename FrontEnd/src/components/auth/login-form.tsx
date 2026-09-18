@@ -39,7 +39,7 @@ export const VERIFICATION_EXPIRED_MESSAGE =
   "La vérification en deux étapes a expiré. Saisissez à nouveau votre mot de passe.";
 
 export const ACCOUNT_DISABLED_MESSAGE =
-  "Ce compte est désactivé. Contactez l'équipe TPUB pour le réactiver.";
+  "Ce compte est désactivé. Contactez l'équipe ZELQANE pour le réactiver.";
 export const BAD_CREDENTIALS_MESSAGE = "E-mail ou mot de passe incorrect.";
 
 /** Stable backend codes first (contract §2.0 / §2.10), then the legacy status fallbacks. */
@@ -50,7 +50,7 @@ export function loginErrorMessage(e: unknown): string {
     if (e.status === 401) return BAD_CREDENTIALS_MESSAGE;
     // Spring answers 500 for a deactivated account (contract §4).
     if (e.status === 500) {
-      return "La connexion n'a pas abouti. Si le problème persiste, contactez l'équipe TPUB.";
+      return "La connexion n'a pas abouti. Si le problème persiste, contactez l'équipe ZELQANE.";
     }
   }
   return presentError(e).message;

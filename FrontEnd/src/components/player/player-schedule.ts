@@ -58,7 +58,7 @@ export function classifyPlayerError(e: unknown, supportId: number): PlayerErrorI
       return {
         kind: "offline",
         title: "Connexion perdue",
-        message: "Le lecteur ne parvient pas à joindre TPUB. Il réessaie automatiquement.",
+        message: "Le lecteur ne parvient pas à joindre ZELQANE. Il réessaie automatiquement.",
         slow: false,
       };
     }
@@ -91,7 +91,7 @@ export function classifyPlayerError(e: unknown, supportId: number): PlayerErrorI
       return {
         kind: "unreachable",
         title: "Service momentanément indisponible",
-        message: "Le service TPUB ne répond pas. Le lecteur réessaie automatiquement.",
+        message: "Le service ZELQANE ne répond pas. Le lecteur réessaie automatiquement.",
         slow: false,
       };
     }

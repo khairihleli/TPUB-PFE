@@ -138,7 +138,7 @@ export function MapToolbar({
       aria-orientation={orientation}
       onKeyDown={onKeyDown}
       className={cx(
-        bare ? "flex gap-0.5" : "tpub-map-surface flex gap-0.5 rounded-[16px] p-1",
+        bare ? "flex gap-0.5" : "zelqane-map-surface flex gap-0.5 rounded-[16px] p-1",
         orientation === "vertical" ? "flex-col" : "flex-row flex-wrap",
         className,
       )}

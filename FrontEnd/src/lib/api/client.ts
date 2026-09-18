@@ -11,7 +11,7 @@ import {
 } from "@/lib/api/errors";
 import { translateFieldErrors, translateMessage } from "@/lib/api/messages";
 
-export const SESSION_EXPIRED_EVENT = "tpub:session-expired";
+export const SESSION_EXPIRED_EVENT = "zelqane:session-expired";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -32,7 +32,7 @@ export interface ApiFetchOptions {
    */
   retry?: boolean;
   /**
-   * Extra request headers (round 2: `x-tpub-device-key` of the player). `Accept` and
+   * Extra request headers (round 2: `x-zelqane-device-key` of the player). `Accept` and
    * `Content-Type` stay managed by the client.
    */
   headers?: Record<string, string>;
@@ -392,7 +392,7 @@ export async function apiDownload(
   const filename =
     filenameFromContentDisposition(res.headers.get("content-disposition")) ??
     options.fallbackName ??
-    "tpub-export";
+    "zelqane-export";
   return { blob, filename };
 }
 

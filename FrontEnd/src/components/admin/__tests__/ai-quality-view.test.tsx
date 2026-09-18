@@ -30,7 +30,7 @@ vi.mock("next/navigation", () => ({
 const session = vi.hoisted((): { role: RoleCode } => ({ role: "ADMINISTRATEUR" }));
 vi.mock("@/components/shell/session-provider", () => ({
   useSession: () => ({
-    user: { email: "admin@tpub.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
+    user: { email: "admin@zelqane.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
     role: session.role,
     isAdmin: session.role === "ADMINISTRATEUR",
     isStaff: true,

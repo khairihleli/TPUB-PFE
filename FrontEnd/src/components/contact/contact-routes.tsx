@@ -28,7 +28,7 @@ const ROUTES: readonly RouteCard[] = [
     icon: <Megaphone />,
     who: "Marques",
     line: "Des temps forts planifiés, des dépenses justifiées.",
-    cta: "Parler à TPUB",
+    cta: "Parler à ZELQANE",
     href: "/contact?profil=marque&besoin=campagne#formulaire",
   },
   {

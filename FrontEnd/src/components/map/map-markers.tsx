@@ -105,7 +105,7 @@ export function PorteurMarker({
       {pulse ? (
         <span
           aria-hidden="true"
-          className="tpub-map-pulse pointer-events-none absolute inset-0 rounded-full bg-brand-blue-text/50"
+          className="zelqane-map-pulse pointer-events-none absolute inset-0 rounded-full bg-brand-blue-text/50"
         />
       ) : null}
       {compact ? (

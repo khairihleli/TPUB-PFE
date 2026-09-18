@@ -126,7 +126,7 @@ const NETWORK_SHOTS: readonly InteractiveShot[] = [
     slug: "reseau-explorateur",
     persona: "annonceur",
     path: "/espace/reseau",
-    arrange: (page) => waitForMap(page, "Carte du réseau TPUB"),
+    arrange: (page) => waitForMap(page, "Carte du réseau ZELQANE"),
   },
   {
     // ?zone= deep link frames « Tunis Centre »: zone circle, orientation cones, markers.
@@ -134,9 +134,9 @@ const NETWORK_SHOTS: readonly InteractiveShot[] = [
     persona: "annonceur",
     path: "/espace/reseau?zone=1",
     arrange: async (page) => {
-      await waitForMap(page, "Carte du réseau TPUB");
+      await waitForMap(page, "Carte du réseau ZELQANE");
       await expect(
-        page.locator('[aria-label="Carte du réseau TPUB"] button[data-support-id="1"]'),
+        page.locator('[aria-label="Carte du réseau ZELQANE"] button[data-support-id="1"]'),
       ).toBeVisible({ timeout: 15_000 });
       await page.waitForTimeout(1500);
     },
@@ -171,7 +171,7 @@ const NETWORK_SHOTS: readonly InteractiveShot[] = [
     slug: "admin-reseau-carte",
     persona: "admin",
     path: "/admin/reseau",
-    arrange: (page) => waitForMap(page, "Carte du réseau TPUB (administration)"),
+    arrange: (page) => waitForMap(page, "Carte du réseau ZELQANE (administration)"),
   },
 ];
 

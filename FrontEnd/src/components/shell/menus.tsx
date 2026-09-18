@@ -33,7 +33,7 @@ function NewTabHint() {
 }
 
 /**
- * Account menu (UX-PLAN §3.2): Profil (espace), « Aide & raccourcis », « Voir le site TPUB »
+ * Account menu (UX-PLAN §3.2): Profil (espace), « Aide & raccourcis », « Voir le site ZELQANE »
  * (new tab), « Se déconnecter ». Trigger shows avatar, name and e-mail.
  */
 export function AccountMenu({
@@ -123,7 +123,7 @@ export function AccountMenu({
         <DropdownMenuItem asChild>
           <a href={routes.home()} target="_blank" rel="noopener noreferrer">
             <ExternalLink aria-hidden="true" />
-            Voir le site TPUB
+            Voir le site ZELQANE
             <NewTabHint />
           </a>
         </DropdownMenuItem>
@@ -176,14 +176,14 @@ export function HelpMenu() {
         <DropdownMenuItem asChild>
           <a href={`mailto:${CONTACT.email}`}>
             <Mail aria-hidden="true" />
-            Contacter TPUB
+            Contacter ZELQANE
           </a>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <a href={routes.home()} target="_blank" rel="noopener noreferrer">
             <ExternalLink aria-hidden="true" />
-            Voir le site TPUB
+            Voir le site ZELQANE
             <NewTabHint />
           </a>
         </DropdownMenuItem>

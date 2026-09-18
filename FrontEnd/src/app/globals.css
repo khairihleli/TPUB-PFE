@@ -6,7 +6,7 @@
 @source not "../**/__tests__";
 
 /* ==========================================================================
-   TPUB design tokens — dark-first (docs/design-reference.md §7.2)
+   ZELQANE design tokens — dark-first (docs/design-reference.md §7.2)
    The ONLY place literal colours are allowed. Components use utilities.
    ========================================================================== */
 :root {
@@ -870,55 +870,55 @@
   }
 
   /* Long-form text (legal pages, articles) */
-  .prose-tpub {
+  .prose-zelqane {
     color: var(--ink-soft);
     font-size: 1rem;
     line-height: 1.75;
     max-width: 72ch;
   }
-  .prose-tpub > * + * {
+  .prose-zelqane > * + * {
     margin-top: 1em;
   }
-  .prose-tpub h2 {
+  .prose-zelqane h2 {
     margin-top: 2.2em;
     font-size: 1.45rem;
     line-height: 1.25;
     font-weight: 650;
     letter-spacing: -0.01em;
   }
-  .prose-tpub h3 {
+  .prose-zelqane h3 {
     margin-top: 1.8em;
     font-size: 1.15rem;
     font-weight: 600;
   }
-  .prose-tpub h2 + *,
-  .prose-tpub h3 + * {
+  .prose-zelqane h2 + *,
+  .prose-zelqane h3 + * {
     margin-top: 0.6em;
   }
-  .prose-tpub a {
+  .prose-zelqane a {
     color: var(--blue-text);
     text-decoration: underline;
     text-underline-offset: 3px;
     text-decoration-thickness: 1px;
   }
-  .prose-tpub strong {
+  .prose-zelqane strong {
     color: var(--ink);
     font-weight: 600;
   }
-  .prose-tpub ul,
-  .prose-tpub ol {
+  .prose-zelqane ul,
+  .prose-zelqane ol {
     padding-left: 1.3em;
   }
-  .prose-tpub ul {
+  .prose-zelqane ul {
     list-style: disc;
   }
-  .prose-tpub ol {
+  .prose-zelqane ol {
     list-style: decimal;
   }
-  .prose-tpub li + li {
+  .prose-zelqane li + li {
     margin-top: 0.4em;
   }
-  .prose-tpub li::marker {
+  .prose-zelqane li::marker {
     color: var(--orange-text);
   }
 }

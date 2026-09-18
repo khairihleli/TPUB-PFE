@@ -350,7 +350,7 @@ describe("status freshness", () => {
     expect(pollIntervalFor("PENDING_AI_CHECK", { pendingWindowOver: true })).toBeNull();
   });
 
-  it("polls every 60 s while waiting for TPUB, never otherwise", () => {
+  it("polls every 60 s while waiting for ZELQANE, never otherwise", () => {
     expect(pollIntervalFor("APPROVED_BY_AI")).toBe(REVIEW_POLL_MS);
     expect(pollIntervalFor("REVIEW_REQUIRED")).toBe(REVIEW_POLL_MS);
     for (const s of ["BROUILLON", "REJECTED_BY_AI", "ACTIVE", "BLOCKED", "TERMINATED"] as const) {

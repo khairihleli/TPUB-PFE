@@ -12,7 +12,7 @@ export const RESEAU_HERO = {
   eyebrow: "Réseau & zones",
   title: "Un réseau d'écrans",
   highlight: "conçu sur les Porteurs.",
-  lede: "TPUB est conçu pour faire des écrans des Porteurs une seule surface média : des emplacements géolocalisés, regroupés en zones, programmés et supervisés depuis une même plateforme.",
+  lede: "ZELQANE est conçu pour faire des écrans des Porteurs une seule surface média : des emplacements géolocalisés, regroupés en zones, programmés et supervisés depuis une même plateforme.",
   primary: { label: "Créer un compte pour explorer la carte", href: "/inscription" },
   secondary: { label: "Vous détenez des emplacements ? Parlons-en", href: "/contact" },
   note: "Typologies issues de la conception du Porteur · Visuels d'illustration",
@@ -21,8 +21,8 @@ export const RESEAU_HERO = {
 export const PORTEUR_SECTION = {
   eyebrow: "Le support",
   title: "Le Porteur porte l'écran,",
-  highlight: "TPUB en fait un média.",
-  body: "TPUB est la fonction écran du Porteur, le support standardisé du groupe Tukhnanutha qui réunit connectivité, énergie autonome et supervision. L'écran n'a donc pas à justifier seul sa structure et son alimentation : il partage ces coûts avec les autres fonctions du Porteur, ce qui élargit les lieux où il peut être viable.",
+  highlight: "ZELQANE en fait un média.",
+  body: "ZELQANE est la fonction écran du Porteur, le support standardisé du groupe Tukhnanutha qui réunit connectivité, énergie autonome et supervision. L'écran n'a donc pas à justifier seul sa structure et son alimentation : il partage ces coûts avec les autres fonctions du Porteur, ce qui élargit les lieux où il peut être viable.",
   shared: [
     { key: "energie", label: "Énergie", detail: "Alimentation autonome partagée" },
     { key: "connectivite", label: "Connectivité", detail: "Connexion intégrée au support" },
@@ -74,7 +74,7 @@ export interface EmplacementType {
   screen: string;
   place: string;
   flow: string;
-  /** Null for type D (no screen, no TPUB inventory). */
+  /** Null for type D (no screen, no ZELQANE inventory). */
   image: { src: string; alt: string; position: string } | null;
 }
 
@@ -120,7 +120,7 @@ export const EMPLACEMENT_TYPES: readonly EmplacementType[] = [
     name: "Sans écran",
     screen: "—",
     place: "Sites ruraux, hors réseau",
-    flow: "Pas d'inventaire TPUB",
+    flow: "Pas d'inventaire ZELQANE",
     image: null,
   },
 ];
@@ -148,7 +148,7 @@ export const DIFFUSION_KINDS: readonly DiffusionKind[] = [
     name: "Message prioritaire",
     rule: "D'abord",
     text: "Un message d'intérêt général actif dans la zone de l'écran passe avant toute publicité, le temps de sa diffusion.",
-    owner: "Géré exclusivement par l'équipe TPUB",
+    owner: "Géré exclusivement par l'équipe ZELQANE",
   },
   {
     key: "publicite",
@@ -161,8 +161,8 @@ export const DIFFUSION_KINDS: readonly DiffusionKind[] = [
     key: "defaut",
     name: "Contenu par défaut",
     rule: "En dernier",
-    text: "Si aucun message ni aucune campagne ne correspond, l'écran diffuse le contenu de marque TPUB.",
-    owner: "Programmation TPUB",
+    text: "Si aucun message ni aucune campagne ne correspond, l'écran diffuse le contenu de marque ZELQANE.",
+    owner: "Programmation ZELQANE",
   },
 ];
 

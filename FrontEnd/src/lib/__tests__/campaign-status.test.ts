@@ -72,13 +72,13 @@ describe("status semantics (UX-PLAN §4.8)", () => {
     expect(CAMPAIGN_STATUS.TERMINATED.label).toBe("Terminée");
   });
 
-  it("labels both AI outcomes « En examen TPUB » for advertisers, precisely for staff", () => {
+  it("labels both AI outcomes « En examen ZELQANE » for advertisers, precisely for staff", () => {
     expect(campaignStatusFor("APPROVED_BY_AI", "annonceur")).toMatchObject({
-      label: "En examen TPUB",
+      label: "En examen ZELQANE",
       hint: "Analyse favorable",
     });
     expect(campaignStatusFor("REVIEW_REQUIRED", "annonceur")).toMatchObject({
-      label: "En examen TPUB",
+      label: "En examen ZELQANE",
       hint: "Quelques points à vérifier par l'équipe",
     });
     expect(campaignStatusFor("APPROVED_BY_AI", "staff").label).toBe("Avis IA favorable");
@@ -117,7 +117,7 @@ describe("status semantics (UX-PLAN §4.8)", () => {
   it("reservation pills use the glossary labels", () => {
     expect(RESERVATION_STATUS.TEMPORAIRE).toMatchObject({
       label: "Bloqué",
-      longLabel: "Bloqué · en attente de décision TPUB",
+      longLabel: "Bloqué · en attente de décision ZELQANE",
       tone: "warning",
     });
     expect(RESERVATION_STATUS.CONFIRMEE.label).toBe("Confirmé");

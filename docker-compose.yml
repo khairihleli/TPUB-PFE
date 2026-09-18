@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tpub-postgres
+    container_name: zelqane-postgres
     restart: unless-stopped
     env_file:
       - .env
@@ -13,9 +13,9 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - tpub_postgres_data:/var/lib/postgresql/data
+      - zelqane_postgres_data:/var/lib/postgresql/data
     networks:
-      - tpub_network
+      - zelqane_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -25,7 +25,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: tpub-pgadmin
+    container_name: zelqane-pgadmin
     restart: unless-stopped
     env_file:
       - .env
@@ -37,22 +37,22 @@ services:
     ports:
       - "${PGADMIN_PORT:-5050}:80"
     volumes:
-      - tpub_pgadmin_data:/var/lib/pgadmin
+      - zelqane_pgadmin_data:/var/lib/pgadmin
     networks:
-      - tpub_network
+      - zelqane_network
     depends_on:
       postgres:
         condition: service_healthy
 
   # The backend reads its configuration from .env (env_file). JWT_SECRET is REQUIRED (≥ 32 bytes, never
   # the value once committed to git): without it the container stops at startup with a clear message.
-  # Recommended as well: MEDIA_SIGNING_SECRET, TOTP_ENCRYPTION_KEY, TPUB_ADMIN_INITIAL_PASSWORD and
-  # TPUB_TOTP_REQUIRED_ROLES=ADMINISTRATEUR,SUPERVISEUR,OPERATEUR (see .env.example).
+  # Recommended as well: MEDIA_SIGNING_SECRET, TOTP_ENCRYPTION_KEY, ZELQANE_ADMIN_INITIAL_PASSWORD and
+  # ZELQANE_TOTP_REQUIRED_ROLES=ADMINISTRATEUR,SUPERVISEUR,OPERATEUR (see .env.example).
   backend:
     build:
       context: ./BackEnd
       dockerfile: Dockerfile
-    container_name: tpub-backend
+    container_name: zelqane-backend
     restart: unless-stopped
     env_file:
       - .env
@@ -62,22 +62,22 @@ services:
     ports:
       - "${SERVER_PORT:-8080}:8080"
     volumes:
-      - tpub_uploads:/app/uploads
+      - zelqane_uploads:/app/uploads
     networks:
-      - tpub_network
+      - zelqane_network
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
-  tpub_postgres_data:
-    name: tpub_postgres_data
-  tpub_pgadmin_data:
-    name: tpub_pgadmin_data
-  tpub_uploads:
-    name: tpub_uploads
+  zelqane_postgres_data:
+    name: zelqane_postgres_data
+  zelqane_pgadmin_data:
+    name: zelqane_pgadmin_data
+  zelqane_uploads:
+    name: zelqane_uploads
 
 networks:
-  tpub_network:
-    name: tpub_network
+  zelqane_network:
+    name: zelqane_network
     driver: bridge

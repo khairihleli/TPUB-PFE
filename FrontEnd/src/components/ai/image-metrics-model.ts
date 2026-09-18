@@ -172,7 +172,7 @@ export function providerBadge(report: Pick<AiReportV2, "engine" | "providerModel
 const ENGINE_LABEL_V2: Record<AiEngineV2, string> = {
   ...AI_ENGINE_LABEL,
   ANTHROPIC: "Analyse externe (Claude)",
-  LOCAL_ANTHROPIC: "Règles TPUB et analyse Claude",
+  LOCAL_ANTHROPIC: "Règles ZELQANE et analyse Claude",
 };
 
 export function engineLabel(engine: string | null | undefined): string {

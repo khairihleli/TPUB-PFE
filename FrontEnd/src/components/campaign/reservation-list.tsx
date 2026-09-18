@@ -20,7 +20,7 @@ export interface ReservationListProps {
    * zone name → map zone (IA-06, IA-13). Default true.
    */
   links?: boolean;
-  /** « Bloqué · en attente de décision TPUB » instead of « Bloqué » (glossary long labels). */
+  /** « Bloqué · en attente de décision ZELQANE » instead of « Bloqué » (glossary long labels). */
   longStatus?: boolean;
   /** « Annuler » on reservations the caller may cancel (`cancellable`). */
   onCancel?: (reservation: JoinedReservation) => void;

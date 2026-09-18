@@ -1,10 +1,10 @@
 /** Player device key (docs/round2-contract.md §1.1). Stored per Porteur in localStorage. */
-export const DEVICE_KEY_HEADER = "x-tpub-device-key";
+export const DEVICE_KEY_HEADER = "x-zelqane-device-key";
 
 const KEY_PATTERN = /^tpd_[A-Za-z0-9_-]{43}$/;
 
 function storageKey(supportId: number): string {
-  return `tpub.ecran.cle.${supportId}`;
+  return `zelqane.ecran.cle.${supportId}`;
 }
 
 export function isDeviceKey(value: unknown): value is string {

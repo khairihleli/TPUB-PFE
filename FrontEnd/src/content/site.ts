@@ -1,11 +1,11 @@
 /** Site constants — the ONLY place these values live (SPEC §3.2). */
 
 export const SITE = {
-  name: "TPUB",
+  name: "ZELQANE",
   tagline: "Des écrans réels. Des diffusions tracées.",
   subline: "Affichage numérique extérieur",
   description:
-    "TPUB est la plateforme d'affichage numérique extérieur conçue pour le réseau des Porteurs du groupe Tukhnanutha : réservation par zone et par créneau, contenus contrôlés avant diffusion, diffusions journalisées.",
+    "ZELQANE est la plateforme d'affichage numérique extérieur conçue pour le réseau des Porteurs du groupe Tukhnanutha : réservation par zone et par créneau, contenus contrôlés avant diffusion, diffusions journalisées.",
   pitch:
     "Affichage numérique extérieur sur le réseau des Porteurs : réservation par zone, contenus contrôlés, diffusions journalisées.",
   locale: "fr_TN",
@@ -15,7 +15,7 @@ export const SITE = {
 } as const;
 
 export const CONTACT = {
-  email: "tpub@tukhnanutha.com",
+  email: "zelqane@tukhnanutha.com",
   phone: "+216 29 577 197",
   phoneHref: "tel:+21629577197",
   city: "Tunis",
@@ -32,15 +32,15 @@ export const SOCIAL = {
 export const GROUP = {
   name: "Tukhnanutha",
   url: "https://www.tukhnanutha.com",
-  tpubPage: "https://www.tukhnanutha.com/company/tpub",
+  zelqanePage: "https://www.tukhnanutha.com/company/zelqane",
   porteurPage: "https://www.tukhnanutha.com/porteur",
   mention: "Une société du groupe Tukhnanutha",
-  pole: "TPUB fait partie du pôle Médias, audience & données du groupe, aux côtés d'AFRIVA et d'INFINTRA.",
+  pole: "ZELQANE fait partie du pôle Médias, audience & données du groupe, aux côtés d'AFRIVA et d'INFINTRA.",
 } as const;
 
 /** Discreet maturity banner (brief §8.0). */
 export const STATUS_NOTICE =
-  "TPUB est en phase de conception. Les emplacements, fonctionnalités et parcours présentés décrivent la plateforme telle qu'elle est conçue.";
+  "ZELQANE est en phase de conception. Les emplacements, fonctionnalités et parcours présentés décrivent la plateforme telle qu'elle est conçue.";
 
 export const LEGAL_REVIEW_NOTICE = "Document en cours de validation juridique";
 
@@ -50,5 +50,5 @@ export function siteUrl(): string {
 }
 
 export function copyrightLine(year: number = new Date().getFullYear()): string {
-  return `© ${year} TPUB, une société du groupe Tukhnanutha. Tous droits réservés.`;
+  return `© ${year} ZELQANE, une société du groupe Tukhnanutha. Tous droits réservés.`;
 }

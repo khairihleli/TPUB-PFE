@@ -41,7 +41,7 @@ describe("ForcedPasswordChange (/mot-de-passe-requis)", () => {
     const u = userEvent.setup();
     api.getSession.mockResolvedValue({
       user: {
-        email: "admin@tpub.local",
+        email: "admin@zelqane.local",
         nom: "Admin",
         role: "ADMINISTRATEUR",
         userId: 1,

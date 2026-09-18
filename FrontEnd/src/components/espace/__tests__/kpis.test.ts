@@ -213,7 +213,7 @@ describe("upcomingDeadlines", () => {
       [4, "end", "2026-09-18", 5],
       [1, "start-draft", "2026-09-25", 12],
     ]);
-    expect(d[0]?.label).toBe("Début prévu · en examen TPUB");
+    expect(d[0]?.label).toBe("Début prévu · en examen ZELQANE");
     expect(upcomingDeadlines(campaigns, TODAY, 2)).toHaveLength(2);
   });
 

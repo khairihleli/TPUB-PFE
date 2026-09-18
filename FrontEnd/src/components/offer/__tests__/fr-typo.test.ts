@@ -5,8 +5,8 @@ import { frTypo } from "@/components/offer/fr-typo";
 describe("frTypo", () => {
   it("binds high punctuation to the preceding word", () => {
     expect(frTypo("Compte annonceur ou plan média :")).toBe("Compte annonceur ou plan média :");
-    expect(frTypo("TPUB est-il déjà en service ? Oui ! Non ; peut-être")).toBe(
-      "TPUB est-il déjà en service ? Oui ! Non ; peut-être",
+    expect(frTypo("ZELQANE est-il déjà en service ? Oui ! Non ; peut-être")).toBe(
+      "ZELQANE est-il déjà en service ? Oui ! Non ; peut-être",
     );
   });
 

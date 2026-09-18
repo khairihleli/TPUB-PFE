@@ -13,7 +13,7 @@ export default function CampaignsPage() {
     <>
       <PageHeader
         title="Campagnes"
-        description="Suivez chaque campagne, du brouillon à la diffusion validée par l'équipe TPUB."
+        description="Suivez chaque campagne, du brouillon à la diffusion validée par l'équipe ZELQANE."
       />
       {/* useUrlState (?statut=&q=&tri=) reads the search params: Suspense boundary required. */}
       <Suspense fallback={<CampaignListSkeleton />}>

@@ -70,12 +70,12 @@ describe("home copy guardrails (brief §6)", () => {
 });
 
 describe("Organization JSON-LD", () => {
-  it("describes TPUB with Tukhnanutha as parent organization", () => {
-    const data = buildOrganizationJsonLd("https://tpub.example/");
+  it("describes ZELQANE with Tukhnanutha as parent organization", () => {
+    const data = buildOrganizationJsonLd("https://zelqane.example/");
     expect(data["@type"]).toBe("Organization");
-    expect(data.name).toBe("TPUB");
-    expect(data.url).toBe("https://tpub.example/");
-    expect(data.logo).toBe("https://tpub.example/brand/tpub.png");
+    expect(data.name).toBe("ZELQANE");
+    expect(data.url).toBe("https://zelqane.example/");
+    expect(data.logo).toBe("https://zelqane.example/brand/zelqane.png");
     expect(data.parentOrganization).toMatchObject({
       "@type": "Organization",
       name: "Tukhnanutha",
@@ -137,10 +137,10 @@ describe("home sections", () => {
 
   it("renders the FAQ with the first answer open", () => {
     render(<HomeFaq />);
-    const first = screen.getByRole("button", { name: /^TPUB est-il déjà en service\s\?$/ });
+    const first = screen.getByRole("button", { name: /^ZELQANE est-il déjà en service\s\?$/ });
     expect(first).toHaveAttribute("aria-expanded", "true");
     expect(screen.getAllByRole("button")).toHaveLength(8);
-    expect(screen.getByText(/TPUB est en phase de conception/)).toBeInTheDocument();
+    expect(screen.getByText(/ZELQANE est en phase de conception/)).toBeInTheDocument();
   });
 
   it("separates what is proven from what is only estimated", () => {

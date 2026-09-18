@@ -201,7 +201,7 @@ export function AdSlide({
             </span>
             <span className="inline-flex items-center gap-[0.8cqw] portrait:gap-[2cqw]">
               <Image
-                src="/brand/tpub.png"
+                src="/brand/zelqane.png"
                 alt=""
                 width={64}
                 height={70}
@@ -209,7 +209,7 @@ export function AdSlide({
                 className="h-auto w-[2.6cqw] portrait:w-[6.5cqw]"
               />
               <span className="font-display text-[1.6cqw] font-bold tracking-[0.16em] text-white portrait:text-[4.2cqw]">
-                TPUB
+                ZELQANE
               </span>
             </span>
           </div>
@@ -390,7 +390,7 @@ export function UrgentSlide({ diffusion, animate }: { diffusion: Diffusion; anim
 }
 
 // ---------------------------------------------------------------------------
-// Défaut (TPUB brand loop)
+// Défaut (ZELQANE brand loop)
 // ---------------------------------------------------------------------------
 const BRAND_LINES = [
   SITE.tagline,
@@ -427,9 +427,9 @@ export function DefaultSlide({
   animate: boolean;
   /** Small strip at the bottom (e.g. offline fallback). */
   notice?: ReactNode;
-  /** Default content sent by the backend (`tpub.diffusion.default-title`). */
+  /** Default content sent by the backend (`zelqane.diffusion.default-title`). */
   title?: string | null;
-  /** `tpub.diffusion.default-content`: shown first in the rotating lines. */
+  /** `zelqane.diffusion.default-content`: shown first in the rotating lines. */
   content?: string | null;
 }) {
   const lines = defaultLines(content);
@@ -460,7 +460,7 @@ export function DefaultSlide({
       <SafeArea>
         <div className="absolute inset-0 flex flex-col items-center justify-center p-[5cqw] text-center portrait:p-[8cqw]">
           <Image
-            src="/brand/tpub.png"
+            src="/brand/zelqane.png"
             alt=""
             width={274}
             height={296}
@@ -469,7 +469,7 @@ export function DefaultSlide({
             className="enter h-auto w-[9cqw] drop-shadow-[0_1.2cqw_3cqw_color-mix(in_srgb,var(--color-brand-orange)_35%,transparent)] portrait:w-[22cqw]"
           />
           <p className="enter enter-1 mt-[2.4cqw] font-display text-[8.4cqw] leading-none font-bold tracking-[0.2em] text-white portrait:mt-[6cqw] portrait:text-[17cqw]">
-            TPUB
+            ZELQANE
           </p>
           <p className="enter enter-2 mt-[1.4cqw] font-label text-[1.25cqw] font-semibold tracking-[0.32em] text-brand-orange-text uppercase portrait:mt-[3.5cqw] portrait:text-[2.9cqw] portrait:tracking-[0.2em]">
             {SITE.subline}
@@ -512,7 +512,7 @@ export function BootSlide() {
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-bg p-8 text-center">
       <div aria-hidden="true" className="app-ground absolute inset-0" />
       <Image
-        src="/brand/tpub.png"
+        src="/brand/zelqane.png"
         alt=""
         width={96}
         height={104}
@@ -521,7 +521,7 @@ export function BootSlide() {
         className="relative h-auto w-20 animate-pulse motion-reduce:animate-none"
       />
       <p className="relative font-label text-sm font-semibold tracking-[0.2em] text-muted uppercase">
-        Connexion au réseau TPUB…
+        Connexion au réseau ZELQANE…
       </p>
     </div>
   );
@@ -558,7 +558,7 @@ export function UnpairedSlide({ supportId, revoked }: { supportId: number; revok
         </p>
         <p className="mt-2 max-w-md text-[0.9375rem] leading-relaxed text-muted">
           {revoked ? "La clé de cet écran a été révoquée ou remplacée. " : null}
-          Demandez à un administrateur TPUB de générer le lien d&apos;appairage (Réseau › Porteur ›
+          Demandez à un administrateur ZELQANE de générer le lien d&apos;appairage (Réseau › Porteur ›
           Appairer l&apos;écran).
         </p>
         <p className="mt-4 font-label text-[0.8125rem] text-muted-2 tabular">

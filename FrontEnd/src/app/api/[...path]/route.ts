@@ -1,6 +1,6 @@
 /**
- * Same-origin bridge to the Spring backend: /api/<path> → ${TPUB_API_URL}/api/<path>.
- * Adds `Authorization: Bearer` from the httpOnly `tpub_token` cookie.
+ * Same-origin bridge to the Spring backend: /api/<path> → ${ZELQANE_API_URL}/api/<path>.
+ * Adds `Authorization: Bearer` from the httpOnly `zelqane_token` cookie.
  * /api/auth/* is refused: authentication goes through /api/session/*.
  *
  * Bodies are forwarded byte for byte: JSON is never re-encoded and multipart uploads keep their

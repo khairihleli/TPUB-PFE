@@ -1,6 +1,6 @@
 import { CONTACT, GROUP, SITE, SOCIAL, siteUrl } from "@/content/site";
 
-/** schema.org Organization for TPUB, with Tukhnanutha as parent organization. */
+/** schema.org Organization for ZELQANE, with Tukhnanutha as parent organization. */
 export function buildOrganizationJsonLd(baseUrl: string) {
   const base = baseUrl.replace(/\/+$/, "");
   return {
@@ -9,7 +9,7 @@ export function buildOrganizationJsonLd(baseUrl: string) {
     "@id": `${base}/#organization`,
     name: SITE.name,
     url: `${base}/`,
-    logo: `${base}/brand/tpub.png`,
+    logo: `${base}/brand/zelqane.png`,
     description: SITE.description,
     email: CONTACT.email,
     telephone: CONTACT.phone,
@@ -25,7 +25,7 @@ export function buildOrganizationJsonLd(baseUrl: string) {
       telephone: CONTACT.phone,
       availableLanguage: ["fr"],
     },
-    sameAs: [GROUP.tpubPage],
+    sameAs: [GROUP.zelqanePage],
     parentOrganization: {
       "@type": "Organization",
       name: GROUP.name,

@@ -102,9 +102,9 @@ describe("apiFetch — PASSWORD_CHANGE_REQUIRED (§3.2)", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     await expect(
-      apiFetch("/diffusion/next", { retry: false, headers: { "x-tpub-device-key": "tpd_k" } }),
+      apiFetch("/diffusion/next", { retry: false, headers: { "x-zelqane-device-key": "tpd_k" } }),
     ).rejects.toMatchObject({ status: 429, retryAfterSeconds: 12 });
     const init = fetchMock.mock.calls[0]?.[1];
-    expect(new Headers(init?.headers).get("x-tpub-device-key")).toBe("tpd_k");
+    expect(new Headers(init?.headers).get("x-zelqane-device-key")).toBe("tpd_k");
   });
 });

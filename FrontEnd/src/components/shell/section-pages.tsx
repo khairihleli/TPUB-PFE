@@ -100,7 +100,7 @@ export function SectionError({
       <ErrorState
         error={error}
         title="La page n'a pas pu s'afficher"
-        message="Réessayez. Si le problème persiste, revenez plus tard ou contactez TPUB avec la référence ci-dessous."
+        message="Réessayez. Si le problème persiste, revenez plus tard ou contactez ZELQANE avec la référence ci-dessous."
         onRetry={reset}
         backHref={home}
         backLabel={section === "admin" ? "Vue d'ensemble" : "Tableau de bord"}

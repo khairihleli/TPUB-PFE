@@ -18,7 +18,7 @@ const FUNCTION_ICON: Record<PorteurFunctionKey, ReactNode> = {
   stockage: <Database />,
 };
 
-/** Porteur / group anchoring: panoramic frame, statement, and the Porteur functions around TPUB. */
+/** Porteur / group anchoring: panoramic frame, statement, and the Porteur functions around ZELQANE. */
 export function HomePorteur() {
   return (
     <Section tone="band" labelledBy="porteur-titre">

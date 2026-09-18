@@ -147,7 +147,7 @@ function challengeCookieOptions(maxAge: number, path: string) {
   };
 }
 
-/** `tpub_challenge` (token, path /api/session) + the page marker (no token, path /connexion). */
+/** `zelqane_challenge` (token, path /api/session) + the page marker (no token, path /connexion). */
 export function applyChallengeCookies(res: NextResponse, token: string, expiresAt: string): void {
   const maxAge = challengeMaxAge(expiresAt);
   res.cookies.set(CHALLENGE_COOKIE, token, challengeCookieOptions(maxAge, CHALLENGE_COOKIE_PATH));
@@ -178,7 +178,7 @@ function readCode(payload: unknown): string | null {
 }
 
 /**
- * Forwards a second login step to Spring with the token of the `tpub_challenge` cookie.
+ * Forwards a second login step to Spring with the token of the `zelqane_challenge` cookie.
  * Success of `verify` / `enrolment-enable` opens the session (cookies) and clears the challenge;
  * `CHALLENGE_EXPIRED` clears it too. `enrolment-setup` returns the pending secret.
  */

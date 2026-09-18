@@ -85,7 +85,7 @@ export function recoveryCodesText(codes: readonly string[], email: string, gener
     timeZone: "Africa/Tunis",
   }).format(generatedAt);
   return [
-    "TPUB — codes de secours de la double authentification",
+    "ZELQANE — codes de secours de la double authentification",
     `Compte : ${email}`,
     `Générés le : ${date}`,
     "",
@@ -101,7 +101,7 @@ export function recoveryCodesText(codes: readonly string[], email: string, gener
 export function recoveryCodesFileName(generatedAt: Date): string {
   const d = generatedAt;
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `tpub-codes-de-secours-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.txt`;
+  return `zelqane-codes-de-secours-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.txt`;
 }
 
 /** « 7 codes restants » / « 1 code restant » / « Aucun code restant ». */

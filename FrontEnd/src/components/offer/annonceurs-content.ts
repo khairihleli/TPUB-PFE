@@ -123,11 +123,11 @@ export const PERSONAS: readonly Persona[] = [
       {
         objection: "Et si mon visuel passe à côté d'un contenu douteux ?",
         answer:
-          "Chaque contenu est analysé par IA puis validé par un expert TPUB avant diffusion. Les décisions sont motivées et tracées.",
+          "Chaque contenu est analysé par IA puis validé par un expert ZELQANE avant diffusion. Les décisions sont motivées et tracées.",
       },
     ],
     primary: { label: "Créer un compte", href: "/inscription" },
-    secondary: { label: "Parler à TPUB", href: "/contact?profil=marque#formulaire" },
+    secondary: { label: "Parler à ZELQANE", href: "/contact?profil=marque#formulaire" },
     image: {
       src: "/images/screen-mall.jpg",
       alt: "Écrans numériques dans l'allée d'un centre commercial",
@@ -142,13 +142,13 @@ export const PERSONAS: readonly Persona[] = [
     icon: BriefcaseBusiness,
     title: "Achetez une architecture de mesure,",
     highlight: "pas un volume de contacts.",
-    text: "TPUB distingue la disponibilité des écrans, les diffusions vérifiées et les estimations d'audience, et répond à vos briefs par un plan média.",
+    text: "ZELQANE distingue la disponibilité des écrans, les diffusions vérifiées et les estimations d'audience, et répond à vos briefs par un plan média.",
     need: "Un partenaire DOOH fiable pour plusieurs clients, avec des données exploitables dans un plan média.",
     objections: [
       {
         objection: "Quelle méthodologie ? Quels dénominateurs ?",
         answer:
-          "Pour chaque indicateur, TPUB précise sa nature : observé (disponibilité, diffusion) ou estimé (audience), avec sa méthode.",
+          "Pour chaque indicateur, ZELQANE précise sa nature : observé (disponibilité, diffusion) ou estimé (audience), avec sa méthode.",
       },
       {
         objection: "Quels droits d'audit sur les données ?",
@@ -188,7 +188,7 @@ export const PERSONAS: readonly Persona[] = [
       label: "Nous contacter",
       href: "/contact?besoin=interet-general&profil=institution#formulaire",
     },
-    note: "Les messages prioritaires sont créés par l'équipe TPUB, pas en libre-service.",
+    note: "Les messages prioritaires sont créés par l'équipe ZELQANE, pas en libre-service.",
     image: {
       src: "/images/screen-transport.jpg",
       alt: "Écran d'information dans une station de tramway",

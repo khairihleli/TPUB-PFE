@@ -98,7 +98,7 @@ export function ProfileView() {
         </div>
 
         <aside
-          aria-label="Votre interlocuteur TPUB"
+          aria-label="Votre interlocuteur ZELQANE"
           className="flex flex-col gap-6 lg:sticky lg:top-24"
         >
           <ContactCard />
@@ -184,14 +184,14 @@ function AccountCard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => v
       {client && isClientBlocked(client.validationStatus) ? (
         <div className="px-6 pb-5 sm:px-8">
           <Alert tone="danger" live="none" title={`Compte ${validation?.label.toLowerCase()}`}>
-            {validation?.description} Contactez l&apos;équipe TPUB ({CONTACT.email}) pour en
+            {validation?.description} Contactez l&apos;équipe ZELQANE ({CONTACT.email}) pour en
             connaître la raison.
           </Alert>
         </div>
       ) : client?.validationStatus === "PENDING" ? (
         <div className="px-6 pb-5 sm:px-8">
           <Alert tone="info" live="none">
-            Votre compte est en cours de vérification par TPUB. Vous pouvez déjà préparer et
+            Votre compte est en cours de vérification par ZELQANE. Vous pouvez déjà préparer et
             soumettre des campagnes.
           </Alert>
         </div>
@@ -212,7 +212,7 @@ function AccountCard({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => v
         <p className="font-label text-[0.875rem] font-semibold text-ink-strong">Logo</p>
         <p className="text-[0.8125rem] text-muted">
           PNG, JPEG ou WebP, {formatFileSize(MAX_LOGO_BYTES)} maximum. Il identifie votre société
-          auprès de l&apos;équipe TPUB.
+          auprès de l&apos;équipe ZELQANE.
         </p>
         <input
           ref={inputRef}
@@ -350,7 +350,7 @@ function ProfileForm({ me, onMe }: { me: MeResponse; onMe: (me: MeResponse) => v
     <Card as="section" aria-labelledby="company-title">
       <CardHeader
         title={<span id="company-title">Coordonnées</span>}
-        description="Nom, société, téléphone et adresse transmis à TPUB pour examiner vos campagnes."
+        description="Nom, société, téléphone et adresse transmis à ZELQANE pour examiner vos campagnes."
         icon={<Building2 />}
       />
       <form noValidate onSubmit={(e) => void onSubmit(e)} className="flex flex-col gap-4">
@@ -433,7 +433,7 @@ function ContactCard() {
     <div className="overflow-hidden rounded-panel border border-line bg-grad-card">
       <div className="p-6">
         <h2 className="font-display text-[1.25rem] leading-snug font-semibold text-ink-strong">
-          Votre interlocuteur TPUB
+          Votre interlocuteur ZELQANE
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           De la réservation à la diffusion, une même équipe répond à vos questions.

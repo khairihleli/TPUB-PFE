@@ -9,7 +9,7 @@ import { getSession, isStaffRole } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "Back-office", template: "%s — Back-office — TPUB" },
+  title: { default: "Back-office", template: "%s — Back-office — ZELQANE" },
   robots: { index: false, follow: false },
 };
 

@@ -7,7 +7,7 @@ import { CONTACT } from "@/content/site";
 export const metadata: Metadata = {
   title: "Conditions générales d'utilisation",
   description:
-    "Règles d'utilisation du site et de l'espace annonceur TPUB : compte, campagnes, réservations, contrôle des contenus et estimations. Document en cours de validation juridique.",
+    "Règles d'utilisation du site et de l'espace annonceur ZELQANE : compte, campagnes, réservations, contrôle des contenus et estimations. Document en cours de validation juridique.",
 };
 
 const SECTIONS: readonly LegalSection[] = [
@@ -16,7 +16,7 @@ const SECTIONS: readonly LegalSection[] = [
     title: "Objet",
     content: (
       <p>
-        Les présentes conditions encadrent l&apos;utilisation du site TPUB et de l&apos;espace
+        Les présentes conditions encadrent l&apos;utilisation du site ZELQANE et de l&apos;espace
         annonceur, qui permet de préparer des campagnes d&apos;affichage numérique extérieur :
         création de campagne, réservation de créneaux par zone et par emplacement, contrôle des
         contenus, validation et suivi.
@@ -29,7 +29,7 @@ const SECTIONS: readonly LegalSection[] = [
     content: (
       <>
         <p>
-          TPUB est au stade de la conception. Les fonctionnalités, emplacements et parcours décrits
+          ZELQANE est au stade de la conception. Les fonctionnalités, emplacements et parcours décrits
           correspondent à la plateforme telle qu&apos;elle est conçue et peuvent évoluer.
         </p>
         <ul>
@@ -38,7 +38,7 @@ const SECTIONS: readonly LegalSection[] = [
           </li>
           <li>
             Le dépôt de fichiers de création en libre-service n&apos;est pas encore disponible : vos
-            visuels sont transmis à TPUB.
+            visuels sont transmis à ZELQANE.
           </li>
         </ul>
       </>
@@ -54,8 +54,8 @@ const SECTIONS: readonly LegalSection[] = [
           exactes sur vous et sur votre société, et à les tenir à jour.
         </p>
         <p>
-          Pour protéger l&apos;espace public, chaque compte annonceur est examiné par TPUB avant la
-          diffusion de sa première campagne. TPUB peut refuser ou suspendre un compte dont les
+          Pour protéger l&apos;espace public, chaque compte annonceur est examiné par ZELQANE avant la
+          diffusion de sa première campagne. ZELQANE peut refuser ou suspendre un compte dont les
           informations sont inexactes ou dont l&apos;usage est contraire aux présentes conditions.
         </p>
         <p>
@@ -93,7 +93,7 @@ const SECTIONS: readonly LegalSection[] = [
       <>
         <p>
           Les écrans sont situés dans l&apos;espace public. Chaque campagne soumise est analysée par
-          IA, puis validée ou refusée par un expert TPUB. L&apos;IA assiste, une personne décide ;
+          IA, puis validée ou refusée par un expert ZELQANE. L&apos;IA assiste, une personne décide ;
           les décisions sont enregistrées.
         </p>
         <p>Sont refusés notamment :</p>
@@ -120,7 +120,7 @@ const SECTIONS: readonly LegalSection[] = [
         Le moteur de diffusion est conçu pour donner la priorité aux messages d&apos;intérêt général
         : lorsqu&apos;un tel message est actif dans une zone, il remplace temporairement la
         programmation publicitaire des écrans concernés, puis la diffusion normale reprend. Ces
-        messages sont gérés exclusivement par l&apos;équipe TPUB.
+        messages sont gérés exclusivement par l&apos;équipe ZELQANE.
       </p>
     ),
   },
@@ -165,8 +165,8 @@ const SECTIONS: readonly LegalSection[] = [
     title: "Propriété intellectuelle",
     content: (
       <p>
-        La plateforme, son nom, son logo et ses contenus restent la propriété de TPUB et du groupe
-        Tukhnanutha. Vos créations restent votre propriété ; vous autorisez TPUB à les reproduire et
+        La plateforme, son nom, son logo et ses contenus restent la propriété de ZELQANE et du groupe
+        Tukhnanutha. Vos créations restent votre propriété ; vous autorisez ZELQANE à les reproduire et
         les diffuser dans le cadre des campagnes validées.
       </p>
     ),
@@ -202,7 +202,7 @@ export default function CguPage() {
       href="/cgu"
       label="CGU"
       title="Conditions générales d'utilisation"
-      lede="Les règles qui encadrent l'utilisation du site et de l'espace annonceur TPUB."
+      lede="Les règles qui encadrent l'utilisation du site et de l'espace annonceur ZELQANE."
       version="Version provisoire · septembre 2026"
       sections={SECTIONS}
     />

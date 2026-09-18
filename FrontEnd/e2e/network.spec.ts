@@ -44,7 +44,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
     await waitForContent(page);
 
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Réseau/);
-    const map = await waitForMap(page, "Carte du réseau TPUB");
+    const map = await waitForMap(page, "Carte du réseau ZELQANE");
     // Every Porteur (A–D, maintenance / hors ligne / inactif included) has its own marker.
     await expect(map.getByText("8 Porteurs affichés sur 8")).toBeVisible();
     await expect(map.locator("button[data-support-id]")).toHaveCount(8);
@@ -83,7 +83,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
     const api = await prepare(page, "annonceur");
     await page.goto("/espace/reseau");
     await waitForContent(page);
-    await waitForMap(page, "Carte du réseau TPUB");
+    await waitForMap(page, "Carte du réseau ZELQANE");
 
     await page.getByRole("button", { name: /^Porteurs\s*8$/ }).click();
     const sheet = page.getByRole("dialog", { name: "Réseau" });
@@ -113,7 +113,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       const api = await prepare(page, "annonceur");
       await page.goto("/espace/reseau");
       await waitForContent(page);
-      const map = await waitForMap(page, "Carte du réseau TPUB");
+      const map = await waitForMap(page, "Carte du réseau ZELQANE");
       const panel = page.getByRole("complementary", { name: "Panneau du réseau" });
 
       // « Localiser » flies to the Porteur: its own marker becomes visible (no cluster).
@@ -172,7 +172,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       const api = await prepare(page, "annonceur");
       await page.goto("/espace/reseau");
       await waitForContent(page);
-      const map = await waitForMap(page, "Carte du réseau TPUB");
+      const map = await waitForMap(page, "Carte du réseau ZELQANE");
       const markers = map.locator("button[data-support-id]");
       await expect(markers).toHaveCount(8);
 
@@ -263,7 +263,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       const api = await prepare(page, "annonceur");
       await page.goto("/espace/reseau");
       await waitForContent(page);
-      await waitForMap(page, "Carte du réseau TPUB");
+      await waitForMap(page, "Carte du réseau ZELQANE");
 
       const panel = page.getByRole("complementary", { name: "Panneau du réseau" });
       await panel.getByRole("button", { name: "Ouvrir Écran Promenade du Lac 2" }).click();
@@ -420,7 +420,7 @@ test.describe("réseau — explorateur /espace/reseau", () => {
       const api = await prepare(page, "admin");
       await page.goto("/admin/reseau");
       await waitForContent(page);
-      const map = await waitForMap(page, "Carte du réseau TPUB (administration)");
+      const map = await waitForMap(page, "Carte du réseau ZELQANE (administration)");
 
       await map.getByRole("toolbar").getByRole("button", { name: "Placer un Porteur" }).click();
       await expect(

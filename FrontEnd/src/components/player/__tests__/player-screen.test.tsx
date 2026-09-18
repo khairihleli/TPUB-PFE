@@ -77,9 +77,9 @@ describe("PlayerScreen", () => {
 
   it("shows the offline state with a retry, then recovers", async () => {
     api.next.mockRejectedValueOnce(
-      new ApiError(502, "Le service TPUB est momentanément indisponible."),
+      new ApiError(502, "Le service ZELQANE est momentanément indisponible."),
     );
-    api.next.mockResolvedValue({ ...urgent, type: "DEFAUT", title: "TPUB - Contenu par defaut" });
+    api.next.mockResolvedValue({ ...urgent, type: "DEFAUT", title: "ZELQANE - Contenu par defaut" });
 
     render(<PlayerScreen supportId={3} />);
 
@@ -228,11 +228,11 @@ describe("PlayerScreen", () => {
     api.next.mockResolvedValue({
       ...urgent,
       type: "DEFAUT",
-      title: "TPUB",
-      content: "Espace de diffusion TPUB",
+      title: "ZELQANE",
+      content: "Espace de diffusion ZELQANE",
     });
     render(<PlayerScreen supportId={2} simulatedAt="2026-12-24T20:00:00" />);
-    expect(await screen.findByText("Espace de diffusion TPUB")).toBeInTheDocument();
+    expect(await screen.findByText("Espace de diffusion ZELQANE")).toBeInTheDocument();
     const [query] = api.next.mock.calls[0] as [{ datetime: string }];
     expect(query.datetime.startsWith("2026-12-24T20:00:0")).toBe(true);
     expect(screen.getByText("Heure simulée (?datetime)")).toBeInTheDocument();
@@ -279,7 +279,7 @@ describe("PlayerScreen", () => {
   });
 
   it("warns when the backend ignored the simulated date-time", async () => {
-    api.next.mockResolvedValue({ ...urgent, type: "DEFAUT", title: "TPUB", simulatedTime: false });
+    api.next.mockResolvedValue({ ...urgent, type: "DEFAUT", title: "ZELQANE", simulatedTime: false });
     render(<PlayerScreen supportId={2} simulatedAt="2026-12-24T20:00:00" />);
     expect(
       await screen.findByText("Heure simulée ignorée : le serveur utilise son horloge"),

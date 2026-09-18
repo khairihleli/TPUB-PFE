@@ -11,8 +11,8 @@ export interface ConfidenceStep {
   nature: ConfidenceNature;
   /** e.g. « Observée (journalisée) ». */
   natureLabel: string;
-  /** What TPUB shows for this level. */
-  inTpub: string;
+  /** What ZELQANE shows for this level. */
+  inZelqane: string;
   icon?: ReactNode;
 }
 
@@ -22,35 +22,35 @@ export const DEFAULT_CONFIDENCE_STEPS: readonly ConfidenceStep[] = [
     level: "Disponibilité de l'écran",
     nature: "observed",
     natureLabel: "Observée",
-    inTpub: "État technique de chaque support",
+    inZelqane: "État technique de chaque support",
     icon: <MonitorCheck />,
   },
   {
     level: "Diffusion",
     nature: "observed",
     natureLabel: "Observée (journalisée)",
-    inTpub: "Horodatage, écran, zone, campagne, durée",
+    inZelqane: "Horodatage, écran, zone, campagne, durée",
     icon: <Activity />,
   },
   {
     level: "Interactions (canaux connectés)",
     nature: "observed",
     natureLabel: "Observées",
-    inTpub: "Clics, interactions",
+    inZelqane: "Clics, interactions",
     icon: <MousePointerClick />,
   },
   {
     level: "Audience, exposition",
     nature: "estimated",
     natureLabel: "Estimée ou modélisée",
-    inTpub: "Présentée avec sa méthode, anonyme et agrégée",
+    inZelqane: "Présentée avec sa méthode, anonyme et agrégée",
     icon: <Users />,
   },
   {
     level: "Effet commercial",
     nature: "counterfactual",
     natureLabel: "Nécessite un groupe témoin",
-    inTpub: "Pas revendiqué par défaut",
+    inZelqane: "Pas revendiqué par défaut",
     icon: <TrendingUp />,
   },
 ];
@@ -156,7 +156,7 @@ export function ConfidenceLadder({
                 {s.natureLabel}
               </span>
               <span className="col-start-2 text-[0.875rem] leading-snug text-muted sm:col-start-auto">
-                {s.inTpub}
+                {s.inZelqane}
               </span>
             </li>
           );

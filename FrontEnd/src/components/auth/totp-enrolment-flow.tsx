@@ -183,7 +183,7 @@ export function TotpEnrolmentFlow({ next }: { next: string | null }) {
         <>
           <section aria-labelledby="enrolment-scan-title" className="flex flex-col gap-4">
             <h2 id="enrolment-scan-title" className="font-label text-[1rem] font-semibold text-ink-strong">
-              1. Ajoutez TPUB à votre application
+              1. Ajoutez ZELQANE à votre application
             </h2>
             <TotpSetupPanel setup={setup} />
           </section>

@@ -21,7 +21,7 @@ function fillValid() {
   fireEvent.change(screen.getByLabelText(/^Message/), {
     target: { value: "Plan média rentrée sur Tunis et Sfax." },
   });
-  fireEvent.click(screen.getByLabelText(/J'accepte que TPUB/));
+  fireEvent.click(screen.getByLabelText(/J'accepte que ZELQANE/));
 }
 
 describe("ContactForm", () => {
@@ -63,14 +63,14 @@ describe("ContactForm", () => {
     expect(options.body).toMatchObject({ profil: "agence", site_web: "", consentement: true });
     expect(
       await screen.findByText(
-        "Merci, votre demande est bien envoyée. L'équipe TPUB revient vers vous par e-mail.",
+        "Merci, votre demande est bien envoyée. L'équipe ZELQANE revient vers vous par e-mail.",
       ),
     ).toBeInTheDocument();
   });
 
   it("keeps the input and shows the brief's error copy when sending fails", async () => {
     apiFetch.mockImplementation(() =>
-      Promise.reject(new ApiError(502, "Le service TPUB est momentanément indisponible.")),
+      Promise.reject(new ApiError(502, "Le service ZELQANE est momentanément indisponible.")),
     );
     render(<ContactForm initial={{ profil: "marque", besoin: "campagne" }} />);
     fillValid();

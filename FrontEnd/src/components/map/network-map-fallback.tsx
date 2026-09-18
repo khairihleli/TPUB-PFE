@@ -545,7 +545,7 @@ function DenseInset({
     <section
       aria-label={`${title} : ${porteurs.length} Porteurs à leur position exacte`}
       data-map-inset=""
-      className="tpub-map-surface relative flex shrink-0 flex-col rounded-card"
+      className="zelqane-map-surface relative flex shrink-0 flex-col rounded-card"
       style={{ width: "min(40cqw, 22rem, calc(100cqh - 2.5rem))" }}
     >
       <p className="border-b border-line px-3 py-2 font-label text-[0.75rem] font-semibold text-muted-2">

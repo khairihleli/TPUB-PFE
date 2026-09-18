@@ -135,7 +135,7 @@ vi.mock("next/navigation", async () => {
 const session = vi.hoisted((): { role: RoleCode } => ({ role: "ADMINISTRATEUR" }));
 vi.mock("@/components/shell/session-provider", () => ({
   useSession: () => ({
-    user: { email: "admin@tpub.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
+    user: { email: "admin@zelqane.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
     role: session.role,
     isAdmin: session.role === "ADMINISTRATEUR",
     isStaff: true,
@@ -425,7 +425,7 @@ describe("JournalView", () => {
         {
           id: 1,
           actorUserId: 1,
-          actorEmail: "admin@tpub.local",
+          actorEmail: "admin@zelqane.local",
           actorName: "Admin",
           actorRole: "ADMINISTRATEUR",
           action: "CAMPAIGN_VALIDATED_OVERRIDE",
@@ -576,7 +576,7 @@ describe("UsersView", () => {
     const create = await screen.findByRole("dialog", { name: "Créer un compte d'équipe" });
     fireEvent.change(within(create).getByLabelText(/^Nom/), { target: { value: "Opérateur Sud" } });
     fireEvent.change(within(create).getByLabelText(/Adresse e-mail/), {
-      target: { value: "ops@tpub.tn" },
+      target: { value: "ops@zelqane.com" },
     });
     fireEvent.change(within(create).getByLabelText(/Mot de passe initial/), {
       target: { value: "motdepasse1" },
@@ -584,7 +584,7 @@ describe("UsersView", () => {
     fireEvent.click(within(create).getByRole("button", { name: "Créer le compte" }));
     await waitFor(() =>
       expect(api.usersCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ email: "ops@tpub.tn", role: "OPERATEUR" }),
+        expect.objectContaining({ email: "ops@zelqane.com", role: "OPERATEUR" }),
       ),
     );
     expect(
@@ -596,7 +596,7 @@ describe("UsersView", () => {
     const operator: AdminUserResponse = {
       ...advertiser,
       userId: 9,
-      email: "ops@tpub.tn",
+      email: "ops@zelqane.com",
       nom: "Opérateur Sud",
       role: "OPERATEUR",
       societe: null,

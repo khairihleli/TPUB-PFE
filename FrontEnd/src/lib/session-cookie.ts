@@ -9,8 +9,8 @@ import type {
   SessionUser,
 } from "@/lib/api/types";
 
-export const TOKEN_COOKIE = "tpub_token";
-export const USER_COOKIE = "tpub_user";
+export const TOKEN_COOKIE = "zelqane_token";
+export const USER_COOKIE = "zelqane_user";
 
 /** Fallback lifetime when the JWT has no readable `exp` (backend default 24 h). */
 export const DEFAULT_SESSION_SECONDS = 24 * 60 * 60;
@@ -128,7 +128,7 @@ export function serializeUserCookie(user: SessionUser): string {
   return base64UrlEncode(JSON.stringify(user));
 }
 
-/** Parses + validates the `tpub_user` cookie. Invalid or malformed → null. */
+/** Parses + validates the `zelqane_user` cookie. Invalid or malformed → null. */
 export function parseUserCookie(value: string | null | undefined): SessionUser | null {
   if (!value) return null;
   const json = base64UrlDecode(value);
@@ -172,14 +172,14 @@ export function isLoginChallenge(v: unknown): v is LoginChallengeResponse {
 }
 
 /** Cookie holding the challenge token (httpOnly, path /api/session): never readable by JS. */
-export const CHALLENGE_COOKIE = "tpub_challenge";
+export const CHALLENGE_COOKIE = "zelqane_challenge";
 /** The only path the challenge cookie is sent to. */
 export const CHALLENGE_COOKIE_PATH = "/api/session";
 /**
  * Marker readable by the middleware on the verification pages (httpOnly, no token inside): the
  * challenge cookie itself is scoped to /api/session and never reaches page requests.
  */
-export const CHALLENGE_MARKER_COOKIE = "tpub_challenge_actif";
+export const CHALLENGE_MARKER_COOKIE = "zelqane_challenge_actif";
 
 /** Challenge cookie max-age: seconds until `expiresAt` (0 when past or invalid). */
 export function challengeMaxAge(expiresAt: string, now: number = Date.now()): number {

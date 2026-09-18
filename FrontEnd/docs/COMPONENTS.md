@@ -1,4 +1,4 @@
-# TPUB shared components — builder reference (UX foundation)
+# ZELQANE shared components — builder reference (UX foundation)
 
 Read this instead of the source. Imports use barrels: `@/components/ui`, `@/components/marketing`,
 `@/components/shell`, `@/lib/api`. All UI text is French. No literal colours in pages: use the
@@ -74,7 +74,7 @@ Custom utilities / classes:
 | `line-mask` | masked headline line rise (`<span class="line-mask"><span>…</span></span>`) |
 | `reveal`, `reveal-stagger` | scroll reveal (use the `<Reveal>` component, not the classes) |
 | `meter-fill` | bar that fills when its Reveal ancestor enters |
-| `prose-tpub` | long-form text styling (legal pages): h2/h3/p/ul/ol/a |
+| `prose-zelqane` | long-form text styling (legal pages): h2/h3/p/ul/ol/a |
 | `no-scrollbar`, `fade-edges-y` | scroller helpers |
 
 Reduced motion: every CSS animation/reveal is neutralised globally. For JS animation use `useReducedMotion()` from `@/lib/use-reduced-motion`.
@@ -118,11 +118,11 @@ Input(InputHTMLAttributes) · Textarea(TextareaHTMLAttributes) · Select(SelectH
 StatusPill({ size?, className? } & (
   | { type: "campaign"; campaign: {status,startDate,endDate}; today?; audience?: "annonceur"|"staff"; showHint? }
   | { type: "campaign-status"; status: CampaignDisplayStatus; audience?; showHint? }
-  | { type: "reservation"; status; long? }      // « Bloqué » / long « Bloqué · en attente de décision TPUB »
+  | { type: "reservation"; status; long? }      // « Bloqué » / long « Bloqué · en attente de décision ZELQANE »
   | { type: "support"; status } | { type: "urgency"; level } | { type: "ai"; status }
   | { type: "custom"; label; tone: BadgeTone; description?; pulse? }))
 ```
-`<StatusPill type="campaign" campaign={c} audience="annonceur" showHint />` → « En examen TPUB » + « Analyse favorable ».
+`<StatusPill type="campaign" campaign={c} audience="annonceur" showHint />` → « En examen ZELQANE » + « Analyse favorable ».
 - `audience` default: from the session (ANNONCEUR → annonceur, staff → staff), `staff` outside a session (public pages). Pass it explicitly in shared components.
 
 `EstimateTag({ rule?, label?="Estimation", className? })` + `formatEstimate(n, unit = "DT")` (also in `@/lib/format`) — neutral outline tag + rule tooltip (VD-16). `<span>{formatEstimate(r.estimatedCost)}</span> <EstimateTag rule={ESTIMATE_COST_RULE} />` → « ≈ 120 DT ».
@@ -214,9 +214,9 @@ StatusPill({ size?, className? } & (
 
 `BroadcastScreen({ creatives?: {kicker, line, sub, campaign, theme: "brand"|"blue"|"green"|"amber"}[], interval?, hideLog? })` (client) — « DÉMO » dot, « Exemple » creatives, simulated « Illustration » log, static under reduced motion, pauses off-screen.
 
-`ModerationPipeline({ riskScore?=20, qualityScore?=75 })` — campaign → AI gauges → « Validé par un expert TPUB », values labelled « Valeurs d'exemple ».
+`ModerationPipeline({ riskScore?=20, qualityScore?=75 })` — campaign → AI gauges → « Validé par un expert ZELQANE », values labelled « Valeurs d'exemple ».
 
-`ConfidenceLadder({ steps?: {level, nature: "observed"|"estimated"|"counterfactual", natureLabel, inTpub, icon?}[], footnote? })` — defaults = brief §8.4 table (`DEFAULT_CONFIDENCE_STEPS`).
+`ConfidenceLadder({ steps?: {level, nature: "observed"|"estimated"|"counterfactual", natureLabel, inZelqane, icon?}[], footnote? })` — defaults = brief §8.4 table (`DEFAULT_CONFIDENCE_STEPS`).
 
 `StatusBanner({ message? })`, `SiteHeader()`, `SiteFooter()` — already in the `(marketing)` layout; don't render them in pages.
 
@@ -276,7 +276,7 @@ One tone per lifecycle phase (`PHASE_TONE`), asserted by `campaign-status.test.t
 | ended | `muted` | muted | TERMINATED, ENDED |
 | problem | `danger` | red | REJECTED_BY_AI, BLOCKED |
 
-- `campaignStatusFor(status, audience = "staff")` → `{ label, tone, description, hint, phase, pulse? }`; `CAMPAIGN_STATUS` (staff: « Analyse IA en attente », « Avis IA favorable », « Revue manuelle », « Validée »…) and `CAMPAIGN_STATUS_ANNONCEUR` (« Analyse IA en cours », « En examen TPUB » ×2, « À corriger », « Programmée », « En diffusion », « Terminée », « Refusée » + hints).
+- `campaignStatusFor(status, audience = "staff")` → `{ label, tone, description, hint, phase, pulse? }`; `CAMPAIGN_STATUS` (staff: « Analyse IA en attente », « Avis IA favorable », « Revue manuelle », « Validée »…) and `CAMPAIGN_STATUS_ANNONCEUR` (« Analyse IA en cours », « En examen ZELQANE » ×2, « À corriger », « Programmée », « En diffusion », « Terminée », « Refusée » + hints).
 - `getCampaignStatusMeta(c, { audience?, today? })` (legacy `getCampaignStatusMeta(c, today)` still works) adds `key` and the real start date in the scheduled hint.
 - `getCampaignTimeCue(c, today?, now?)` → `{ label, tone } | null`: « Soumise il y a 3 h » (submittedAt), « Diffusion dans 5 jours », « Jusqu'au 31 oct. 2026 », « Terminée le 12 oct. 2026 », « Date de début dépassée » (warning). Never invents a timestamp.
 - List tabs `CAMPAIGN_FILTERS` (`?statut=`): `toutes`, `a-finaliser`, `en-examen`, `validees` (« Validées », description « Programmées ou en diffusion »), `terminees` (« Terminées & refusées »). `parseCampaignFilter(raw)` maps legacy `brouillons→a-finaliser`, `validation→en-examen`, `diffusion→validees`, `refusees→terminees`. `matchesCampaignFilter(statusOrCampaign, filter, today?)` — pass the campaign so derived states land in the right tab.
@@ -386,7 +386,7 @@ TimeRangeField({ value: {start: "HH:mm", end}; onChange; step?: 15|30 = 30; dayP
 Form safety (UX-PLAN §7):
 - `useUnsavedChangesGuard({ dirty, message? })` (`@/lib/forms/unsaved-guard`, re-exported by `@/components/shell`): `beforeunload` while dirty; inside AppShell, same-origin link clicks (capture phase), sidebar, tab bar, trail, back control and palette ask « Quitter sans enregistrer ? ». Opt a link out with `data-guard="off"`. Back (popstate) is not intercepted: pair with drafts.
 - `useNavigationGuard()` → `{ confirmNavigation(href, { replace?, newTab? }), confirmAction(fn) }`; `GuardedLink` = next/link routed through it. Helpers: `hasUnsavedChanges()`, `suspendUnsavedGuards(ms)`, `shouldInterceptLinkClick`.
-- `useFormDraft({ key, value, dirty, userId?, version? = 1, enabled? = true, onRestore?(value, savedAt), delay? = 500 })` → `{ restoredValue, restoredAt, discard(), clear() }` (`@/lib/forms/form-draft`): sessionStorage `tpub:draft:v{version}:{userId}:{key}`, ignored after 24 h, try/catch everywhere. Call `clear()` after a successful save/submit. Keys: `campaign:new`, `campaign:{id}:details`, `campaign:{id}:edit`, `network:quick-draft`, `admin:emergency:new`, `admin:zone:{id|new}`, `admin:support:{id|new}`. `hasDirtyDrafts()` drives the session-expired wording.
+- `useFormDraft({ key, value, dirty, userId?, version? = 1, enabled? = true, onRestore?(value, savedAt), delay? = 500 })` → `{ restoredValue, restoredAt, discard(), clear() }` (`@/lib/forms/form-draft`): sessionStorage `zelqane:draft:v{version}:{userId}:{key}`, ignored after 24 h, try/catch everywhere. Call `clear()` after a successful save/submit. Keys: `campaign:new`, `campaign:{id}:details`, `campaign:{id}:edit`, `network:quick-draft`, `admin:emergency:new`, `admin:zone:{id|new}`, `admin:support:{id|new}`. `hasDirtyDrafts()` drives the session-expired wording.
 - `useAutosave({ value, save, enabled, delay? = 1500, isEqual? })` → `{ state, savedAt, retry(), flush(), pending }` (`@/lib/forms/autosave`): enable only for BROUILLON/REJECTED_BY_AI drafts with an id and a valid value; a failure waits for `retry()` or the next edit. Show `<AutosaveStatus state savedAt onRetry={retry} />`.
 - Submit: `ErrorSummary` for 2+ errors, `focusField(id)` for one; `mapServerFieldErrors` keeps mapping server errors. Dialog forms: `DialogContent dirty`.
 - Session: banner at T−10 min (`role="status"`, « Masquer »), again at T−2 min (`role="alert"`); 401 or T → non-dismissible « Session expirée » dialog → `/connexion?next={path}&expire=1`. The banner's « Se reconnecter » opens `/connexion?next=…&renouveler=1` in a new tab (middleware lets it through).
@@ -427,4 +427,4 @@ setState({ examen: 3 }, { history: "push" });     // overlays that look like pag
 - `useShortcut(keys, handler, { description, section, when?, allowInEditable?, allowInDialog?, enabled? })` — registers into the « ? » sheet (`ShortcutsDialog`). Grammar: `"mod+k"`, `"shift+?"`, `"g d"` (1.2 s sequence), `"j"`, `"escape"`, `"plus"`. Single-key shortcuts never fire in inputs/textarea/select/contenteditable/combobox, with Ctrl/⌘/Alt, or inside another dialog (unless `allowInDialog`), and can be turned off in the sheet (WCAG 2.1.4). Outside ShortcutsProvider the hook binds its own listener.
   `useShortcut("v", validate, { description: "Valider", section: "Examen de modération", allowInDialog: true, when: () => canValidate })`
 - Registry (`@/lib/shortcuts`): `NAV_SEQUENCES`, `globalShortcutSection`, `navigationShortcutSection`, `MAP_SHORTCUT_SECTION` (mirrors `network-map-client.tsx`), `STUDIO_SHORTCUT_SECTION` (mirrors `porteur-studio-canvas.tsx`), `MODERATION_SHORTCUT_SECTION` (J/K/V/R/Esc, handlers owned by the moderation review), `shortcutSectionsFor(variant, pathname)`, `parseKeys`, `matchesStroke`, `isEditableTarget`, `keyLabels`, `keysAriaLabel`, `registerPageSearch`, `focusPageSearch`, `singleKeyShortcutsEnabled`. `useShortcutsHelp().openHelp()` opens the sheet.
-- Trail: `useBreadcrumbs(items)` (or `PageHeader breadcrumbs`) sets the topbar trail, cleared on unmount; `useDocumentTitle(name, section?)` → « Ouverture boutique La Marsa — Campagnes — TPUB ».
+- Trail: `useBreadcrumbs(items)` (or `PageHeader breadcrumbs`) sets the topbar trail, cleared on unmount; `useDocumentTitle(name, section?)` → « Ouverture boutique La Marsa — Campagnes — ZELQANE ».

@@ -51,7 +51,7 @@ function FooterLink({
   );
 }
 
-/** Editorial footer: tricolor hairline, spaced TPUB monument, link columns, group card, legal bar. */
+/** Editorial footer: tricolor hairline, spaced ZELQANE monument, link columns, group card, legal bar. */
 export function SiteFooter() {
   return (
     <footer className="relative isolate overflow-hidden border-t border-line bg-[linear-gradient(180deg,var(--color-bg),var(--color-bg-2))]">
@@ -71,7 +71,7 @@ export function SiteFooter() {
             aria-hidden="true"
             className="text-gradient font-display text-[clamp(2.75rem,12vw,8.5rem)] leading-none font-bold tracking-[0.3em] [margin-right:-0.3em]"
           >
-            TPUB
+            ZELQANE
           </p>
           <p className="mx-auto mt-6 max-w-[520px] text-[0.9375rem] leading-relaxed text-muted">
             {SITE.pitch}
@@ -81,7 +81,7 @@ export function SiteFooter() {
               href={SOCIAL.linkedin}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="TPUB et le groupe Tukhnanutha sur LinkedIn (nouvel onglet)"
+              aria-label="ZELQANE et le groupe Tukhnanutha sur LinkedIn (nouvel onglet)"
               className="inline-flex size-11 items-center justify-center rounded-control border border-line bg-white/[0.03] text-muted transition-[transform,background-color,color,border-color] duration-200 hover:-translate-y-0.5 hover:border-orange-line hover:bg-orange-soft hover:text-brand-orange-text"
             >
               <LinkedInIcon />

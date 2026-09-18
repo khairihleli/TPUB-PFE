@@ -19,7 +19,7 @@ import { cx } from "@/lib/cx";
 export const metadata: Metadata = {
   title: "Tarifs",
   description:
-    "Emplacement, format, pression, créneaux, saison, création : les critères qui font le prix d'une campagne TPUB. Coût estimé indicatif dans l'espace annonceur, plan média sur devis pour les marques et les agences.",
+    "Emplacement, format, pression, créneaux, saison, création : les critères qui font le prix d'une campagne ZELQANE. Coût estimé indicatif dans l'espace annonceur, plan média sur devis pour les marques et les agences.",
   alternates: { canonical: "/tarifs" },
 };
 
@@ -58,7 +58,7 @@ const PRICE_PATHS: readonly PricePath[] = [
     points: [
       { text: "Objectifs, cibles et zones clarifiés avant toute réservation" },
       { text: "Ce qui sera prouvé et ce qui sera estimé, précisé d'emblée" },
-      { text: "Un interlocuteur unique TPUB" },
+      { text: "Un interlocuteur unique ZELQANE" },
     ],
     cta: { label: "Demander un plan média", href: "/contact?besoin=plan-media#formulaire" },
     image: {
@@ -76,7 +76,7 @@ export default function TarifsPage() {
         eyebrow="Tarifs"
         title="Un prix média,"
         highlight="pas un prix au mètre carré."
-        lede="Il n'existe pas de grille unique pour l'affichage numérique. Le prix d'une campagne dépend de critères concrets, que TPUB rend explicites."
+        lede="Il n'existe pas de grille unique pour l'affichage numérique. Le prix d'une campagne dépend de critères concrets, que ZELQANE rend explicites."
         note={frTypo("Aucun montant affiché : chaque proposition part de vos critères.")}
         image={{ src: "/images/led-closeup.jpg", position: "center 40%" }}
         actions={

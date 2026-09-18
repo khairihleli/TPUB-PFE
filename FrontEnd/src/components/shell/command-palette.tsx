@@ -92,7 +92,7 @@ export interface RecentItem {
 const MAX_RECENTS = 5;
 
 export function recentsStorageKey(userId: number | string): string {
-  return `tpub:recents:${userId}`;
+  return `zelqane:recents:${userId}`;
 }
 
 export function readRecents(userId: number | string): RecentItem[] {

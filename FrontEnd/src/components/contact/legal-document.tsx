@@ -93,7 +93,7 @@ export function LegalDocument({ href, title, label, lede, version, sections }: L
                   href="/contact"
                   className="mt-2 inline-flex min-h-touch items-center gap-1.5 font-label text-[0.8125rem] font-semibold text-brand-blue-text hover:text-ink-strong"
                 >
-                  Écrire à TPUB
+                  Écrire à ZELQANE
                   <ArrowRight aria-hidden="true" className="size-3.5" />
                 </Link>
               </div>
@@ -108,7 +108,7 @@ export function LegalDocument({ href, title, label, lede, version, sections }: L
               title={LEGAL_REVIEW_NOTICE}
               className="rounded-panel"
             >
-              Ce document présente les informations connues à ce jour sur TPUB et sur la plateforme,
+              Ce document présente les informations connues à ce jour sur ZELQANE et sur la plateforme,
               au stade de la conception. Il sera complété et validé par un juriste avant la mise en
               service. Pour toute question : {CONTACT.email}.
             </Alert>
@@ -137,7 +137,7 @@ export function LegalDocument({ href, title, label, lede, version, sections }: L
                     </span>
                     <span>{s.title}</span>
                   </h2>
-                  <div className="prose-tpub mt-5 max-w-[68ch]">{s.content}</div>
+                  <div className="prose-zelqane mt-5 max-w-[68ch]">{s.content}</div>
                 </section>
               ))}
             </div>

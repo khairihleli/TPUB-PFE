@@ -15,7 +15,7 @@ export const OVERRIDE_ACK = "Je valide malgré l'avis de l'IA (dérogation journ
 export const DECISION_FINAL_TEXT =
   "Une campagne refusée repasse en brouillon lorsque l'annonceur la corrige, puis revient dans la file après une nouvelle analyse IA.";
 
-export const REJECT_REASON_HINT = `Affiché à l'annonceur dans son espace (« Motif du refus TPUB ») et enregistré dans le journal. ${REJECT_REASON_MIN} à ${REJECT_REASON_MAX} caractères.`;
+export const REJECT_REASON_HINT = `Affiché à l'annonceur dans son espace (« Motif du refus ZELQANE ») et enregistré dans le journal. ${REJECT_REASON_MIN} à ${REJECT_REASON_MAX} caractères.`;
 
 export const BLOCK_DIFFUSION_TEXT =
   "Bloquer la diffusion annule les réservations de la campagne et la retire immédiatement des écrans.";

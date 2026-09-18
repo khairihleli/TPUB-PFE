@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seeds a running TPUB backend with demo data for the v2 API:
+ * Seeds a running ZELQANE backend with demo data for the v2 API:
  * - zones and Porteurs (supports) with every technical status, Porteur characteristics and
  *   visibility scores, plus one maintenance block;
  * - staff accounts (OPERATEUR, SUPERVISEUR) and a validated demo advertiser;
@@ -14,12 +14,12 @@
  * left by the pre-v2 seed (no map circle, so they can never be diffused) are replaced once.
  *
  * Round 2 (docs/round2-contract.md §10): no password literal. The administrator password comes from
- * TPUB_ADMIN_PASSWORD / TPUB_ADMIN_INITIAL_PASSWORD (or ../.tpub-local.secrets); demo account passwords
- * from TPUB_DEMO_PASSWORD or scripts/.demo-accounts.json (generated once, gitignored). A second
- * administrator (admin2@tpub.local) is created for the double approvals. Every ACTIF Porteur without a
+ * ZELQANE_ADMIN_PASSWORD / ZELQANE_ADMIN_INITIAL_PASSWORD (or ../.zelqane-local.secrets); demo account passwords
+ * from ZELQANE_DEMO_PASSWORD or scripts/.demo-accounts.json (generated once, gitignored). A second
+ * administrator (admin2@zelqane.local) is created for the double approvals. Every ACTIF Porteur without a
  * device key is paired; keys go to scripts/.demo-device-keys.json and the pairing URLs are printed.
  *
- * Usage: node scripts/seed-demo.mjs [--rotate-keys]   (TPUB_API_URL defaults to http://localhost:8080)
+ * Usage: node scripts/seed-demo.mjs [--rotate-keys]   (ZELQANE_API_URL defaults to http://localhost:8080)
  */
 import {
   adminCredentials,
@@ -31,7 +31,7 @@ import {
   saveDeviceKey,
   SetupError,
 } from "./lib/demo-auth.mjs";
-import { call, day, items, pngForm, SLOT_PRESETS } from "./lib/tpub-api.mjs";
+import { call, day, items, pngForm, SLOT_PRESETS } from "./lib/zelqane-api.mjs";
 
 const ROTATE_KEYS = process.argv.includes("--rotate-keys");
 
@@ -43,10 +43,10 @@ const ADVERTISER = {
   adresse: "La Marsa, Tunis",
 };
 const STAFF = [
-  { email: "operateur@tpub.local", nom: "Karim Operateur", role: "OPERATEUR" },
-  { email: "superviseur@tpub.local", nom: "Nadia Superviseure", role: "SUPERVISEUR" },
+  { email: "operateur@zelqane.local", nom: "Karim Operateur", role: "OPERATEUR" },
+  { email: "superviseur@zelqane.local", nom: "Nadia Superviseure", role: "SUPERVISEUR" },
   // Second administrator: emergencies and risky validations need two distinct administrators.
-  { email: "admin2@tpub.local", nom: "Sonia Administratrice", role: "ADMINISTRATEUR" },
+  { email: "admin2@zelqane.local", nom: "Sonia Administratrice", role: "ADMINISTRATEUR" },
 ];
 
 const ZONES = [
@@ -590,7 +590,7 @@ main().then(
   ({ admin, pairing }) => {
     console.log("\nDonnées de démo prêtes.");
     console.log(
-      `  Admin       : ${admin.email} (mot de passe : TPUB_ADMIN_PASSWORD ou .tpub-local.secrets)`,
+      `  Admin       : ${admin.email} (mot de passe : ZELQANE_ADMIN_PASSWORD ou .zelqane-local.secrets)`,
     );
     for (const s of STAFF) {
       console.log(`  ${s.role.padEnd(14)} : ${s.email} / ${demoPassword(s.email)}`);

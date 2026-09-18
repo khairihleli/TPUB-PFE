@@ -18,7 +18,7 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => {
 
 vi.mock("@/components/shell/session-provider", () => ({
   useSession: () => ({
-    user: { email: "admin@tpub.local", nom: "Admin", role: "ADMINISTRATEUR", userId: 1, exp: 1 },
+    user: { email: "admin@zelqane.local", nom: "Admin", role: "ADMINISTRATEUR", userId: 1, exp: 1 },
     role: "ADMINISTRATEUR",
     loggingOut: false,
     logout: vi.fn(),
@@ -31,8 +31,8 @@ import { clearResourceCache } from "@/lib/resource-cache";
 
 const me: MeResponse = {
   userId: 1,
-  email: "admin@tpub.local",
-  nom: "Admin TPUB",
+  email: "admin@zelqane.local",
+  nom: "Admin ZELQANE",
   role: "ADMINISTRATEUR",
   telephone: null,
   societe: null,
@@ -69,7 +69,7 @@ describe("AccountView (/admin/compte)", () => {
       </ToastProvider>,
     );
     expect(screen.getByRole("heading", { level: 1, name: "Mon compte" })).toBeInTheDocument();
-    expect(await screen.findByText("Admin TPUB")).toBeInTheDocument();
+    expect(await screen.findByText("Admin ZELQANE")).toBeInTheDocument();
     expect(screen.getByText("Active · obligatoire pour ce rôle")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Mot de passe" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Double authentification" })).toBeInTheDocument();

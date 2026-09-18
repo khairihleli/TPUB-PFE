@@ -370,7 +370,7 @@ describe("outcomes", () => {
       message: RESERVATION_CONFLICT_MESSAGE,
     });
     expect(
-      outcomeFromError(new ApiError(502, "Le service TPUB est momentanément indisponible.")),
+      outcomeFromError(new ApiError(502, "Le service ZELQANE est momentanément indisponible.")),
     ).toMatchObject({
       status: "error",
       retryable: true,

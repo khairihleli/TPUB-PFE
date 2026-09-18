@@ -91,7 +91,7 @@ function item(
 }
 
 // ---------------------------------------------------------------------------
-// « À décider par TPUB »
+// « À décider par ZELQANE »
 // ---------------------------------------------------------------------------
 export interface DecisionQueueSummary {
   total: number;
@@ -159,7 +159,7 @@ export function buildOverviewGroups(d: DashboardResponse): OverviewGroup[] {
         item("pendingCampaigns", n(d.pendingCampaigns), {
           label: "En attente",
           format: "number",
-          hint: "Analyse IA ou décision TPUB",
+          hint: "Analyse IA ou décision ZELQANE",
           accent: "warning",
           source:
             "Campagnes soumises : analyse IA en cours, avis favorable ou revue manuelle en attente de décision.",
@@ -173,7 +173,7 @@ export function buildOverviewGroups(d: DashboardResponse): OverviewGroup[] {
           source: "Campagnes arrivées au terme de leur période ou de leur budget.",
         }),
         item("blockedCampaigns", n(d.blockedCampaigns), {
-          label: "Refusées par TPUB",
+          label: "Refusées par ZELQANE",
           format: "number",
           hint: "Bloquées par un administrateur",
           accent: "red",
@@ -197,7 +197,7 @@ export function buildOverviewGroups(d: DashboardResponse): OverviewGroup[] {
         item("approvedByAiCampaigns", n(d.approvedByAiCampaigns), {
           label: "Avis IA favorable",
           format: "number",
-          hint: "À valider par TPUB",
+          hint: "À valider par ZELQANE",
           accent: "success",
           source: "Campagnes jugées conformes par l'IA, en attente de validation humaine.",
           href: moderation({ onglet: "a-traiter" }),
@@ -281,14 +281,14 @@ export function buildOverviewGroups(d: DashboardResponse): OverviewGroup[] {
         item("temporaryReservations", n(d.temporaryReservations), {
           label: "Réservations temporaires",
           format: "number",
-          hint: "En attente de décision TPUB",
+          hint: "En attente de décision ZELQANE",
           accent: "warning",
           source: "Créneaux retenus par des campagnes pas encore validées.",
         }),
         item("cancelledReservations", n(d.cancelledReservations), {
           label: "Annulées",
           format: "number",
-          hint: "Par l'annonceur ou TPUB",
+          hint: "Par l'annonceur ou ZELQANE",
           accent: "neutral",
           source: "Réservations annulées (refus, modification de zone, annulation manuelle).",
         }),

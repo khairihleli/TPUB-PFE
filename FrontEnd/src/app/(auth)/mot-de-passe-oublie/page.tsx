@@ -9,11 +9,11 @@ import { CONTACT } from "@/content/site";
 
 export const metadata: Metadata = {
   title: "Mot de passe oublié",
-  description: "Retrouver l'accès à votre compte annonceur TPUB.",
+  description: "Retrouver l'accès à votre compte annonceur ZELQANE.",
 };
 
 /**
- * No reset endpoint exists in the backend (contract §7): tell the truth and route to TPUB,
+ * No reset endpoint exists in the backend (contract §7): tell the truth and route to ZELQANE,
  * never simulate an e-mail being sent.
  */
 export default function MotDePasseOubliePage() {
@@ -22,7 +22,7 @@ export default function MotDePasseOubliePage() {
       <AuthHeader
         eyebrow="Accès au compte"
         title="Réinitialiser le mot de passe"
-        subtitle="La réinitialisation en ligne n'est pas encore disponible. L'équipe TPUB vous aide à retrouver l'accès à votre compte."
+        subtitle="La réinitialisation en ligne n'est pas encore disponible. L'équipe ZELQANE vous aide à retrouver l'accès à votre compte."
       />
 
       <AuthCard>
@@ -51,7 +51,7 @@ export default function MotDePasseOubliePage() {
               <span className="min-w-0 flex-1 truncate text-[0.9375rem] text-ink-strong select-all">
                 {CONTACT.email}
               </span>
-              <CopyButton value={CONTACT.email} label="Copier l'adresse e-mail de TPUB" />
+              <CopyButton value={CONTACT.email} label="Copier l'adresse e-mail de ZELQANE" />
             </li>
             <li className="flex min-h-touch items-center gap-3 px-4 py-2.5">
               <Phone aria-hidden="true" className="size-4 shrink-0 text-brand-orange-text" />
@@ -68,7 +68,7 @@ export default function MotDePasseOubliePage() {
             href="/contact?besoin=autre"
             className={buttonClasses({ variant: "primary", size: "lg", fullWidth: true })}
           >
-            Contacter TPUB
+            Contacter ZELQANE
             <ArrowRight aria-hidden="true" />
           </Link>
         </div>

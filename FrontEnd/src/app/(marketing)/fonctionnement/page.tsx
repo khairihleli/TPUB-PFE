@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 export const metadata: Metadata = {
   title: "Fonctionnement",
   description:
-    "Le parcours d'une campagne TPUB, de l'inscription au journal de diffusion : statuts, analyse IA et validation humaine, ce qui est prouvé et ce qui est estimé, priorité aux messages d'intérêt général.",
+    "Le parcours d'une campagne ZELQANE, de l'inscription au journal de diffusion : statuts, analyse IA et validation humaine, ce qui est prouvé et ce qui est estimé, priorité aux messages d'intérêt général.",
   alternates: { canonical: "/fonctionnement" },
 };
 

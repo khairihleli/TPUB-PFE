@@ -21,7 +21,7 @@ export const DESIGN_INTENTION_NOTICE =
 
 export const INFERRED_TYPE_LABEL = "Typologie estimée";
 export const INFERRED_TYPE_HINT =
-  "Type de Porteur non déclaré : typologie déduite du type de support, à confirmer par TPUB.";
+  "Type de Porteur non déclaré : typologie déduite du type de support, à confirmer par ZELQANE.";
 
 /** How the screen is laid out on the mast. */
 export type FaceLayout = "wrap" | "double" | "single" | "none";
@@ -62,7 +62,7 @@ export interface PorteurTypeMeta {
   category: 1 | 2 | 3 | 4;
   /** @deprecated legacy marker accent; use `tone`. */
   accent: PorteurAccent;
-  /** Whether the typology carries TPUB inventory at all. */
+  /** Whether the typology carries ZELQANE inventory at all. */
   hasScreen: boolean;
   /** Static render in /public. */
   image: string;
@@ -129,9 +129,9 @@ export const PORTEUR_TYPES: Readonly<Record<PorteurType, PorteurTypeMeta>> = {
     label: "Infrastructure sans écran",
     context: "Sites ruraux et hors réseau",
     screen: "Aucun écran : connectivité, météo, énergie et supervision",
-    flow: "Pas d'inventaire TPUB",
+    flow: "Pas d'inventaire ZELQANE",
     description:
-      "Conçu comme support d'infrastructure là où il n'y a pas d'audience à servir : pas d'écran, donc pas d'inventaire publicitaire TPUB.",
+      "Conçu comme support d'infrastructure là où il n'y a pas d'audience à servir : pas d'écran, donc pas d'inventaire publicitaire ZELQANE.",
     faces: 0,
     faceLayout: "none",
     icon: "infrastructure",

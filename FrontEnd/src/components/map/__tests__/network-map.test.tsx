@@ -86,7 +86,7 @@ describe("detectWebGL", () => {
 describe("NetworkMapClient — SVG fallback", () => {
   it("renders the fallback notice, the region and accessible Porteur markers", () => {
     renderMap();
-    const region = screen.getByRole("region", { name: "Carte du réseau TPUB" });
+    const region = screen.getByRole("region", { name: "Carte du réseau ZELQANE" });
     expect(region).toHaveAttribute("data-map-engine", "svg");
     expect(screen.getByText("Carte simplifiée (WebGL indisponible)")).toBeInTheDocument();
     expect(
@@ -212,7 +212,7 @@ describe("NetworkMapClient — SVG fallback", () => {
 
   it("Escape closes an open panel; L opens the legend", () => {
     renderMap();
-    const region = screen.getByRole("region", { name: "Carte du réseau TPUB" });
+    const region = screen.getByRole("region", { name: "Carte du réseau ZELQANE" });
     fireEvent.keyDown(region, { key: "l" });
     expect(screen.getByRole("region", { name: "Légende" })).toBeInTheDocument();
     fireEvent.keyDown(region, { key: "Escape" });

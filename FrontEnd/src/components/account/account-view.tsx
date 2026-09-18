@@ -40,7 +40,7 @@ export function AccountView() {
           <Card as="section" aria-labelledby="account-summary-title">
             <CardHeader
               title={<span id="account-summary-title">Profil</span>}
-              description="Informations de votre compte TPUB."
+              description="Informations de votre compte ZELQANE."
               icon={<UserRound />}
               actions={
                 <Button

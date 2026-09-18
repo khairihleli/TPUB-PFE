@@ -9,7 +9,7 @@ export function dismissibleStorageKey(
   key: string,
   userId: number | string | null | undefined,
 ): string {
-  return `tpub:dismissed:${userId ?? "anon"}:${key}`;
+  return `zelqane:dismissed:${userId ?? "anon"}:${key}`;
 }
 
 function read(storageKey: string): boolean {

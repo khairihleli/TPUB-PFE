@@ -100,11 +100,11 @@ export const exportsApi = {
   pdf: (q: StatisticsExportQuery, o: CallOptions = {}) =>
     downloadAndSave("/statistics/export.pdf", exportQuery(q), {
       signal: o.signal,
-      fallbackName: `tpub-statistiques-${q.type}.pdf`,
+      fallbackName: `zelqane-statistiques-${q.type}.pdf`,
     }),
   xlsx: (q: StatisticsExportQuery, o: CallOptions = {}) =>
     downloadAndSave("/statistics/export.xlsx", exportQuery(q), {
       signal: o.signal,
-      fallbackName: `tpub-statistiques-${q.type}.xlsx`,
+      fallbackName: `zelqane-statistiques-${q.type}.xlsx`,
     }),
 };

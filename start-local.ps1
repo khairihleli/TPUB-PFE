@@ -1,9 +1,9 @@
 # =============================================================================
-# TPUB — local run without Docker (Windows)
-#   0. portable JDK 21 in %LOCALAPPDATA%\tpub-jdk (only to compile the backend once)
-#   1. portable PostgreSQL in %LOCALAPPDATA%\tpub-postgres (port 5432)
+# ZELQANE — local run without Docker (Windows)
+#   0. portable JDK 21 in %LOCALAPPDATA%\zelqane-jdk (only to compile the backend once)
+#   1. portable PostgreSQL in %LOCALAPPDATA%\zelqane-postgres (port 5432)
 #   2. Spring Boot backend JAR (port 8080, profile "local": simulated player time), secrets from
-#      .tpub-local.secrets (generated on first run, gitignored), local AI analysis by default
+#      .zelqane-local.secrets (generated on first run, gitignored), local AI analysis by default
 #   3. Next.js frontend (port 3000)
 # Usage:  powershell -ExecutionPolicy Bypass -File .\start-local.ps1 [-Seed] [-Stop]
 # =============================================================================
@@ -14,13 +14,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
-$PgHome = Join-Path $env:LOCALAPPDATA "tpub-postgres"
+$PgHome = Join-Path $env:LOCALAPPDATA "zelqane-postgres"
 $PgBin = Join-Path $PgHome "pgsql\bin"
 $PgData = Join-Path $PgHome "data"
 $PgLog = Join-Path $PgHome "postgres.log"
-$DbName = "tpub"
-$DbUser = "tpub_user"
-$DbPassword = "tpub_local_dev"
+$DbName = "zelqane"
+$DbUser = "zelqane_user"
+$DbPassword = "zelqane_local_dev"
 $BackendLog = Join-Path $Root "BackEnd\backend.log"
 $FrontendLog = Join-Path $Root "FrontEnd\frontend.log"
 
@@ -49,14 +49,14 @@ if ($Stop) {
     $ErrorActionPreference = "Continue"
     & "$PgBin\pg_ctl.exe" -D $PgData stop -m fast 2>&1 | Out-Null
   }
-  Write-Host "TPUB arrêté."
+  Write-Host "ZELQANE arrêté."
   exit 0
 }
 
-# --- 0. Local secrets (.tpub-local.secrets, gitignored) ----------------------
+# --- 0. Local secrets (.zelqane-local.secrets, gitignored) ----------------------
 # Generated on first run and reused afterwards: nothing secret lives in this script.
 # The JWT secret once committed here is in git history: it is compromised and refused by the backend.
-$SecretsFile = Join-Path $Root ".tpub-local.secrets"
+$SecretsFile = Join-Path $Root ".zelqane-local.secrets"
 
 function New-HexSecret {
   $bytes = New-Object byte[] 32
@@ -90,7 +90,7 @@ function Get-LocalSecrets {
     JWT_SECRET                  = { New-HexSecret }
     MEDIA_SIGNING_SECRET        = { New-HexSecret }
     TOTP_ENCRYPTION_KEY         = { New-HexSecret }
-    TPUB_ADMIN_INITIAL_PASSWORD = { New-AdminPassword }
+    ZELQANE_ADMIN_INITIAL_PASSWORD = { New-AdminPassword }
   }
   $changed = $false
   foreach ($key in $generators.Keys) {
@@ -100,10 +100,10 @@ function Get-LocalSecrets {
     }
   }
   if ($changed) {
-    $content = @("# TPUB : secrets locaux generes par start-local.ps1 (ne jamais committer)")
+    $content = @("# ZELQANE : secrets locaux generes par start-local.ps1 (ne jamais committer)")
     foreach ($key in $values.Keys) { $content += "$key=$($values[$key])" }
     Set-Content -Path $SecretsFile -Value $content -Encoding ascii
-    Write-Host "Secrets locaux enregistrés dans .tpub-local.secrets."
+    Write-Host "Secrets locaux enregistrés dans .zelqane-local.secrets."
   }
   $values
 }
@@ -153,8 +153,8 @@ if (-not (Test-Port 8080)) {
     Where-Object { $_.Name -notlike "*plain*" } | Select-Object -First 1
   if (-not $jar) {
     Write-Host "Compilation du backend (première fois)..."
-    # Maven needs a JDK (javac); a portable Temurin 21 lives in %LOCALAPPDATA%\tpub-jdk.
-    $jdk = Get-ChildItem (Join-Path $env:LOCALAPPDATA "tpub-jdk") -Directory -ErrorAction SilentlyContinue |
+    # Maven needs a JDK (javac); a portable Temurin 21 lives in %LOCALAPPDATA%\zelqane-jdk.
+    $jdk = Get-ChildItem (Join-Path $env:LOCALAPPDATA "zelqane-jdk") -Directory -ErrorAction SilentlyContinue |
       Where-Object { Test-Path (Join-Path $_.FullName "bin\javac.exe") } | Select-Object -First 1
     if ($jdk) { $env:JAVA_HOME = $jdk.FullName; $env:Path = "$($jdk.FullName)\bin;$env:Path" }
     Push-Location (Join-Path $Root "BackEnd")
@@ -173,11 +173,11 @@ if (-not (Test-Port 8080)) {
   $env:MEDIA_SIGNING_SECRET = $secrets["MEDIA_SIGNING_SECRET"]
   $env:TOTP_ENCRYPTION_KEY = $secrets["TOTP_ENCRYPTION_KEY"]
   # Used only if the database has no active administrator yet (a new database).
-  $env:TPUB_ADMIN_INITIAL_PASSWORD = $secrets["TPUB_ADMIN_INITIAL_PASSWORD"]
-  $env:TPUB_ADMIN_MUST_CHANGE_PASSWORD = "false"
-  if ([string]::IsNullOrWhiteSpace($env:TPUB_AI_PROVIDER)) { $env:TPUB_AI_PROVIDER = "local" }
+  $env:ZELQANE_ADMIN_INITIAL_PASSWORD = $secrets["ZELQANE_ADMIN_INITIAL_PASSWORD"]
+  $env:ZELQANE_ADMIN_MUST_CHANGE_PASSWORD = "false"
+  if ([string]::IsNullOrWhiteSpace($env:ZELQANE_AI_PROVIDER)) { $env:ZELQANE_AI_PROVIDER = "local" }
   $tessdata = Join-Path $Root "BackEnd\tessdata"
-  $env:TPUB_OCR_TESSDATA = $tessdata
+  $env:ZELQANE_OCR_TESSDATA = $tessdata
   if (-not (Test-Path (Join-Path $tessdata "fra.traineddata"))) {
     Write-Host "OCR simulé : lancez BackEnd\scripts\fetch-tessdata.ps1 pour activer Tesseract"
   }
@@ -207,14 +207,14 @@ if (-not (Test-Port 3000)) {
     Write-Host "Build du frontend (première fois)..."
     Push-Location $fe; npm run build; Pop-Location
   }
-  $env:TPUB_API_URL = "http://localhost:8080"
+  $env:ZELQANE_API_URL = "http://localhost:8080"
   Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run start > `"$FrontendLog`" 2>&1" -WorkingDirectory $fe -WindowStyle Hidden
 }
 if (-not (Wait-Http "http://localhost:3000/" 60)) { throw "Le frontend ne répond pas. Consultez $FrontendLog" }
 
 Write-Host ""
-Write-Host "TPUB est lancé : http://localhost:3000"
-Write-Host "  Admin : admin@tpub.local, mot de passe dans .tpub-local.secrets (TPUB_ADMIN_INITIAL_PASSWORD) si la base a été créée par ce script ; une base existante garde son mot de passe"
+Write-Host "ZELQANE est lancé : http://localhost:3000"
+Write-Host "  Admin : admin@zelqane.local, mot de passe dans .zelqane-local.secrets (ZELQANE_ADMIN_INITIAL_PASSWORD) si la base a été créée par ce script ; une base existante garde son mot de passe"
 Write-Host "  Comptes de démonstration (après -Seed) : mots de passe dans FrontEnd\scripts\.demo-accounts.json"
 Write-Host "  Écrans : liens d'appairage affichés par -Seed (FrontEnd\scripts\.demo-device-keys.json)"
 Write-Host "Arrêt : .\start-local.ps1 -Stop"

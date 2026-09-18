@@ -114,9 +114,9 @@ describe("StatusPill", () => {
       </>,
     );
     expect(screen.getByText("Revue manuelle")).toBeInTheDocument();
-    expect(screen.getByText("En examen TPUB")).toBeInTheDocument();
+    expect(screen.getByText("En examen ZELQANE")).toBeInTheDocument();
     expect(screen.getByText("Quelques points à vérifier par l'équipe")).toBeInTheDocument();
-    expect(screen.getByText("Bloqué · en attente de décision TPUB")).toBeInTheDocument();
+    expect(screen.getByText("Bloqué · en attente de décision ZELQANE")).toBeInTheDocument();
     expect(screen.getByText("Exemple")).toBeInTheDocument();
   });
 
@@ -126,7 +126,7 @@ describe("StatusPill", () => {
         <StatusPill type="campaign-status" status="APPROVED_BY_AI" />
       </SessionContext.Provider>,
     );
-    expect(screen.getByText("En examen TPUB")).toBeInTheDocument();
+    expect(screen.getByText("En examen ZELQANE")).toBeInTheDocument();
   });
 });
 

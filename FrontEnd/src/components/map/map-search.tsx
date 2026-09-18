@@ -77,7 +77,7 @@ export function MapSearch({
 
   return (
     <div className={cx("relative", className)}>
-      <div className="tpub-map-surface flex h-11 items-center gap-2 rounded-[14px] pr-1 pl-3 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-brand-blue-text">
+      <div className="zelqane-map-surface flex h-11 items-center gap-2 rounded-[14px] pr-1 pl-3 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-brand-blue-text">
         <Search aria-hidden="true" className="size-4 shrink-0 text-muted" />
         <label htmlFor={`${id}-input`} className="sr-only">
           Rechercher sur la carte
@@ -128,7 +128,7 @@ export function MapSearch({
         role="listbox"
         aria-label="Résultats de recherche"
         hidden={!expanded}
-        className="tpub-map-surface absolute inset-x-0 top-full z-40 mt-1.5 max-h-80 overflow-y-auto rounded-card p-1"
+        className="zelqane-map-surface absolute inset-x-0 top-full z-40 mt-1.5 max-h-80 overflow-y-auto rounded-card p-1"
       >
         {results.length === 0 ? (
           <li role="presentation" className="px-3 py-3 text-xs text-muted">

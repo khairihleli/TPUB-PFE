@@ -54,7 +54,7 @@ export function PorteurCard({
       role="group"
       aria-label={`Aperçu : ${support.name}`}
       className={cx(
-        "tpub-map-surface w-[17rem] animate-fade-in rounded-card p-3.5 text-left text-ink",
+        "zelqane-map-surface w-[17rem] animate-fade-in rounded-card p-3.5 text-left text-ink",
         className,
       )}
     >

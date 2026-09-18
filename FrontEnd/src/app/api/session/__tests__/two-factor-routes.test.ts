@@ -55,7 +55,7 @@ function sentBody(call = 0): Record<string, unknown> {
 const auth = {
   status: "AUTHENTICATED",
   token,
-  email: "admin@tpub.local",
+  email: "admin@zelqane.local",
   nom: "Admin",
   role: "ADMINISTRATEUR",
   userId: 1,
@@ -66,7 +66,7 @@ const auth = {
 };
 
 beforeEach(() => {
-  process.env.TPUB_API_URL = "http://backend.test";
+  process.env.ZELQANE_API_URL = "http://backend.test";
   vi.stubGlobal("fetch", fetchMock);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
@@ -75,7 +75,7 @@ afterEach(() => {
   fetchMock.mockReset();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  delete process.env.TPUB_API_URL;
+  delete process.env.ZELQANE_API_URL;
 });
 
 describe("/api/session/login with a TOTP challenge (§3.7)", () => {
@@ -85,21 +85,21 @@ describe("/api/session/login with a TOTP challenge (§3.7)", () => {
         status: "TOTP_REQUIRED",
         challengeToken: "tpc_secret",
         expiresAt,
-        email: "admin@tpub.local",
+        email: "admin@zelqane.local",
       }),
     );
     const res = await loginRoute(post("/api/session/login", { email: "a", password: "b" }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toEqual({ status: "TOTP_REQUIRED", email: "admin@tpub.local", expiresAt });
+    expect(body).toEqual({ status: "TOTP_REQUIRED", email: "admin@zelqane.local", expiresAt });
     expect(JSON.stringify(body)).not.toContain("tpc_secret");
-    const challenge = setCookie(res, "tpub_challenge");
-    expect(challenge).toMatch(/^tpub_challenge=tpc_secret;/);
+    const challenge = setCookie(res, "zelqane_challenge");
+    expect(challenge).toMatch(/^zelqane_challenge=tpc_secret;/);
     expect(challenge).toMatch(/HttpOnly/i);
     expect(challenge).toMatch(/Path=\/api\/session/i);
     expect(challenge).toMatch(/SameSite=lax/i);
-    expect(setCookie(res, "tpub_challenge_actif")).toMatch(/Path=\/connexion/i);
-    expect(setCookie(res, "tpub_token")).toMatch(/max-age=0/i);
+    expect(setCookie(res, "zelqane_challenge_actif")).toMatch(/Path=\/connexion/i);
+    expect(setCookie(res, "zelqane_token")).toMatch(/max-age=0/i);
   });
 
   it("opens the session directly without 2FA", async () => {
@@ -108,7 +108,7 @@ describe("/api/session/login with a TOTP challenge (§3.7)", () => {
     const body = (await res.json()) as { status: string; user: { role: string } };
     expect(body.status).toBe("AUTHENTICATED");
     expect(body.user.role).toBe("ADMINISTRATEUR");
-    expect(setCookie(res, "tpub_token")).toContain(token);
+    expect(setCookie(res, "zelqane_token")).toContain(token);
   });
 });
 
@@ -116,7 +116,7 @@ describe("second step routes", () => {
   it("verifies the code with the cookie token, opens the session and clears the challenge", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { ...auth, recoveryCodeUsed: true }));
     const res = await verifyRoute(
-      post("/api/session/login/verify", { code: " 123 456 " }, "tpub_challenge=tpc_abc"),
+      post("/api/session/login/verify", { code: " 123 456 " }, "zelqane_challenge=tpc_abc"),
     );
     expect(res.status).toBe(200);
     expect(urlOf(fetchMock.mock.calls[0]?.[0])).toBe("http://backend.test/api/auth/login/verify");
@@ -129,8 +129,8 @@ describe("second step routes", () => {
     };
     expect(body.recoveryCodeUsed).toBe(true);
     expect(body.user.twoFactorEnabled).toBe(true);
-    expect(setCookie(res, "tpub_token")).toContain(token);
-    expect(setCookie(res, "tpub_challenge")).toMatch(/max-age=0/i);
+    expect(setCookie(res, "zelqane_token")).toContain(token);
+    expect(setCookie(res, "zelqane_challenge")).toMatch(/max-age=0/i);
   });
 
   it("answers CHALLENGE_EXPIRED without a challenge cookie and never calls the backend", async () => {
@@ -149,10 +149,10 @@ describe("second step routes", () => {
       }),
     );
     const wrong = await verifyRoute(
-      post("/api/session/login/verify", { code: "000000" }, "tpub_challenge=tpc_abc"),
+      post("/api/session/login/verify", { code: "000000" }, "zelqane_challenge=tpc_abc"),
     );
     expect(wrong.status).toBe(401);
-    expect(setCookie(wrong, "tpub_challenge")).toBeUndefined();
+    expect(setCookie(wrong, "zelqane_challenge")).toBeUndefined();
 
     fetchMock.mockResolvedValueOnce(
       jsonResponse(401, {
@@ -162,19 +162,19 @@ describe("second step routes", () => {
       }),
     );
     const expired = await verifyRoute(
-      post("/api/session/login/verify", { code: "000000" }, "tpub_challenge=tpc_abc"),
+      post("/api/session/login/verify", { code: "000000" }, "zelqane_challenge=tpc_abc"),
     );
-    expect(setCookie(expired, "tpub_challenge")).toMatch(/max-age=0/i);
+    expect(setCookie(expired, "zelqane_challenge")).toMatch(/max-age=0/i);
   });
 
   it("refuses a missing code and a cross-origin request", async () => {
     const missing = await verifyRoute(
-      post("/api/session/login/verify", {}, "tpub_challenge=tpc_abc"),
+      post("/api/session/login/verify", {}, "zelqane_challenge=tpc_abc"),
     );
     expect(missing.status).toBe(400);
     const cross = new NextRequest("http://localhost:3000/api/session/login/verify", {
       method: "POST",
-      headers: { origin: "https://evil.test", host: "localhost:3000", cookie: "tpub_challenge=x" },
+      headers: { origin: "https://evil.test", host: "localhost:3000", cookie: "zelqane_challenge=x" },
       body: JSON.stringify({ code: "123456" }),
     });
     expect((await verifyRoute(cross)).status).toBe(403);
@@ -185,12 +185,12 @@ describe("second step routes", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         secret: "JBSWY3DPEHPK3PXP",
-        otpauthUri: "otpauth://totp/TPUB:admin?secret=JBSWY3DPEHPK3PXP",
+        otpauthUri: "otpauth://totp/ZELQANE:admin?secret=JBSWY3DPEHPK3PXP",
         expiresAt,
       }),
     );
     const setup = await setupRoute(
-      post("/api/session/enrolment/setup", undefined, "tpub_challenge=tpc_enrol"),
+      post("/api/session/enrolment/setup", undefined, "zelqane_challenge=tpc_enrol"),
     );
     expect(urlOf(fetchMock.mock.calls[0]?.[0])).toBe("http://backend.test/api/auth/2fa/setup");
     expect(sentBody()).toEqual({ challengeToken: "tpc_enrol" });
@@ -200,20 +200,20 @@ describe("second step routes", () => {
       jsonResponse(200, { ...auth, recoveryCodes: ["abcde-fghjk", 3, "mnpqr-stvwx"] }),
     );
     const enable = await enableRoute(
-      post("/api/session/enrolment/enable", { code: "123456" }, "tpub_challenge=tpc_enrol"),
+      post("/api/session/enrolment/enable", { code: "123456" }, "zelqane_challenge=tpc_enrol"),
     );
     expect(urlOf(fetchMock.mock.calls[1]?.[0])).toBe("http://backend.test/api/auth/2fa/enable");
     const body = (await enable.json()) as { recoveryCodes: string[]; status: string };
     expect(body.status).toBe("AUTHENTICATED");
     expect(body.recoveryCodes).toEqual(["abcde-fghjk", "mnpqr-stvwx"]);
-    expect(setCookie(enable, "tpub_token")).toContain(token);
+    expect(setCookie(enable, "zelqane_token")).toContain(token);
   });
 });
 
 describe("GET /api/session?actualiser=1", () => {
   it("rewrites the user cookie from GET /api/me", async () => {
     const user = serializeUserCookie({
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       nom: "Admin",
       role: "ADMINISTRATEUR",
       userId: 1,
@@ -224,7 +224,7 @@ describe("GET /api/session?actualiser=1", () => {
       jsonResponse(200, { nom: "Admin", mustChangePassword: false, twoFactorEnabled: true }),
     );
     const req = new NextRequest("http://localhost:3000/api/session?actualiser=1", {
-      headers: { cookie: `tpub_token=${token}; tpub_user=${user}` },
+      headers: { cookie: `zelqane_token=${token}; zelqane_user=${user}` },
     });
     const res = await sessionRoute(req);
     expect(urlOf(fetchMock.mock.calls[0]?.[0])).toBe("http://backend.test/api/me");
@@ -233,8 +233,8 @@ describe("GET /api/session?actualiser=1", () => {
     );
     const body = (await res.json()) as { user: { mustChangePassword: boolean } };
     expect(body.user.mustChangePassword).toBe(false);
-    const cookie = setCookie(res, "tpub_user") ?? "";
-    const value = decodeURIComponent(cookie.slice("tpub_user=".length, cookie.indexOf(";")));
+    const cookie = setCookie(res, "zelqane_user") ?? "";
+    const value = decodeURIComponent(cookie.slice("zelqane_user=".length, cookie.indexOf(";")));
     expect(parseUserCookie(value)?.twoFactorEnabled).toBe(true);
   });
 });
@@ -244,11 +244,11 @@ describe("device key and signed media through the Next routes", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { type: "defaut" }));
     const key = `tpd_${"k".repeat(43)}`;
     const req = new NextRequest("http://localhost:3000/api/diffusion/next?supportId=3", {
-      headers: { "x-tpub-device-key": key },
+      headers: { "x-zelqane-device-key": key },
     });
     await proxyGet(req, { params: Promise.resolve({ path: ["diffusion", "next"] }) });
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
-    expect(headers.get("x-tpub-device-key")).toBe(key);
+    expect(headers.get("x-zelqane-device-key")).toBe(key);
   });
 
   it("forwards only exp and sig and passes a 403 through as an empty 403", async () => {

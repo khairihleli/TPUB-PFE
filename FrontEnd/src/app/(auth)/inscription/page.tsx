@@ -8,7 +8,7 @@ import { RegisterForm } from "@/components/auth/register-form";
 export const metadata: Metadata = {
   title: "Créer un compte annonceur",
   description:
-    "Créez votre compte annonceur TPUB : préparez vos campagnes, réservez vos créneaux et suivez leur validation.",
+    "Créez votre compte annonceur ZELQANE : préparez vos campagnes, réservez vos créneaux et suivez leur validation.",
 };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;

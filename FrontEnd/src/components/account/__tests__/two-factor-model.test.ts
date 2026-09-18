@@ -61,10 +61,10 @@ describe("two-factor model", () => {
 
   it("builds the recovery codes download", () => {
     const at = new Date("2026-09-17T10:00:00Z");
-    const text = recoveryCodesText(["abcde-12345", "fghjk-67890"], "admin@tpub.local", at);
-    expect(text).toContain("Compte : admin@tpub.local");
+    const text = recoveryCodesText(["abcde-12345", "fghjk-67890"], "admin@zelqane.local", at);
+    expect(text).toContain("Compte : admin@zelqane.local");
     expect(text).toContain(" 1. abcde-12345\r\n 2. fghjk-67890");
-    expect(recoveryCodesFileName(at)).toMatch(/^tpub-codes-de-secours-2026091[78]\.txt$/);
+    expect(recoveryCodesFileName(at)).toMatch(/^zelqane-codes-de-secours-2026091[78]\.txt$/);
     expect(recoveryCodesRemainingLabel(0)).toBe("Aucun code de secours restant");
     expect(recoveryCodesRemainingLabel(1)).toBe("1 code de secours restant");
     expect(recoveryCodesRemainingLabel(7)).toBe("7 codes de secours restants");

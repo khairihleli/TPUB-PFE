@@ -179,7 +179,7 @@ describe("v2 availability blocks", () => {
     reason: "Remplacement de la dalle",
   };
 
-  it("counts a TPUB block as blocking and shows it as taken", () => {
+  it("counts a ZELQANE block as blocking and shows it as taken", () => {
     expect(isBlockSlot(block)).toBe(true);
     expect([...blockedDays([block])]).toEqual(["2026-10-05"]);
     const strip = buildCalendarStrip([block], "2026-10-04", 3);

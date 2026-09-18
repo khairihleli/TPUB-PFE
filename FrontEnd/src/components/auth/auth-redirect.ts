@@ -8,7 +8,7 @@ import { canAccessPath, roleHome, safeNextPath } from "@/lib/session-cookie";
 /** Auth screens never make sense as a destination (avoids redirect loops). */
 const AUTH_PATHS = ["/connexion", "/inscription", "/mot-de-passe-oublie", "/mot-de-passe-requis"];
 
-const ORIGIN = "https://tpub.invalid";
+const ORIGIN = "https://zelqane.invalid";
 
 /** Control characters (C0, DEL) and backslashes are never legitimate in a next path. */
 function hasUnsafeChars(value: string): boolean {

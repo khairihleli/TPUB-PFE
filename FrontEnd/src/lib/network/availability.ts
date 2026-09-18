@@ -47,7 +47,7 @@ export function eachDayISO(start: string, end: string, cap = MAX_EXPANDED_DAYS):
 
 const BLOCKING = new Set<SupportAvailabilitySlot["reservationStatus"]>(["TEMPORAIRE", "CONFIRMEE"]);
 
-/** An availability block (maintenance, hors ligne, occupé) set by TPUB (contract §2.4). */
+/** An availability block (maintenance, hors ligne, occupé) set by ZELQANE (contract §2.4). */
 export function isBlockSlot(slot: SupportAvailabilitySlot): boolean {
   return slot.kind === "BLOCAGE";
 }
@@ -167,7 +167,7 @@ export function buildCalendarStrip(
     const s = slot.startDate > from ? slot.startDate : from;
     const e = slot.endDate < to ? slot.endDate : to;
     for (const day of eachDayISO(s, e)) {
-      // A TPUB block is as final as a confirmed booking for the day strip.
+      // A ZELQANE block is as final as a confirmed booking for the day strip.
       if (slot.reservationStatus === "CONFIRMEE" || isBlockSlot(slot)) status.set(day, "confirmee");
       else if (!status.has(day)) status.set(day, "temporaire");
     }

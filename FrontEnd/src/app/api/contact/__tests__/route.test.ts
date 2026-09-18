@@ -61,7 +61,7 @@ describe("POST /api/contact", () => {
   });
 
   it("forwards to CONTACT_WEBHOOK_URL when set", async () => {
-    process.env.CONTACT_WEBHOOK_URL = "https://hooks.example.test/tpub";
+    process.env.CONTACT_WEBHOOK_URL = "https://hooks.example.test/zelqane";
     const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
     vi.stubGlobal("fetch", fetchMock);
     const res = await POST(request(valid));
@@ -71,7 +71,7 @@ describe("POST /api/contact", () => {
   });
 
   it("answers 502 with the brief's error copy when the webhook fails", async () => {
-    process.env.CONTACT_WEBHOOK_URL = "https://hooks.example.test/tpub";
+    process.env.CONTACT_WEBHOOK_URL = "https://hooks.example.test/zelqane";
     vi.stubGlobal(
       "fetch",
       vi.fn(() => Promise.resolve(new Response("", { status: 500 }))),

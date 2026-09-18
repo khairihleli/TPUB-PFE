@@ -10,12 +10,12 @@ import { Section } from "@/components/marketing/section";
 export const metadata: Metadata = {
   title: "Contact",
   description:
-    "Parlons de votre campagne : dites-nous vos objectifs, vos cibles et vos zones. Agences, marques, institutions et propriétaires d'emplacement, écrivez à TPUB.",
+    "Parlons de votre campagne : dites-nous vos objectifs, vos cibles et vos zones. Agences, marques, institutions et propriétaires d'emplacement, écrivez à ZELQANE.",
   alternates: { canonical: "/contact" },
 };
 
 const NEXT_STEPS = [
-  { title: "Nous lisons votre demande", text: "Elle est transmise à l'équipe TPUB." },
+  { title: "Nous lisons votre demande", text: "Elle est transmise à l'équipe ZELQANE." },
   { title: "Nous clarifions votre besoin", text: "Objectifs, cibles, zones et périodes." },
   {
     title: "Nous revenons vers vous",

@@ -17,7 +17,7 @@ const userCookie = serializeUserCookie({
   userId: 12,
   exp: future,
 });
-const cookies = `tpub_token=${token}; tpub_user=${userCookie}`;
+const cookies = `zelqane_token=${token}; zelqane_user=${userCookie}`;
 
 const fetchMock = vi.fn<typeof fetch>();
 
@@ -28,7 +28,7 @@ function urlOf(input: unknown): string {
 }
 
 beforeEach(() => {
-  process.env.TPUB_API_URL = "http://backend.test";
+  process.env.ZELQANE_API_URL = "http://backend.test";
   vi.stubGlobal("fetch", fetchMock);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -38,7 +38,7 @@ afterEach(() => {
   fetchMock.mockReset();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  delete process.env.TPUB_API_URL;
+  delete process.env.ZELQANE_API_URL;
 });
 
 function ctx(path: string[]) {
@@ -55,7 +55,7 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
 function clearedCookies(res: Response): string[] {
   return res.headers
     .getSetCookie()
-    .filter((c) => /^tpub_(token|user)=;/.test(c) && /max-age=0/i.test(c));
+    .filter((c) => /^zelqane_(token|user)=;/.test(c) && /max-age=0/i.test(c));
 }
 
 describe("/api/[...path] bridge", () => {
@@ -173,7 +173,7 @@ describe("/api/[...path] bridge", () => {
         status: 200,
         headers: {
           "content-type": "text/csv; charset=UTF-8",
-          "content-disposition": 'attachment; filename="tpub.csv"',
+          "content-disposition": 'attachment; filename="zelqane.csv"',
         },
       }),
     );
@@ -181,7 +181,7 @@ describe("/api/[...path] bridge", () => {
       headers: { cookie: cookies },
     });
     const res = await proxyGet(req, ctx(["statistics", "export.csv"]));
-    expect(res.headers.get("content-disposition")).toBe('attachment; filename="tpub.csv"');
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="zelqane.csv"');
     expect(await res.text()).toContain("Affichages");
     expect(urlOf(fetchMock.mock.calls[0]?.[0])).toBe(
       "http://backend.test/api/statistics/export.csv?type=mine",

@@ -767,7 +767,7 @@ export const statisticsApi = {
         groupBy: q.groupBy,
         campaignId: q.campaignId,
       },
-      { signal: o.signal, fallbackName: `tpub-statistiques-${q.type}.csv` },
+      { signal: o.signal, fallbackName: `zelqane-statistiques-${q.type}.csv` },
     ),
 };
 

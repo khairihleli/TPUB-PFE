@@ -72,8 +72,8 @@ describe("translateMessage", () => {
   });
 
   it("keeps messages that are already French (bridge responses)", () => {
-    expect(translateMessage("Le service TPUB est momentanément indisponible.", 502)).toBe(
-      "Le service TPUB est momentanément indisponible.",
+    expect(translateMessage("Le service ZELQANE est momentanément indisponible.", 502)).toBe(
+      "Le service ZELQANE est momentanément indisponible.",
     );
     expect(translateMessage("Session expirée", 401)).toBe(SESSION_EXPIRED_MESSAGE);
   });

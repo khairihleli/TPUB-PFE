@@ -166,7 +166,7 @@ type Step = "edit" | "confirm";
 type TargetKind = "ZONE" | "CERCLE" | "POLYGONE";
 
 const TARGET_LABELS: Record<TargetKind, string> = {
-  ZONE: "Zone TPUB",
+  ZONE: "Zone ZELQANE",
   CERCLE: "Cercle",
   POLYGONE: "Polygone",
 };
@@ -229,7 +229,7 @@ function EmergencyForm({
       ? `${formatNumber(inCircle)} Porteur${plural(inCircle)} actif${plural(inCircle)} dans le cercle`
       : zoneId !== null
         ? `${formatNumber(inZone)} Porteur${plural(inZone)} actif${plural(inZone)} dans la zone ${zoneName(zoneId)}`
-        : "Choisissez une cible : zone TPUB, cercle ou polygone.";
+        : "Choisissez une cible : zone ZELQANE, cercle ou polygone.";
   const place = hasPolygon
     ? `Polygone${zoneName(zoneId) ? ` · ${zoneName(zoneId)}` : ""}`
     : hasPoint

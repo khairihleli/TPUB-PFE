@@ -5,7 +5,7 @@
  */
 import type { LoginChallengeStatus } from "@/lib/api/types";
 
-const KEY = "tpub.connexion.verification";
+const KEY = "zelqane.connexion.verification";
 
 export interface ChallengeInfo {
   status: LoginChallengeStatus;

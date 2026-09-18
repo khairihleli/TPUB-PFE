@@ -87,7 +87,7 @@ describe("lifecycle timeline", () => {
     expect(CAMPAIGN_TIMELINE_STEPS).toEqual([
       "Brouillon",
       "Analyse IA",
-      "Validation TPUB",
+      "Validation ZELQANE",
       "Programmée",
       "En diffusion",
       "Terminée",

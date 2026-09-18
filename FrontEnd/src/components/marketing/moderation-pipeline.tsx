@@ -42,7 +42,7 @@ function Connector() {
 
 /**
  * Double control made tangible: campaign card → AI gauges (Risque /100, Qualité /100) →
- * « Validé par un expert TPUB ». All values are labelled as examples.
+ * « Validé par un expert ZELQANE ». All values are labelled as examples.
  */
 export function ModerationPipeline({
   riskScore = 20,
@@ -54,7 +54,7 @@ export function ModerationPipeline({
       <figcaption className="sr-only">
         Illustration du double contrôle : une campagne est analysée par l&apos;IA (score de risque{" "}
         {riskScore} sur 100 et score de qualité {qualityScore} sur 100, valeurs d&apos;exemple),
-        puis validée par un expert TPUB avant diffusion.
+        puis validée par un expert ZELQANE avant diffusion.
       </figcaption>
 
       <Reveal
@@ -121,7 +121,7 @@ export function ModerationPipeline({
           <div className="flex flex-1 flex-col items-start justify-center gap-4">
             <span className="inline-flex items-center gap-2.5 rounded-full border border-success/35 bg-success/10 py-2 pr-4 pl-2.5 font-label text-sm font-semibold text-success">
               <BadgeCheck aria-hidden="true" className="size-5" />
-              Validé par un expert TPUB
+              Validé par un expert ZELQANE
             </span>
             <ul className="flex flex-col gap-2 text-[0.8125rem] leading-snug text-muted">
               <li className="flex gap-2">

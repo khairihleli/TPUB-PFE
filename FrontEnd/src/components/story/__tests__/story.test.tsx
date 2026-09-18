@@ -111,8 +111,8 @@ describe("public status table", () => {
   it("maps next actions from the editing rules", () => {
     expect(statusNextAction("BROUILLON")).toMatch(/soumettre/i);
     expect(statusNextAction("REJECTED_BY_AI")).toMatch(/Dupliquer/);
-    expect(statusNextAction("APPROVED_BY_AI")).toMatch(/expert TPUB/);
-    expect(statusNextAction("REVIEW_REQUIRED")).toMatch(/expert TPUB/);
+    expect(statusNextAction("APPROVED_BY_AI")).toMatch(/expert ZELQANE/);
+    expect(statusNextAction("REVIEW_REQUIRED")).toMatch(/expert ZELQANE/);
     expect(statusNextAction("PENDING_AI_CHECK")).toMatch(/analyse/);
     expect(statusNextAction("ACTIVE")).toMatch(/diffusions/);
     expect(statusNextAction("SCHEDULED")).toMatch(/date de début/);
@@ -139,7 +139,7 @@ describe("journey timeline", () => {
       "Créations",
       "Réservation",
       "Soumission et analyse IA",
-      "Validation TPUB",
+      "Validation ZELQANE",
       "Diffusion",
       "Suivi",
     ]);
@@ -171,7 +171,7 @@ describe("réseau sections", () => {
     expect(within(items[0]!).getByRole("img")).toHaveAttribute("alt");
     expect(within(items[0]!).getByText("Illustration")).toBeInTheDocument();
     expect(within(items[3]!).queryByRole("img")).toBeNull();
-    expect(within(items[3]!).getByText("Pas d'inventaire TPUB")).toBeInTheDocument();
+    expect(within(items[3]!).getByText("Pas d'inventaire ZELQANE")).toBeInTheDocument();
   });
 
   it("orders diffusion as message prioritaire → publicité → contenu par défaut", () => {
@@ -215,9 +215,9 @@ describe("fonctionnement & à propos visuals", () => {
     expect(screen.getByText("Aucun nombre d'écrans ni de zones")).toBeInTheDocument();
   });
 
-  it("places TPUB in the pôle with AFRIVA and INFINTRA", () => {
+  it("places ZELQANE in the pôle with AFRIVA and INFINTRA", () => {
     expect(aproposContent.GROUP_SECTION.text).toMatch(/AFRIVA/);
     expect(aproposContent.GROUP_SECTION.text).toMatch(/INFINTRA/);
-    expect(aproposContent.GROUP_CHAIN.filter((n) => n.self).map((n) => n.name)).toEqual(["TPUB"]);
+    expect(aproposContent.GROUP_CHAIN.filter((n) => n.self).map((n) => n.name)).toEqual(["ZELQANE"]);
   });
 });

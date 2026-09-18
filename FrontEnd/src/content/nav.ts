@@ -52,7 +52,7 @@ export const FOOTER_COLUMNS: readonly FooterColumn[] = [
     title: "Groupe Tukhnanutha",
     links: [
       { label: "Le groupe", href: GROUP.url, external: true },
-      { label: "TPUB dans le groupe", href: GROUP.tpubPage, external: true },
+      { label: "ZELQANE dans le groupe", href: GROUP.zelqanePage, external: true },
       { label: "Le Porteur", href: GROUP.porteurPage, external: true },
     ],
   },

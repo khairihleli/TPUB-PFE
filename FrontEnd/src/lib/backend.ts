@@ -3,7 +3,7 @@
 export const UNREACHABLE_BODY = {
   status: 502,
   code: "BACKEND_UNREACHABLE",
-  message: "Le service TPUB est momentanément indisponible.",
+  message: "Le service ZELQANE est momentanément indisponible.",
 } as const;
 
 export const SESSION_EXPIRED_BODY = {
@@ -31,7 +31,7 @@ export const SESSION_END_CODES: ReadonlySet<string> = new Set([
 ]);
 
 export function backendUrl(): string {
-  const raw = (process.env.TPUB_API_URL ?? "").trim() || "http://localhost:8080";
+  const raw = (process.env.ZELQANE_API_URL ?? "").trim() || "http://localhost:8080";
   return raw.replace(/\/+$/, "");
 }
 

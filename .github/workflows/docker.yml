@@ -16,7 +16,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/tpub-backend
+  IMAGE_NAME: ${{ github.repository }}/zelqane-backend
 
 jobs:
   docker:

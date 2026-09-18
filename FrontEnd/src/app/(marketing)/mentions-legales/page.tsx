@@ -7,7 +7,7 @@ import { CONTACT, GROUP, SOCIAL, STATUS_NOTICE } from "@/content/site";
 export const metadata: Metadata = {
   title: "Mentions légales",
   description:
-    "Éditeur du site TPUB, société du groupe Tukhnanutha, coordonnées, hébergement et propriété intellectuelle. Document en cours de validation juridique.",
+    "Éditeur du site ZELQANE, société du groupe Tukhnanutha, coordonnées, hébergement et propriété intellectuelle. Document en cours de validation juridique.",
 };
 
 const PENDING = "Précisé à l'issue de la validation juridique";
@@ -19,12 +19,12 @@ const SECTIONS: readonly LegalSection[] = [
     content: (
       <>
         <p>
-          Le présent site et la plateforme associée sont édités par <strong>TPUB</strong>, une
+          Le présent site et la plateforme associée sont édités par <strong>ZELQANE</strong>, une
           société du groupe Tukhnanutha, spécialisée dans l&apos;affichage numérique extérieur.
         </p>
         <LegalFacts
           items={[
-            { term: "Dénomination", value: "TPUB" },
+            { term: "Dénomination", value: "ZELQANE" },
             { term: "Groupe", value: GROUP.mention },
             { term: "Siège", value: CONTACT.address },
             {
@@ -40,7 +40,7 @@ const SECTIONS: readonly LegalSection[] = [
           ]}
         />
         <p>
-          TPUB contracte avec ses clients sous sa propre identité. Les informations
+          ZELQANE contracte avec ses clients sous sa propre identité. Les informations
           d&apos;immatriculation ne sont pas publiées tant qu&apos;elles n&apos;ont pas été
           vérifiées dans le cadre de la validation juridique de ce document.
         </p>
@@ -65,9 +65,9 @@ const SECTIONS: readonly LegalSection[] = [
             </a>
           </li>
           <li>
-            Page TPUB sur le site du groupe :{" "}
-            <a href={GROUP.tpubPage} target="_blank" rel="noopener noreferrer">
-              tukhnanutha.com/company/tpub
+            Page ZELQANE sur le site du groupe :{" "}
+            <a href={GROUP.zelqanePage} target="_blank" rel="noopener noreferrer">
+              tukhnanutha.com/company/zelqane
               <span className="sr-only"> (nouvel onglet)</span>
             </a>
           </li>
@@ -110,9 +110,9 @@ const SECTIONS: readonly LegalSection[] = [
     title: "Propriété intellectuelle",
     content: (
       <p>
-        Le nom et le logo TPUB, les textes, visuels et éléments graphiques de ce site sont protégés.
+        Le nom et le logo ZELQANE, les textes, visuels et éléments graphiques de ce site sont protégés.
         Toute reproduction ou représentation, totale ou partielle, au-delà d&apos;une courte
-        citation mentionnant la source, nécessite une autorisation écrite préalable de TPUB. Les
+        citation mentionnant la source, nécessite une autorisation écrite préalable de ZELQANE. Les
         marques et contenus du groupe Tukhnanutha restent la propriété de leurs titulaires.
       </p>
     ),

@@ -1,11 +1,11 @@
-# TPUB frontend: design reference
+# ZELQANE frontend: design reference
 
-Source studied (read-only): `site tukh/corporate` (Angular 20, the Tukhnanutha corporate site, which is the quality bar) and `site tukh/tpub.html` (older TPUB static page, used for content only).
-Files read: `src/styles.scss`, `src/index.html`, `app.html/ts/scss`, `layout/header/*`, `layout/footer/*`, `pages/home/*`, `pages/company/*` (subsidiary page), `pages/careers/*`, `pages/what-we-do/*`, `shared/*.directive.ts`, `portal/styles/_base.scss` + `_cadre.scss` (the corporate client space), `data/entities.ts` (TPUB entry), `public/assets/tpub.png`.
+Source studied (read-only): `site tukh/corporate` (Angular 20, the Tukhnanutha corporate site, which is the quality bar) and `site tukh/zelqane.html` (older ZELQANE static page, used for content only).
+Files read: `src/styles.scss`, `src/index.html`, `app.html/ts/scss`, `layout/header/*`, `layout/footer/*`, `pages/home/*`, `pages/company/*` (subsidiary page), `pages/careers/*`, `pages/what-we-do/*`, `shared/*.directive.ts`, `portal/styles/_base.scss` + `_cadre.scss` (the corporate client space), `data/entities.ts` (ZELQANE entry), `public/assets/zelqane.png`.
 
 Notes up front:
 - There is no theme service. The corporate site is dark only, with one token set on `:root`. The client portal uses the same dark tokens.
-- There is no `/contact` page. "Contact" links go to `/portal/connexion`, so the client login is the contact door. That is a useful pattern for TPUB: "Espace annonceur" is the main CTA.
+- There is no `/contact` page. "Contact" links go to `/portal/connexion`, so the client login is the contact door. That is a useful pattern for ZELQANE: "Espace annonceur" is the main CTA.
 - The site's name for its look is "Sovereign editorial": warm espresso near-black, champagne gold as the single accent, verdigris (green) as a rare counter-accent. It does not use flat navy and it does not use rainbow gradients. **The quality comes from restraint: one accent, hairline borders, frosted surfaces, slow ambient motion, a big serif display face and small uppercase tracked labels.**
 
 ---
@@ -37,7 +37,7 @@ Notes up front:
 | `--line` | `rgba(243,237,224,.09)` | default hairline border |
 | `--line-strong` | `rgba(243,237,224,.16)` | ghost button border, chips on imagery |
 | `--on-gold` | `#211803` | ink on gold fills |
-| Cluster hues | `--c-sense #5fbfa6`, `--c-infra #6aa0e0`, `--c-energy #e8b54b`, `--c-audi #e08bb0` (TPUB's cluster), `--c-cmd #a896e0`, `--c-ai #9b8ce8` | per-entity `--cc` custom property: 3–4px top bar, icon colour, hover tint via `color-mix` |
+| Cluster hues | `--c-sense #5fbfa6`, `--c-infra #6aa0e0`, `--c-energy #e8b54b`, `--c-audi #e08bb0` (ZELQANE's cluster), `--c-cmd #a896e0`, `--c-ai #9b8ce8` | per-entity `--cc` custom property: 3–4px top bar, icon colour, hover tint via `color-mix` |
 
 Status pill pattern (company page): `color: var(--sc); background: color-mix(in srgb, var(--sc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--sc) 30%, transparent)`. The same 12% fill + 30% border recipe is used for every tinted icon tile. **Reuse it for dashboard status badges.**
 
@@ -133,7 +133,7 @@ background:
 
 ## 2. Typography
 
-**Google Fonts loaded** (index.html): `Fraunces:ital,opsz,wght@0,9..144,400;500;600;700;1,9..144,400`, `Inter:300..800`, `Sora:400..800`, `Space Grotesk:400..700`, plus unused/legacy Playfair Display, Cinzel, Libre Baskerville, Rajdhani, Noto Naskh Arabic. That request is far too heavy. For TPUB, load only what is used, through `next/font`.
+**Google Fonts loaded** (index.html): `Fraunces:ital,opsz,wght@0,9..144,400;500;600;700;1,9..144,400`, `Inter:300..800`, `Sora:400..800`, `Space Grotesk:400..700`, plus unused/legacy Playfair Display, Cinzel, Libre Baskerville, Rajdhani, Noto Naskh Arabic. That request is far too heavy. For ZELQANE, load only what is used, through `next/font`.
 
 | Role | Family | Weight | Size | LH | Tracking |
 |---|---|---|---|---|---|
@@ -165,7 +165,7 @@ Heading treatments:
 ## 3. Layout and section patterns
 
 ### 3.1 App shell
-Structure: `scroll-progress` bar (3px fixed gold gradient, CSS `animation-timeline: scroll(root)`, hidden when unsupported or under reduced motion) → header → `<main>` → footer. Private spaces (`/portal`, `/interne`) hide the marketing header and footer and render their own shell with a sidebar. **TPUB should split the same way: a `(marketing)` layout and an `(espace)` layout.**
+Structure: `scroll-progress` bar (3px fixed gold gradient, CSS `animation-timeline: scroll(root)`, hidden when unsupported or under reduced motion) → header → `<main>` → footer. Private spaces (`/portal`, `/interne`) hide the marketing header and footer and render their own shell with a sidebar. **ZELQANE should split the same way: a `(marketing)` layout and an `(espace)` layout.**
 
 ### 3.2 Header / nav behaviour (distinctive)
 - **At the top of the page:** a fixed full-width bar, 68px, glass (`rgba(7,11,20,.72)` + blur 14px + hairline bottom). The **logo is dead centre**, with nav groups `flex:1` on each side (left group `justify-content:flex-end`, right group `flex-start`). Four items per side keep the logo optically centred. On load it slides in (`hdr-in .7s`), the brand appears at 0.14s and links cascade outward from the logo (0.24 / 0.32 / 0.40s).
@@ -176,7 +176,7 @@ Structure: `scroll-progress` bar (3px fixed gold gradient, CSS `animation-timeli
   2. A **fixed corner logo** at top-left (44px, drop-shadow glow).
   3. A **Tunisian flag** badge at top-right (42×28, 7px radius). Both unblur in (`blur(5px)` + `scale(.85)` → none; the flag is 0.08s late).
 - **Mobile (≤880px):** the burger becomes a 44px frosted round button with a gold-line border. Its three bars morph into an X (`translateY(7px) rotate(45deg)`, middle `scaleX(.4)` + fade). The FAB shrinks to just the burger. The drawer drops from the top (`translateY(-102%) → 0`, `.55s ease-out`, bg `rgba(7,11,20,.97)` blur 16). Links are 48px tall, separated by hairlines, and cascade in with 0.05s steps from 0.08s. The client link is split off by a top border and coloured gold. Escape closes it.
-- **For TPUB:** the centred-logo header and the bottom capsule bar are the most recognisable parts of the group look. Reuse them on marketing pages, keeping the TPUB logo centred and "Espace annonceur" as the gold-pill equivalent (brand-red/orange).
+- **For ZELQANE:** the centred-logo header and the bottom capsule bar are the most recognisable parts of the group look. Reuse them on marketing pages, keeping the ZELQANE logo centred and "Espace annonceur" as the gold-pill equivalent (brand-red/orange).
 
 ### 3.3 Hero construction
 - **Home hero:** `min-height: 100vh` (100svh mobile), with a full-bleed `<video muted loop playsinline>` lazily played (IntersectionObserver). The scrim is layered:
@@ -241,7 +241,7 @@ A full viewport tall on desktop, dark gradient `var(--bg) → #06080e`, top 1px 
 Each separator carries a **travelling light**: a 1px gradient highlight sweeping across (`ft-sweep 6s`, staggered -2s/-4s). The back-to-top button is a 40px gold-soft pill at the top-right. The footer uses `.reveal-blur` / `.reveal-stagger`.
 
 ### 3.11 Client space shell (portal)
-Fixed 264px aside (`color-mix(surface 88%, black)`, right hairline), brand block (38px logo + Sora 0.16em name + gold subline), vertical nav (11×13px padding, radius 12, 18px icon column, hover `rgba(255,255,255,.04)`, **active = gold-soft bg + gold-line border + gold text**), an admin group separated by a hairline, and a footer link. The sticky 68px top bar (`color-mix(bg 82%, transparent)` + blur 14) holds the identity (38px gradient avatar with initials, name + uppercase role) on the left and actions on the right. Main area max 1280px, `padding: clamp(22px,3.4vw,44px) clamp(16px,3vw,34px) 96px`. Below 1000px the aside becomes a drawer with a `rgba(0,0,0,.62)` veil. A "concentrated" mode hides the aside for focused flows (for TPUB: the campaign creation wizard). Buttons in the portal are **pills** (`10px 18px`, Sora .84rem), unlike the 12px-radius marketing buttons. Spinner: a 17px ring with a gold top border rotating over .75s.
+Fixed 264px aside (`color-mix(surface 88%, black)`, right hairline), brand block (38px logo + Sora 0.16em name + gold subline), vertical nav (11×13px padding, radius 12, 18px icon column, hover `rgba(255,255,255,.04)`, **active = gold-soft bg + gold-line border + gold text**), an admin group separated by a hairline, and a footer link. The sticky 68px top bar (`color-mix(bg 82%, transparent)` + blur 14) holds the identity (38px gradient avatar with initials, name + uppercase role) on the left and actions on the right. Main area max 1280px, `padding: clamp(22px,3.4vw,44px) clamp(16px,3vw,34px) 96px`. Below 1000px the aside becomes a drawer with a `rgba(0,0,0,.62)` veil. A "concentrated" mode hides the aside for focused flows (for ZELQANE: the campaign creation wizard). Buttons in the portal are **pills** (`10px 18px`, Sora .84rem), unlike the 12px-radius marketing buttons. Spinner: a 17px ring with a gold top border rotating over .75s.
 
 ---
 
@@ -289,7 +289,7 @@ Usage: section heads use `reveal-blur`, grids use `reveal-stagger` (sometimes pl
 ```
 JS effects (tilt, magnetic, spotlight, count-up) do not attach under reduced motion or on coarse pointers.
 
-**Do not copy for TPUB:** the global `scroll-snap-type: y proximity` + `min-height: 100svh` on every section, and the 100svh footer. The code carries several long comments about bugs this caused (frozen touch scrolling, empty panels, landscape hacks with `!important`). The universal `img` float also shouldn't reach dashboard thumbnails or campaign previews.
+**Do not copy for ZELQANE:** the global `scroll-snap-type: y proximity` + `min-height: 100svh` on every section, and the 100svh footer. The code carries several long comments about bugs this caused (frozen touch scrolling, empty panels, landscape hacks with `!important`). The universal `img` float also shouldn't reach dashboard thumbnails or campaign previews.
 
 ---
 
@@ -308,21 +308,21 @@ JS effects (tilt, magnetic, spotlight, count-up) do not attach under reduced mot
 ## 6. Copy tone and structure (corporate, English)
 
 - **Voice:** confident, plain and concrete. It avoids hype words; short declaratives with a turn in the second half. Examples: "One ecosystem. Every service you need."; "Build the thing, not the slide deck"; "Tell us what you need — we'll bring the right companies to the table".
-- **Honest status:** entities carry `live` / `rnd` / `concept` pills, and careers copy admits "most of it is still being built". **TPUB should not invent inflated stats** (the old page's "1M+ appareils" and "+300 % ROI" contradict this tone). Use real or clearly-labelled target figures.
+- **Honest status:** entities carry `live` / `rnd` / `concept` pills, and careers copy admits "most of it is still being built". **ZELQANE should not invent inflated stats** (the old page's "1M+ appareils" and "+300 % ROI" contradict this tone). Use real or clearly-labelled target figures.
 - **Section recipe:** eyebrow (2–3 words: "What we provide", "Why work with us", "In motion") → title (3–7 words, benefit or noun phrase) → one-sentence lede that explains the *so-what* for the client. Titles often use the client's perspective ("so clients engage a single group instead of a dozen vendors").
 - **CTAs:** verb + object, with an arrow icon ("Explore our services →", "Start a conversation →", "Request this service →", "Talk to us"). Secondary CTAs are glass/ghost buttons with softer verbs ("See what we work on").
 - **Cards:** a title of 2–3 words + a single short sentence ("From booking to broadcast, handled."; "Impressions and analytics you can act on.").
-- **Existing TPUB entry in corporate data:** tagline "Reach real audiences on real screens." Services: Digital out-of-home advertising · Screen & display networks · Campaign management · Audience measurement & analytics. Features: Screen network / Campaign management / Measured audience. Clients: Brands · agencies · advertisers. Status: `concept`. Cluster: Media, Audience & Data (`--c-audi #e08bb0`). TPUB powers Porteur core n°2, "Advertising screen".
+- **Existing ZELQANE entry in corporate data:** tagline "Reach real audiences on real screens." Services: Digital out-of-home advertising · Screen & display networks · Campaign management · Audience measurement & analytics. Features: Screen network / Campaign management / Measured audience. Clients: Brands · agencies · advertisers. Status: `concept`. Cluster: Media, Audience & Data (`--c-audi #e08bb0`). ZELQANE powers Porteur core n°2, "Advertising screen".
 
 ---
 
-## 7. Proposed TPUB palette (dark-first, logo-derived)
+## 7. Proposed ZELQANE palette (dark-first, logo-derived)
 
-Logo colours sampled from `tpub.png`: red **#DF1B25 / #E31627**, orange **#F07019**, blue **#0255A3**. The brief's values (#E11D2A / #F07A1A / #0A5CA8) match within a few units, so we use the brief's values as canonical.
+Logo colours sampled from `zelqane.png`: red **#DF1B25 / #E31627**, orange **#F07019**, blue **#0255A3**. The brief's values (#E11D2A / #F07A1A / #0A5CA8) match within a few units, so we use the brief's values as canonical.
 
 ### 7.1 Strategy (why)
-1. **Keep the corporate structure and swap the hue.** Corporate uses a warm near-black with a single champagne accent. TPUB uses a **cool-neutral ink** (a hint of blue, to echo the logo's blue and the "screen/LED" world) with a **warm signal accent** (red→orange, the top bar + stem of the T).
-2. **Three logo colours but one lead accent per context.** Using all three at equal weight would recreate the rainbow look of the old tpub.html. Roles:
+1. **Keep the corporate structure and swap the hue.** Corporate uses a warm near-black with a single champagne accent. ZELQANE uses a **cool-neutral ink** (a hint of blue, to echo the logo's blue and the "screen/LED" world) with a **warm signal accent** (red→orange, the top bar + stem of the T).
+2. **Three logo colours but one lead accent per context.** Using all three at equal weight would recreate the rainbow look of the old zelqane.html. Roles:
    - **Red = brand & signal.** Logo, the thin brand hairline/glow, key numbers, the marketing primary CTA gradient start, the "live / en diffusion" dot.
    - **Orange = energy & emphasis.** Gradient partner of red, gradient text in headlines (replaces `.gold-text`), eyebrows, hover glows.
    - **Blue = trust & data.** Links, focus rings, charts, info, and the **primary action colour inside the dashboard**.
@@ -373,7 +373,7 @@ Status badge recipe (from corporate): `color: var(--sc); background: color-mix(i
 ```
 - White text on the brand gradient: the lightest stop `#F07A1A` gives 2.80, which is not enough. **Use ink `#1A0F05` on the gradient CTA** (≥6.7 across the orange half; on the red end it is ≈4.2), **or** use a red-weighted gradient `#C8101C → #E0461A` with white text (≥5.9 on the red side). Recommendation: **white label + `linear-gradient(120deg, #C8101C, #E11D2A 55%, #E8551C)`** with the orange carried by the glow shadow `0 12px 30px rgba(240,122,26,.28)` + `inset 0 1px 0 rgba(255,255,255,.35)`. This keeps a warm, bright feel and passes AA at the label position.
 
-**Aurora (TPUB version):**
+**Aurora (ZELQANE version):**
 ```css
 body::before { background: radial-gradient(42% 42% at 50% 50%, rgba(240,122,26,.10), transparent 70%); animation: aurora-a 34s ease-in-out infinite alternate; }
 body::after  { background: radial-gradient(40% 40% at 50% 50%, rgba(10,92,168,.14), transparent 70%); animation: aurora-b 46s ease-in-out infinite alternate; }
@@ -384,7 +384,7 @@ This gives a warm orange drift against a cool blue drift, mirroring the logo's s
 **Signature DOOH touch (optional, on-brand):** a faint LED-pixel grid on hero/feature imagery, e.g. `background-image: radial-gradient(rgba(255,255,255,.06) 1px, transparent 1.2px); background-size: 4px 4px;` over the scrim at 40% opacity. It evokes a screen without clip-art.
 
 ### 7.3 Light variant (client dashboard work surfaces, optional)
-Corporate keeps the portal dark, and **dark-first is recommended for TPUB's shell too**, for brand continuity. Dense data screens (tables, invoices, media library, long forms) can offer a light theme via `data-theme="light"`:
+Corporate keeps the portal dark, and **dark-first is recommended for ZELQANE's shell too**, for brand continuity. Dense data screens (tables, invoices, media library, long forms) can offer a light theme via `data-theme="light"`:
 
 | Token | Hex | Contrast |
 |---|---|---|
@@ -406,7 +406,7 @@ Corporate keeps the portal dark, and **dark-first is recommended for TPUB's shel
 
 In light mode the sidebar stays dark (`#0F1117`) so the brand frame persists and only the work canvas turns light. Aurora is off, and there is a static 4% orange/blue radial at the top corners.
 
-### 7.4 Typography for TPUB
+### 7.4 Typography for ZELQANE
 - **Recommended:** `Sora` (display + headings, 600/700, tracking -0.02em; its geometry matches the T/P monogram and it is already the group's label font) + `Inter` (body/UI, 400/500/600, tabular numbers for dashboards via `font-variant-numeric: tabular-nums`). Optionally add `Fraunces` 600 **only** for large marketing display lines, if closer kinship with the corporate site is wanted. Load via `next/font/google` with `subsets: ['latin', 'latin-ext']` (French accents), `display: 'swap'`.
 - Keep the corporate scale verbatim (`--fs-display` … `--fs-xs`), the uppercase 0.22em eyebrow with the 26px gradient dash (red→orange), and gradient text on the second half of headlines.
 
@@ -453,7 +453,7 @@ Reveal helpers: implement a tiny `<Reveal variant="up|left|right|zoom|blur" stag
 
 ---
 
-## 8. TPUB marketing content (harvested from tpub.html, rewritten in clean French)
+## 8. ZELQANE marketing content (harvested from zelqane.html, rewritten in clean French)
 
 Source facts: the old page targeted PFE students, with an IoT/LED hero, stats, about, a tech stack, PFE subjects and a contact form. The PFE subject descriptions reveal the real product model. **Drop** the PFE framing, the generic tech-stack logos (AWS/Hadoop/TensorFlow…), the emoji icons and the unverifiable figures ("1M+ appareils", "+300 % ROI", "100 % ciblage").
 Product model, as described in the subjects: a client account → subscription/plans → campaign creation and scheduling → admin moderation/validation → a decision engine picks content by region, hour, zone type and active campaigns → broadcast on **two media**: users' devices connected to the AEROLINK network, and **LED screens mounted on the Tukhnanutha Porteurs** → broadcast logs → display statistics → analytics dashboard → invoicing. Also: national supervision of screens (fault detection), **emergency messages override ads**, municipal/institutional partnerships, priority zones, national rollout.
@@ -462,7 +462,7 @@ Product model, as described in the subjects: a client account → subscription/p
 - Eyebrow: `Affichage numérique · Tunisie`
 - Titre : **La rue devient votre écran.** / *Diffusez là où la Tunisie regarde.* (the second line takes the gradient)
 - Alternatives: "Vos campagnes, sur les écrans qui comptent." · "Réservez l'espace urbain en quelques clics."
-- Lede : « TPUB est la plateforme tunisienne de publicité numérique extérieure : choisissez vos zones, déposez vos visuels, et suivez chaque diffusion sur un réseau d'écrans LED connectés. »
+- Lede : « ZELQANE est la plateforme tunisienne de publicité numérique extérieure : choisissez vos zones, déposez vos visuels, et suivez chaque diffusion sur un réseau d'écrans LED connectés. »
 - CTA : `Lancer une campagne →` (primaire) · `Voir le réseau d'écrans` (verre)
 - Microcopy under the CTAs: « Sans engagement · Validation des contenus sous 24 h · Rapports de diffusion détaillés » (the 24h figure is to be confirmed by the team)
 
@@ -472,8 +472,8 @@ Product model, as described in the subjects: a client account → subscription/p
 - `24/7` diffusion supervisée
 - `100 %` des contenus vérifiés avant diffusion (modération IA + humaine; this is a process claim, so it is safe)
 
-### 8.3 « Pourquoi TPUB » (4 cards)
-Eyebrow `Pourquoi TPUB`. Titre « La publicité extérieure, enfin pilotable ». Lede « Tout ce qu'il fallait négocier au téléphone se fait désormais en ligne, en temps réel. »
+### 8.3 « Pourquoi ZELQANE » (4 cards)
+Eyebrow `Pourquoi ZELQANE`. Titre « La publicité extérieure, enfin pilotable ». Lede « Tout ce qu'il fallait négocier au téléphone se fait désormais en ligne, en temps réel. »
 1. **Réseau national** : « Des écrans LED installés sur les porteurs Tukhnanutha, dans les zones à fort passage, avec une couverture qui s'étend gouvernorat par gouvernorat. »
 2. **Ciblage par zone et par horaire** : « Choisissez les zones, les créneaux et le type de lieu. Le moteur de diffusion place vos contenus au bon endroit, au bon moment. »
 3. **Contenus vérifiés** : « Chaque visuel est analysé par notre modération automatique, puis validé avant sa mise à l'antenne. Votre marque apparaît dans un environnement sûr. »
@@ -481,7 +481,7 @@ Eyebrow `Pourquoi TPUB`. Titre « La publicité extérieure, enfin pilotable ».
 
 ### 8.4 Double diffusion (feature split with image)
 Eyebrow `Deux supports, une campagne`. Titre « Sur l'écran de la rue et dans la poche du passant ».
-Lede « TPUB diffuse sur deux canaux complémentaires : les écrans LED urbains pour l'impact visuel, et les appareils connectés au réseau AEROLINK pour la proximité. » (Only if the AEROLINK channel is actually offered in V1. Otherwise present it as « Bientôt ».)
+Lede « ZELQANE diffuse sur deux canaux complémentaires : les écrans LED urbains pour l'impact visuel, et les appareils connectés au réseau AEROLINK pour la proximité. » (Only if the AEROLINK channel is actually offered in V1. Otherwise present it as « Bientôt ».)
 List items: Écrans LED urbains · Réseau connecté AEROLINK · Planification centralisée · Rapports unifiés
 
 ### 8.5 Comment ça marche (4 steps, numbered 01–04)
@@ -510,7 +510,7 @@ Plus: « Supervision nationale des écrans : détection des pannes et maintenanc
 
 ### 8.9 Écosystème
 Eyebrow `Groupe Tukhnanutha`. Titre « Porté par un écosystème technologique tunisien ».
-Lede « TPUB est la filiale média du groupe Tukhnanutha. Ses écrans sont intégrés au Porteur, la cellule standardisée du groupe qui réunit connectivité, énergie et supervision. Chaque porteur déployé est un point de diffusion de plus. »
+Lede « ZELQANE est la filiale média du groupe Tukhnanutha. Ses écrans sont intégrés au Porteur, la cellule standardisée du groupe qui réunit connectivité, énergie et supervision. Chaque porteur déployé est un point de diffusion de plus. »
 CTA `Découvrir le groupe` (external link to tukhnanutha.com)
 
 ### 8.10 Mission (short statement block)
@@ -522,8 +522,8 @@ Lede « Annonceurs, agences, collectivités : créez votre compte ou échangez a
 CTA `Lancer une campagne →` · `Contacter l'équipe`
 
 ### 8.12 Contact block / footer
-- Contact: Tunis, Tunisie · contact@tpub.tn (from the old page; verify) · Lun–Ven, 9 h–18 h. The phone number was a placeholder (`+216 XX XXX XXX`) and must not be used.
+- Contact: Tunis, Tunisie · contact@zelqane.com (from the old page; verify) · Lun–Ven, 9 h–18 h. The phone number was a placeholder (`+216 XX XXX XXX`) and must not be used.
 - Contact form subjects: Publicité · Partenariat · Collectivité / institution · Information · Autre
 - Footer columns: **Plateforme** (Fonctionnement, Réseau d'écrans, Tarifs, Espace annonceur) · **Ressources** (Formats et spécifications des contenus, Centre d'aide, Blog) · **Légal** (Conditions d'utilisation, Politique de confidentialité, Mentions légales, Cookies)
-- Footer credits tagline (gold-3 equivalent in orange-text): « Affichage numérique · Tunisie · Groupe Tukhnanutha » · « © 2026 TPUB. Tous droits réservés. »
-- Monument wordmark: `TPUB`, Sora 700, tracking 0.36em, brand gradient text, with the tricolour hairline sweep under it.
+- Footer credits tagline (gold-3 equivalent in orange-text): « Affichage numérique · Tunisie · Groupe Tukhnanutha » · « © 2026 ZELQANE. Tous droits réservés. »
+- Monument wordmark: `ZELQANE`, Sora 700, tracking 0.36em, brand gradient text, with the tricolour hairline sweep under it.

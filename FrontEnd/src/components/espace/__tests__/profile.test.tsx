@@ -348,7 +348,7 @@ describe("two-factor authentication card (round 2 §3.7)", () => {
     const u = userEvent.setup();
     api.twoFactorSetup.mockResolvedValue({
       secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
-      otpauthUri: "otpauth://totp/TPUB:sami%40exemple.tn?secret=JBSWY3DPEHPK3PXP&issuer=TPUB",
+      otpauthUri: "otpauth://totp/ZELQANE:sami%40exemple.tn?secret=JBSWY3DPEHPK3PXP&issuer=ZELQANE",
       expiresAt: "2099-01-01T00:00:00Z",
     });
     api.twoFactorEnable

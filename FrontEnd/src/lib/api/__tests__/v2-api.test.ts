@@ -180,9 +180,9 @@ describe("multipart and downloads", () => {
   it("parses Content-Disposition file names safely", () => {
     expect(
       filenameFromContentDisposition(
-        'attachment; filename="tpub-statistiques-views-2026-09-01-2026-09-30.csv"',
+        'attachment; filename="zelqane-statistiques-views-2026-09-01-2026-09-30.csv"',
       ),
-    ).toBe("tpub-statistiques-views-2026-09-01-2026-09-30.csv");
+    ).toBe("zelqane-statistiques-views-2026-09-01-2026-09-30.csv");
     expect(
       filenameFromContentDisposition("attachment; filename*=UTF-8''stats%20ao%C3%BBt.csv"),
     ).toBe("stats août.csv");
@@ -215,7 +215,7 @@ describe("multipart and downloads", () => {
   });
 
   it("exportCsv saves the file through an object URL", async () => {
-    const create = vi.fn(() => "blob:tpub");
+    const create = vi.fn(() => "blob:zelqane");
     const revoke = vi.fn();
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
     const click = vi
@@ -224,7 +224,7 @@ describe("multipart and downloads", () => {
     fetchMock.mockResolvedValueOnce(new Response("a;b", { status: 200 }));
     await expect(
       statisticsApi.exportCsv({ type: "campaign", campaignId: 4, from: "2026-09-01" }),
-    ).resolves.toBe("tpub-statistiques-campaign.csv");
+    ).resolves.toBe("zelqane-statistiques-campaign.csv");
     expect(lastCall().url).toBe(
       "/api/statistics/export.csv?type=campaign&from=2026-09-01&campaignId=4",
     );

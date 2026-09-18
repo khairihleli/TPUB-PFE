@@ -14,7 +14,7 @@ spring:
   flyway:
     enabled: false
 
-tpub:
+zelqane:
   # Round 2 (L2): fixed test-only secrets (never used outside the test profile)
   jwt:
     secret: test-only-jwt-secret-0123456789abcdef-0123456789abcdef

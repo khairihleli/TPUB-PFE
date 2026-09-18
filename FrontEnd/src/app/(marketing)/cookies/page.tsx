@@ -7,7 +7,7 @@ import { CONTACT } from "@/content/site";
 export const metadata: Metadata = {
   title: "Cookies",
   description:
-    "Les cookies et stockages utilisés par le site TPUB : uniquement ce qui est nécessaire à la connexion et au confort de navigation. Document en cours de validation juridique.",
+    "Les cookies et stockages utilisés par le site ZELQANE : uniquement ce qui est nécessaire à la connexion et au confort de navigation. Document en cours de validation juridique.",
 };
 
 const SECTIONS: readonly LegalSection[] = [
@@ -32,29 +32,29 @@ const SECTIONS: readonly LegalSection[] = [
           dépose aucun cookie publicitaire ni de mesure d&apos;audience.
         </p>
         <LegalTable
-          caption="Cookies et stockages utilisés par le site TPUB"
+          caption="Cookies et stockages utilisés par le site ZELQANE"
           head={["Nom", "Type", "Rôle", "Durée"]}
           rows={[
             [
-              <code key="c">tpub_token</code>,
+              <code key="c">zelqane_token</code>,
               "Cookie strictement nécessaire, inaccessible aux scripts",
               "Maintient votre connexion à l'espace annonceur ou au back-office.",
               "Jusqu'à l'expiration de la session (24 heures au plus) ou la déconnexion",
             ],
             [
-              <code key="c">tpub_user</code>,
+              <code key="c">zelqane_user</code>,
               "Cookie strictement nécessaire, inaccessible aux scripts",
               "Mémorise les informations de session (nom, e-mail, rôle) pour afficher votre espace.",
-              "Identique à tpub_token",
+              "Identique à zelqane_token",
             ],
             [
-              <code key="c">tpub:status-banner-dismissed</code>,
+              <code key="c">zelqane:status-banner-dismissed</code>,
               "Stockage de session du navigateur",
               "Retient que vous avez fermé le bandeau de statut du site.",
               "Jusqu'à la fermeture de l'onglet",
             ],
             [
-              <code key="c">tpub:onboarding:…</code>,
+              <code key="c">zelqane:onboarding:…</code>,
               "Stockage local du navigateur",
               "Retient, dans l'espace annonceur, les étapes de prise en main déjà consultées ou masquées.",
               "Jusqu'à ce que vous effaciez les données du site dans votre navigateur",

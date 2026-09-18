@@ -16,7 +16,7 @@ import { GROUP } from "@/content/site";
 export const metadata: Metadata = {
   title: "À propos",
   description:
-    "TPUB, société d'affichage numérique extérieur du groupe Tukhnanutha : mission, principes, place dans le pôle Médias, audience & données, et statut de maturité.",
+    "ZELQANE, société d'affichage numérique extérieur du groupe Tukhnanutha : mission, principes, place dans le pôle Médias, audience & données, et statut de maturité.",
   alternates: { canonical: "/a-propos" },
 };
 
@@ -43,7 +43,7 @@ export default function AProposPage() {
               </Link>
             </Button>
             <Button asChild variant="glass" size="lg">
-              <a href={GROUP.tpubPage} target="_blank" rel="noopener noreferrer">
+              <a href={GROUP.zelqanePage} target="_blank" rel="noopener noreferrer">
                 {APROPOS_HERO.secondary.label}
                 <ArrowUpRight aria-hidden="true" />
                 <span className="sr-only"> (site du groupe Tukhnanutha, nouvel onglet)</span>

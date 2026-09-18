@@ -118,7 +118,7 @@ const session = vi.hoisted((): { role: RoleCode } => ({ role: "ADMINISTRATEUR" }
 
 vi.mock("@/components/shell/session-provider", () => ({
   useSession: () => ({
-    user: { email: "admin@tpub.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
+    user: { email: "admin@zelqane.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
     role: session.role,
     isAdmin: session.role === "ADMINISTRATEUR",
     isStaff: true,
@@ -420,7 +420,7 @@ describe("ModerationView — AI report and decisions", () => {
 
   it("shows a retryable error state when the service is down", async () => {
     api.search.mockRejectedValue(
-      new ApiError(502, "Le service TPUB est momentanément indisponible."),
+      new ApiError(502, "Le service ZELQANE est momentanément indisponible."),
     );
     render(<ModerationView />);
     expect(await screen.findByText("Service momentanément indisponible")).toBeInTheDocument();

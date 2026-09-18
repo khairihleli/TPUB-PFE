@@ -50,7 +50,7 @@ import { bookingBlockReason } from "@/lib/network/porteur";
 // Copy
 
 export const BOOKING_EXPLAINER =
-  "Réservation temporaire, confirmée à la validation TPUB. La réservation porte sur l'écran complet du Porteur.";
+  "Réservation temporaire, confirmée à la validation ZELQANE. La réservation porte sur l'écran complet du Porteur.";
 
 export const RESERVATION_CONFLICT_MESSAGE =
   "Période indisponible : ce Porteur est déjà réservé sur ces dates. Choisissez une autre période.";

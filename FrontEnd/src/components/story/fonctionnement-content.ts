@@ -77,7 +77,7 @@ export const JOURNEY_STEPS: readonly JourneyStep[] = [
     key: "compte",
     phase: "acces",
     title: "Inscription",
-    text: "Créez votre compte annonceur avec votre société et vos coordonnées. Votre dossier est examiné par TPUB : le réseau est réservé à des annonceurs vérifiés.",
+    text: "Créez votre compte annonceur avec votre société et vos coordonnées. Votre dossier est examiné par ZELQANE : le réseau est réservé à des annonceurs vérifiés.",
     trace: "Compte annonceur, dossier en cours d'examen",
   },
   {
@@ -101,8 +101,8 @@ export const JOURNEY_STEPS: readonly JourneyStep[] = [
     title: "Créations",
     text: "Images, vidéos ou bannières associées à la campagne.",
     statuses: ["BROUILLON"],
-    trace: "Formats et durée précisés avec TPUB",
-    note: "Import de créations en libre-service : bientôt disponible. En attendant, votre conseiller TPUB récupère vos fichiers.",
+    trace: "Formats et durée précisés avec ZELQANE",
+    note: "Import de créations en libre-service : bientôt disponible. En attendant, votre conseiller ZELQANE récupère vos fichiers.",
   },
   {
     key: "reservation",
@@ -124,7 +124,7 @@ export const JOURNEY_STEPS: readonly JourneyStep[] = [
   {
     key: "validation",
     phase: "controle",
-    title: "Validation TPUB",
+    title: "Validation ZELQANE",
     text: "Un expert valide (campagne en diffusion, créneaux confirmés) ou refuse (créneaux annulés), avec un motif enregistré.",
     // Validation sets ACTIVE directly (« Programmée » until the start date); VALIDATED_BY_ADMIN is never set.
     statuses: ["SCHEDULED", "ACTIVE", "BLOCKED"],
@@ -185,7 +185,7 @@ export function statusNextAction(status: CampaignDisplayStatus): string {
   const s: CampaignStatus = status;
   if (canSubmit(s)) return "Modifier, réserver, soumettre";
   if (isDeadEnd(s)) return "Dupliquer la campagne et la corriger";
-  if (isAwaitingAdmin(s)) return "Attendre la décision d'un expert TPUB";
+  if (isAwaitingAdmin(s)) return "Attendre la décision d'un expert ZELQANE";
   switch (s) {
     case "PENDING_AI_CHECK":
       return "Patienter pendant l'analyse";
@@ -220,7 +220,7 @@ export const CONTROL_SECTION = {
   eyebrow: "Double contrôle",
   title: "L'IA assiste,",
   highlight: "une personne décide.",
-  lede: "Les écrans sont dans l'espace public. Chaque campagne est analysée par IA avant diffusion, puis validée ou refusée par un expert TPUB, avec une décision motivée et enregistrée.",
+  lede: "Les écrans sont dans l'espace public. Chaque campagne est analysée par IA avant diffusion, puis validée ou refusée par un expert ZELQANE, avec une décision motivée et enregistrée.",
   caveat:
     "L'analyse IA ne garantit pas l'absence de tout contenu problématique : c'est précisément pourquoi aucune campagne n'est diffusée sans validation humaine.",
 } as const;
@@ -258,7 +258,7 @@ export const MEASURE_SECTION = {
   eyebrow: "Mesure",
   title: "Ce que la plateforme prouve,",
   highlight: "ce qu'elle estime.",
-  lede: "Un journal de diffusion prouve qu'un écran a joué votre contenu, pas qu'une personne l'a regardé. TPUB distingue donc les preuves de diffusion des indicateurs d'audience, présentés avec leur méthode et comme estimations.",
+  lede: "Un journal de diffusion prouve qu'un écran a joué votre contenu, pas qu'une personne l'a regardé. ZELQANE distingue donc les preuves de diffusion des indicateurs d'audience, présentés avec leur méthode et comme estimations.",
   asideTitle: "Dans votre espace",
   aside:
     "Les vues et coûts affichés avant diffusion sont des estimations indicatives, jamais une mesure d'audience. Les indicateurs d'audience, lorsqu'ils existent, sont anonymes, agrégés et présentés avec leur méthode.",
@@ -272,9 +272,9 @@ export const PRIORITY_SECTION = {
   eyebrow: "Intérêt général",
   title: "Quand l'intérêt général",
   highlight: "passe avant la publicité.",
-  text: "Le moteur de diffusion vérifie d'abord la présence d'un message prioritaire dans la zone. Si un message est actif, il remplace temporairement la programmation publicitaire des écrans concernés. La diffusion normale reprend à la fin du message. Ces messages sont gérés exclusivement par l'équipe TPUB.",
+  text: "Le moteur de diffusion vérifie d'abord la présence d'un message prioritaire dans la zone. Si un message est actif, il remplace temporairement la programmation publicitaire des écrans concernés. La diffusion normale reprend à la fin du message. Ces messages sont gérés exclusivement par l'équipe ZELQANE.",
   points: [
-    "Créés et gérés exclusivement par l'équipe TPUB, jamais en libre-service",
+    "Créés et gérés exclusivement par l'équipe ZELQANE, jamais en libre-service",
     "Limités aux écrans de la zone concernée",
     "Reprise de la programmation normale à la fin du message",
   ],
@@ -299,5 +299,5 @@ export const FONCTIONNEMENT_CTA = {
   highlight: "et suivez-⁠la jusqu'à la diffusion.",
   lede: "Créez votre compte annonceur : la campagne reste en brouillon tant que vous ne la soumettez pas.",
   primary: { label: "Créer mon compte annonceur", href: "/inscription" },
-  secondary: { label: "Parler à TPUB", href: "/contact" },
+  secondary: { label: "Parler à ZELQANE", href: "/contact" },
 } as const;

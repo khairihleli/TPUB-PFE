@@ -38,7 +38,7 @@ vi.mock("@/lib/api/endpoints", () => ({
 const session = vi.hoisted((): { role: RoleCode } => ({ role: "ADMINISTRATEUR" }));
 vi.mock("@/components/shell/session-provider", () => ({
   useSession: () => ({
-    user: { email: "admin@tpub.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
+    user: { email: "admin@zelqane.local", nom: "Admin", role: session.role, userId: 1, exp: 1 },
     role: session.role,
     isAdmin: session.role === "ADMINISTRATEUR",
     isStaff: true,
@@ -172,7 +172,7 @@ beforeEach(() => {
 describe("OverviewView", () => {
   it("shows the decision queue, every §6 figure group, charts, AI dashboard and live emergencies", async () => {
     render(<OverviewView />);
-    const hero = (await screen.findByRole("heading", { name: "À décider par TPUB" })).closest(
+    const hero = (await screen.findByRole("heading", { name: "À décider par ZELQANE" })).closest(
       "section",
     )!;
     expect(

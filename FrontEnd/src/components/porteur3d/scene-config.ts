@@ -399,7 +399,7 @@ export interface HotspotCopy {
 const TYPE_SCREEN_COPY: Record<Exclude<StudioPorteurType, "D">, { title: string; body: string }> = {
   A: {
     title: "Écran panoramique 360°",
-    body: "Un affichage courbe enroulé autour du mât, pensé pour être lisible depuis chaque direction d'approche d'un rond-point ou d'une place. C'est la fonction écran du Porteur, exploitée par TPUB.",
+    body: "Un affichage courbe enroulé autour du mât, pensé pour être lisible depuis chaque direction d'approche d'un rond-point ou d'une place. C'est la fonction écran du Porteur, exploitée par ZELQANE.",
   },
   B: {
     title: "Double face",
@@ -449,7 +449,7 @@ export function getHotspots(type: StudioPorteurType, mastHeightM?: number | null
       title: "Capteurs et connectivité",
       body:
         type === "D"
-          ? "Sans écran, le Porteur reste une infrastructure : connectivité, météo, énergie et supervision à distance, là où il n'y a pas d'audience à servir. Pas d'inventaire publicitaire TPUB."
+          ? "Sans écran, le Porteur reste une infrastructure : connectivité, météo, énergie et supervision à distance, là où il n'y a pas d'audience à servir. Pas d'inventaire publicitaire ZELQANE."
           : "Connectivité, météo, supervision, stockage et contrôle : des fonctions partagées avec l'écran, conçues pour remonter son état et journaliser chaque diffusion.",
       focus: { distance: type === "D" ? 7 : { h: 0.35 }, azimuthDeg: 40, heightOffset: 0 },
     },

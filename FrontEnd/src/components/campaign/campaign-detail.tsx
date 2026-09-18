@@ -100,8 +100,8 @@ import { useResource } from "@/lib/use-resource";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** mailto: TPUB with a prefilled subject/body. */
-export function tpubMailto(subject: string, body: string): string {
+/** mailto: ZELQANE with a prefilled subject/body. */
+export function zelqaneMailto(subject: string, body: string): string {
   return `mailto:${CONTACT.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
@@ -130,7 +130,7 @@ export interface TimelineStepView {
 }
 
 /**
- * Lifecycle timeline (contract §5 F1): Brouillon → Analyse IA → Validation TPUB → Programmée →
+ * Lifecycle timeline (contract §5 F1): Brouillon → Analyse IA → Validation ZELQANE → Programmée →
  * En diffusion → Terminée. REJECTED_BY_AI / BLOCKED stop in red at their step.
  */
 export function campaignTimelineViews(
@@ -154,7 +154,7 @@ export function campaignTimelineViews(
       : "Contrôle automatique",
     campaign.validatedAt
       ? `Validée le ${formatDate(campaign.validatedAt, "medium")}`
-      : "Examen par TPUB",
+      : "Examen par ZELQANE",
     campaign.startDate
       ? `À partir du ${formatDate(campaign.startDate, "medium")}`
       : "Date de début",
@@ -409,7 +409,7 @@ function StatusCard({
   );
 }
 
-/** « Motif du refus TPUB » and the admin comment (contract §2.1). */
+/** « Motif du refus ZELQANE » and the admin comment (contract §2.1). */
 function DecisionNotes({ campaign }: { campaign: CampaignResponse }) {
   const refused = campaign.status === "BLOCKED" || campaign.status === "REJECTED_BY_AI";
   if (!campaign.rejectionReason && !campaign.adminComment) return null;
@@ -420,7 +420,7 @@ function DecisionNotes({ campaign }: { campaign: CampaignResponse }) {
           tone={refused ? "danger" : "warning"}
           live="none"
           icon={<ShieldAlert />}
-          title={refused ? "Motif du refus TPUB" : "Motif du dernier refus"}
+          title={refused ? "Motif du refus ZELQANE" : "Motif du dernier refus"}
         >
           {campaign.rejectionReason}
           {refused ? (
@@ -432,7 +432,7 @@ function DecisionNotes({ campaign }: { campaign: CampaignResponse }) {
         </Alert>
       ) : null}
       {campaign.adminComment ? (
-        <Alert tone="info" live="none" title="Commentaire de TPUB">
+        <Alert tone="info" live="none" title="Commentaire de ZELQANE">
           {campaign.adminComment}
         </Alert>
       ) : null}
@@ -938,7 +938,7 @@ function DetailView({
         onOpenChange={setEditConfirmOpen}
         tone="primary"
         title="Modifier la campagne ?"
-        description="La campagne repassera en brouillon à l'enregistrement : il faudra la soumettre à nouveau (analyse IA puis validation TPUB)."
+        description="La campagne repassera en brouillon à l'enregistrement : il faudra la soumettre à nouveau (analyse IA puis validation ZELQANE)."
         confirmLabel="Continuer"
         onConfirm={() => router.push(routes.espace.campaignEdit(campaign.id))}
       />

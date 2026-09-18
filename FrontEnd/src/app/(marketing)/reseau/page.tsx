@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 export const metadata: Metadata = {
   title: "Réseau & zones",
   description:
-    "Le Porteur comme support de l'écran, les types d'emplacements A à D, la logique de zones et l'ordre de diffusion des contenus : le réseau TPUB tel qu'il est conçu.",
+    "Le Porteur comme support de l'écran, les types d'emplacements A à D, la logique de zones et l'ordre de diffusion des contenus : le réseau ZELQANE tel qu'il est conçu.",
   alternates: { canonical: "/reseau" },
 };
 

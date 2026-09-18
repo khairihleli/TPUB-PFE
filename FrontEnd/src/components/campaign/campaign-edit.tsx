@@ -214,7 +214,7 @@ function EditForm({ data }: { data: CampaignWithReservations }) {
         >
           Enregistrer ces modifications remet la campagne en brouillon : vous pourrez ensuite
           corriger son contenu et ses Porteurs, puis la soumettre à nouveau à l&apos;analyse IA et à
-          TPUB.
+          ZELQANE.
         </Alert>
       ) : null}
 

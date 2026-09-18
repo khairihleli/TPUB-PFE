@@ -199,7 +199,7 @@ export function StepContent({
               Pré-analyse IA
             </h3>
             <p className="mt-1 max-w-2xl text-[0.875rem] text-muted">
-              Vérifie le texte, les visuels (dont le texte dans l&apos;image) et les règles TPUB. La
+              Vérifie le texte, les visuels (dont le texte dans l&apos;image) et les règles ZELQANE. La
               campagne reste en brouillon.
             </p>
           </div>

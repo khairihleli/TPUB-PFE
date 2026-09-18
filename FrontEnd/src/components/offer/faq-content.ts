@@ -23,24 +23,24 @@ export const FAQ_THEMES: readonly FaqTheme[] = [
   {
     id: "statut",
     title: "Statut et démarrage",
-    intro: "Où en est TPUB, et ce que vous pouvez faire dès aujourd'hui.",
+    intro: "Où en est ZELQANE, et ce que vous pouvez faire dès aujourd'hui.",
     entries: [
       {
-        question: "TPUB est-il déjà en service ?",
+        question: "ZELQANE est-il déjà en service ?",
         answer:
-          "TPUB est en phase de conception. Ce site présente la plateforme telle qu'elle est conçue : zones, réservation, contrôle des contenus, journal de diffusion. Vous pouvez dès maintenant créer un compte annonceur et préparer vos campagnes. La disponibilité des emplacements s'affiche dans votre espace.",
+          "ZELQANE est en phase de conception. Ce site présente la plateforme telle qu'elle est conçue : zones, réservation, contrôle des contenus, journal de diffusion. Vous pouvez dès maintenant créer un compte annonceur et préparer vos campagnes. La disponibilité des emplacements s'affiche dans votre espace.",
         link: { label: "Voir le fonctionnement", href: "/fonctionnement" },
       },
       {
         question: "Que puis-je faire en créant un compte aujourd'hui ?",
         answer:
-          "L'inscription crée un compte annonceur et un dossier examiné par TPUB. Vous pouvez déjà explorer les zones et préparer une campagne en brouillon : objectif, budget en dinars, période et heures de diffusion.",
+          "L'inscription crée un compte annonceur et un dossier examiné par ZELQANE. Vous pouvez déjà explorer les zones et préparer une campagne en brouillon : objectif, budget en dinars, période et heures de diffusion.",
         link: { label: "Créer mon compte annonceur", href: "/inscription" },
       },
       {
         question: "Pourquoi mon dossier annonceur est-il examiné ?",
         answer:
-          "Pour protéger l'espace public, chaque compte annonceur est examiné par TPUB avant la diffusion de sa première campagne. Le réseau est conçu pour des annonceurs vérifiés.",
+          "Pour protéger l'espace public, chaque compte annonceur est examiné par ZELQANE avant la diffusion de sa première campagne. Le réseau est conçu pour des annonceurs vérifiés.",
       },
       {
         question: "Je suis une agence ou une marque nationale : par où commencer ?",
@@ -63,13 +63,13 @@ export const FAQ_THEMES: readonly FaqTheme[] = [
       {
         question: "Comment le prix est-il établi ?",
         answer:
-          "Selon l'emplacement, le format et la visibilité de l'écran, la pression (durée et fréquence dans la boucle), la période et la saison. Pour les agences et les marques, TPUB répond par un plan média plutôt que par une grille générique.",
+          "Selon l'emplacement, le format et la visibilité de l'écran, la pression (durée et fréquence dans la boucle), la période et la saison. Pour les agences et les marques, ZELQANE répond par un plan média plutôt que par une grille générique.",
         link: { label: "Les critères qui font le prix", href: "/tarifs" },
       },
       {
         question: "Pourquoi n'y a-t-il pas de grille tarifaire publique ?",
         answer:
-          "Il n'existe pas de grille unique pour l'affichage numérique : deux écrans au même tarif peuvent offrir des contacts réels très différents. TPUB préfère rendre explicites les critères qui font le prix et construire une proposition à partir de vos objectifs.",
+          "Il n'existe pas de grille unique pour l'affichage numérique : deux écrans au même tarif peuvent offrir des contacts réels très différents. ZELQANE préfère rendre explicites les critères qui font le prix et construire une proposition à partir de vos objectifs.",
       },
       {
         question: "Le coût affiché dans mon espace est-il définitif ?",
@@ -91,7 +91,7 @@ export const FAQ_THEMES: readonly FaqTheme[] = [
       {
         question: "Le journal de diffusion, est-ce une mesure d'audience ?",
         answer:
-          "Non. Il prouve qu'un écran a diffusé votre contenu, à quel moment et pendant combien de temps. L'audience est une autre couche : quand elle est estimée, elle l'est de façon anonyme et agrégée, avec sa méthode, et TPUB ne l'assimile jamais à une diffusion.",
+          "Non. Il prouve qu'un écran a diffusé votre contenu, à quel moment et pendant combien de temps. L'audience est une autre couche : quand elle est estimée, elle l'est de façon anonyme et agrégée, avec sa méthode, et ZELQANE ne l'assimile jamais à une diffusion.",
       },
       {
         question: "Qu'est-ce qui est observé, qu'est-ce qui est estimé ?",
@@ -124,12 +124,12 @@ export const FAQ_THEMES: readonly FaqTheme[] = [
       {
         question: "Comment mes contenus sont-ils contrôlés ?",
         answer:
-          "Par une analyse IA (conformité, risque et qualité notés sur 100, avec recommandations), puis par la validation d'un expert TPUB. Si la campagne doit être corrigée, vous la modifiez et la soumettez à nouveau.",
+          "Par une analyse IA (conformité, risque et qualité notés sur 100, avec recommandations), puis par la validation d'un expert ZELQANE. Si la campagne doit être corrigée, vous la modifiez et la soumettez à nouveau.",
       },
       {
         question: "L'IA décide-t-elle seule ?",
         answer:
-          "Non. L'IA assiste, une personne décide. Aucune campagne n'est diffusée sans la validation d'un expert TPUB, et chaque décision est motivée et enregistrée. L'analyse aide à repérer les points sensibles, elle ne garantit pas à elle seule l'absence de tout contenu problématique.",
+          "Non. L'IA assiste, une personne décide. Aucune campagne n'est diffusée sans la validation d'un expert ZELQANE, et chaque décision est motivée et enregistrée. L'analyse aide à repérer les points sensibles, elle ne garantit pas à elle seule l'absence de tout contenu problématique.",
       },
       {
         question: "Quels contenus sont refusés ?",
@@ -140,7 +140,7 @@ export const FAQ_THEMES: readonly FaqTheme[] = [
       {
         question: "Que se passe-t-il si ma campagne doit être corrigée ?",
         answer:
-          "Consultez les points relevés et la recommandation dans votre espace, modifiez votre campagne en conséquence, puis soumettez-la à nouveau. En cas de refus par un expert TPUB, le motif est indiqué et vos créneaux sont libérés.",
+          "Consultez les points relevés et la recommandation dans votre espace, modifiez votre campagne en conséquence, puis soumettez-la à nouveau. En cas de refus par un expert ZELQANE, le motif est indiqué et vos créneaux sont libérés.",
       },
     ],
   },
@@ -168,11 +168,11 @@ export const FAQ_THEMES: readonly FaqTheme[] = [
       {
         question: "Que se passe-t-il si un message d'intérêt général doit être diffusé ?",
         answer:
-          "Le moteur de diffusion est conçu pour faire passer un message prioritaire avant toute publicité dans la zone concernée, puis reprendre la programmation normale à la fin du message. Ces messages sont gérés exclusivement par l'équipe TPUB.",
+          "Le moteur de diffusion est conçu pour faire passer un message prioritaire avant toute publicité dans la zone concernée, puis reprendre la programmation normale à la fin du message. Ces messages sont gérés exclusivement par l'équipe ZELQANE.",
       },
       {
         question: "Puis-je importer mes créations moi-même ?",
-        answer: `L'import de créations en libre-service sera bientôt disponible. En attendant, transmettez vos fichiers à ${CONTACT.email} : votre conseiller TPUB récupère le visuel après validation.`,
+        answer: `L'import de créations en libre-service sera bientôt disponible. En attendant, transmettez vos fichiers à ${CONTACT.email} : votre conseiller ZELQANE récupère le visuel après validation.`,
       },
     ],
   },

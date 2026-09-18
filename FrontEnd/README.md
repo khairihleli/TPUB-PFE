@@ -1,18 +1,18 @@
-# TPUB — Frontend
+# ZELQANE — Frontend
 
-Site web et espace client de **TPUB**, le réseau d'affichage numérique extérieur (DOOH) du groupe
+Site web et espace client de **ZELQANE**, le réseau d'affichage numérique extérieur (DOOH) du groupe
 Tukhnanutha, en Tunisie.
 
 L'application réunit trois usages :
 
-- **Site vitrine** : présenter TPUB (réseau des Porteurs, fonctionnement, double contrôle IA +
-  humain, tarifs sur devis) et convertir les annonceurs. TPUB est en phase de conception : le
+- **Site vitrine** : présenter ZELQANE (réseau des Porteurs, fonctionnement, double contrôle IA +
+  humain, tarifs sur devis) et convertir les annonceurs. ZELQANE est en phase de conception : le
   site n'annonce ni nombre d'écrans, ni clients, ni audiences, ni prix (voir
-  `docs/tpub-brief.md`, liste « à ne pas affirmer »).
+  `docs/zelqane-brief.md`, liste « à ne pas affirmer »).
 - **Espace annonceur** (`/espace`) : créer une campagne (visuels, zone sur la carte, créneaux),
-  réserver des Porteurs, la soumettre à l'analyse IA puis à la validation TPUB, suivre son
+  réserver des Porteurs, la soumettre à l'analyse IA puis à la validation ZELQANE, suivre son
   avancement, ses statistiques, ses réservations et son profil (sessions, mot de passe, logo).
-- **Back-office** (`/admin`) pour l'équipe TPUB : vue d'ensemble, modération (rapport IA,
+- **Back-office** (`/admin`) pour l'équipe ZELQANE : vue d'ensemble, modération (rapport IA,
   valider / refuser / bloquer), réservations et conflits, réseau (zones, Porteurs,
   indisponibilités), messages prioritaires, statistiques, utilisateurs, journal (audit, décisions
   IA, diffusions) et règles IA. Sans validation administrateur, rien n'est diffusé.
@@ -40,7 +40,7 @@ dans `../BackEnd` ; ce dossier ne le modifie jamais.
 ## Prérequis
 
 - **Node.js ≥ 22** (développé avec Node 24 et npm 11)
-- Pour la démo complète : le backend TPUB (`../BackEnd`, Java 21 + PostgreSQL), par exemple via le
+- Pour la démo complète : le backend ZELQANE (`../BackEnd`, Java 21 + PostgreSQL), par exemple via le
   `docker-compose.yml` à la racine du dépôt.
 - Pour les tests e2e : les navigateurs Playwright (`npx playwright install chromium`).
 
@@ -55,7 +55,7 @@ Contenu de `.env.local` :
 
 ```dotenv
 # URL du backend Spring, lue uniquement côté serveur par le pont /api
-TPUB_API_URL=http://localhost:8080
+ZELQANE_API_URL=http://localhost:8080
 # Optionnel : les demandes du formulaire de contact sont transmises en JSON à ce webhook
 CONTACT_WEBHOOK_URL=
 # Optionnel : URL publique du site (métadonnées OpenGraph, sitemap)
@@ -94,12 +94,12 @@ Sans `CONTACT_WEBHOOK_URL`, chaque demande de contact est ajoutée sur une ligne
 
 ```
 Navigateur ──► /api/session/*  ──► Spring /api/auth/*   (login, register : sans en-tête Authorization)
-           ──► /api/<chemin>   ──► Spring /api/<chemin> (+ Authorization: Bearer <cookie tpub_token>)
+           ──► /api/<chemin>   ──► Spring /api/<chemin> (+ Authorization: Bearer <cookie zelqane_token>)
            ──► /api/contact    ──► webhook ou .data/contact-requests.ndjson
 ```
 
 - `src/app/api/[...path]/route.ts` relaie GET/POST/PUT/PATCH/DELETE vers
-  `${TPUB_API_URL}/api/<chemin>` avec la query string, le corps et le signal d'annulation. Il
+  `${ZELQANE_API_URL}/api/<chemin>` avec la query string, le corps et le signal d'annulation. Il
   refuse `/api/auth/*` (404), traduit un backend injoignable en **502** avec un message français,
   relaie les corps multipart / binaires octet par octet (413 au-delà de 60 Mo) et les
   téléchargements CSV, et transforme un 401 de fin de session (`TOKEN_EXPIRED`,
@@ -107,14 +107,14 @@ Navigateur ──► /api/session/*  ──► Spring /api/auth/*   (login, regi
 - `src/app/uploads/[...path]/route.ts` relaie les médias publics `/uploads/**` (flux, `Range`,
   cache), sans cookie ni jeton.
 - `src/app/api/session/` : `POST login`, `POST register`, `POST logout` (révoque la session
-  côté Spring via `POST /api/me/logout`, puis efface les cookies), `GET` (utilisateur courant). En cas de succès, deux cookies **httpOnly** sont posés : `tpub_token` (le JWT, durée
-  alignée sur son `exp`, 24 h par défaut) et `tpub_user` (`email`, `nom`, `role`, `userId`, `exp`).
+  côté Spring via `POST /api/me/logout`, puis efface les cookies), `GET` (utilisateur courant). En cas de succès, deux cookies **httpOnly** sont posés : `zelqane_token` (le JWT, durée
+  alignée sur son `exp`, 24 h par défaut) et `zelqane_user` (`email`, `nom`, `role`, `userId`, `exp`).
   Le jeton n'est jamais renvoyé au navigateur.
 - `src/middleware.ts` protège les routes : `/espace/**` réservé aux `ANNONCEUR`, `/admin/**` aux
   `ADMINISTRATEUR | SUPERVISEUR | OPERATEUR`, visiteur non connecté redirigé vers
   `/connexion?next=…`. Spring reste l'autorité sur les droits.
 - `src/lib/api/` : `client.ts` (`apiFetch`, erreurs typées `ApiError` / `ApiTransportError`,
-  événement `tpub:session-expired` sur 401), `messages.ts` (libellé français de chaque `code`
+  événement `zelqane:session-expired` sur 401), `messages.ts` (libellé français de chaque `code`
   d'erreur du backend), `types.ts` (types du contrat), `endpoints.ts` (une fonction par endpoint, statuts
   normalisés en majuscules).
 - `src/lib/use-resource.ts` : chargement client avec annulation (pas de store global).
@@ -148,7 +148,7 @@ Spécification : `docs/NETWORK-MAP-SPEC.md`. MapLibre et three.js ne sont charg�
 
 - **Où** : `/espace/reseau` (explorateur annonceur), carte de ciblage de l'étape « Zone & Porteurs »
   de `/espace/campagnes/nouvelle` (clic pour placer un cercle, poignée de rayon), vue « Carte » de
-  `/admin/reseau` (outils TPUB), choix du point des messages prioritaires.
+  `/admin/reseau` (outils ZELQANE), choix du point des messages prioritaires.
 - **Tous les Porteurs, à leur emplacement exact** : aucun regroupement par défaut. La carte s'ouvre
   cadrée sur l'ensemble des Porteurs (et le cercle de leurs zones) ; en vue d'ensemble (zoom < 9)
   chaque Porteur est un point compact (couleur du type, anneau d'état), la lettre apparaît dès le
@@ -193,7 +193,7 @@ Spécification : `docs/NETWORK-MAP-SPEC.md`. MapLibre et three.js ne sont charg�
 
 ### Système de design
 
-- Palette sombre TPUB (rouge = marque et signal, orange = énergie et accroches, bleu = confiance,
+- Palette sombre ZELQANE (rouge = marque et signal, orange = énergie et accroches, bleu = confiance,
   données, liens et bouton principal dans les espaces connectés). Jetons et utilitaires dans
   `src/app/globals.css` ; aucune couleur en dur dans les composants.
 - Effets signature définis une seule fois : fond aurora, cartes glass, accroches (eyebrows),
@@ -229,7 +229,7 @@ back-office.
 - **Sélecteur de dates** : saisie `jj/mm/aaaa` (chiffres seuls, barres ajoutées) ou calendrier
   commençant le lundi, au clavier (flèches, `Page ↑/↓`, `Entrée`, `Échap` rend le focus au champ),
   durées rapides et rappel en toutes lettres (« du samedi 3 octobre au vendredi 23 octobre 2026 »).
-- **Apparence** : thème sombre TPUB uniquement (`<html data-theme="dark">`). Les jetons de
+- **Apparence** : thème sombre ZELQANE uniquement (`<html data-theme="dark">`). Les jetons de
   surcouche et le test de contraste sont en place ; le thème clair reste différé tant que le
   contraste n'est pas garanti sur la carte, le Studio 3D et les graphiques.
 - **Brouillons auto-sauvegardés** : toute saisie est gardée dans `sessionStorage` (24 h) et
@@ -248,7 +248,7 @@ back-office.
 | Coordonnées, liens du groupe et réseaux sociaux | `src/content/site.ts` (seule source)                                                                       |
 | Navigation                                      | `src/content/nav.ts`                                                                                       |
 | Textes des pages vitrine                        | `src/components/home/content.ts`, `src/components/offer/*-content.ts`, `src/components/story/*-content.ts` |
-| Rédactionnel de référence et garde-fous         | `docs/tpub-brief.md`                                                                                       |
+| Rédactionnel de référence et garde-fous         | `docs/zelqane-brief.md`                                                                                       |
 | Photographies                                   | `public/images/` ; logos dans `public/brand/`                                                              |
 | Contrat d'API                                   | `docs/api-contract.md`                                                                                     |
 
@@ -277,7 +277,7 @@ npx playwright test --grep @screens    # uniquement les captures
 
 - Aucun backend ni base de données n'est nécessaire : chaque appel navigateur à `/api/**` est
   intercepté par `e2e/fixtures/api.ts` (données de `e2e/fixtures/demo-data.ts`). Le serveur de
-  test pointe `TPUB_API_URL` vers un port fermé, pour que toute requête non simulée échoue
+  test pointe `ZELQANE_API_URL` vers un port fermé, pour que toute requête non simulée échoue
   immédiatement avec le 502 du pont.
 - `e2e/smoke.spec.ts` : chaque route affiche son `h1` sans erreur console, gardes de rôles,
   audit axe WCAG 2.1 AA (aucune violation sérieuse ou critique).
@@ -296,7 +296,7 @@ déjà démarré sur ce port est réutilisé : arrêtez-le après un nouveau bui
 ## Démo avec le vrai backend
 
 Sous Windows, sans Docker, depuis la racine du dépôt (JDK et PostgreSQL portables dans
-`%LOCALAPPDATA%\tpub-jdk` et `%LOCALAPPDATA%\tpub-postgres`) :
+`%LOCALAPPDATA%\zelqane-jdk` et `%LOCALAPPDATA%\zelqane-postgres`) :
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start-local.ps1 -Seed   # PostgreSQL + Spring (8080) + Next (3000)
@@ -305,34 +305,34 @@ powershell -ExecutionPolicy Bypass -File .\start-local.ps1 -Stop   # tout arrêt
 
 Le script applique les migrations Flyway au démarrage de Spring, réutilise le JAR de
 `../BackEnd/target` et le build `.next` s'ils existent (supprimez-les après une modification pour
-reconstruire) et lance l'analyse IA locale (`TPUB_AI_PROVIDER=local` sauf si la variable est déjà
+reconstruire) et lance l'analyse IA locale (`ZELQANE_AI_PROVIDER=local` sauf si la variable est déjà
 définie). Avec Docker : copiez `.env.example` en `.env`, remplacez chaque `<…>` (le backend
 refuse de démarrer sans `JWT_SECRET` ou avec une valeur d'exemple), `docker compose up` à la
-racine, puis `TPUB_API_URL=http://localhost:8080` et `npm run dev`.
+racine, puis `ZELQANE_API_URL=http://localhost:8080` et `npm run dev`.
 
 > **Sécurité — secret JWT compromis.** Le secret JWT autrefois écrit dans `.env.example` et
 > `start-local.ps1` reste lisible dans l'historique git : il doit être considéré comme
 > **compromis**. Le backend refuse désormais de démarrer avec cette valeur, et chaque déploiement
 > doit générer son propre `JWT_SECRET` (au moins 32 octets). Aucun secret n'est plus versionné.
 
-**Secrets locaux** : au premier lancement, `start-local.ps1` crée `.tpub-local.secrets` à la
+**Secrets locaux** : au premier lancement, `start-local.ps1` crée `.zelqane-local.secrets` à la
 racine (ignoré par git) avec `JWT_SECRET`, `MEDIA_SIGNING_SECRET`, `TOTP_ENCRYPTION_KEY` et
-`TPUB_ADMIN_INITIAL_PASSWORD`, puis le réutilise. Supprimer ce fichier régénère les secrets : les
+`ZELQANE_ADMIN_INITIAL_PASSWORD`, puis le réutilise. Supprimer ce fichier régénère les secrets : les
 sessions, les liens de médias et **les doubles authentifications** déjà activées deviennent
 invalides (chaque compte doit réactiver son application). Le profil Spring `local` active l'heure
 simulée du lecteur (`?datetime=`) ; hors de ce profil, le serveur utilise son horloge.
 
-**Compte administrateur** : sur une base neuve, `admin@tpub.local` est créé avec le mot de passe
-`TPUB_ADMIN_INITIAL_PASSWORD` de `.tpub-local.secrets` (sans cette variable, hors start-local, un
+**Compte administrateur** : sur une base neuve, `admin@zelqane.local` est créé avec le mot de passe
+`ZELQANE_ADMIN_INITIAL_PASSWORD` de `.zelqane-local.secrets` (sans cette variable, hors start-local, un
 mot de passe aléatoire est affiché une seule fois dans le journal du backend et doit être changé à
 la première connexion sur `/mot-de-passe-requis`). **Une base existante garde son administrateur
 et son ancien mot de passe** (la migration V7 pose `must_change_password = false` sur les comptes
-déjà créés, donc rien n'est bloqué) : `admin@tpub.local` continue de se connecter avec le mot de
+déjà créés, donc rien n'est bloqué) : `admin@zelqane.local` continue de se connecter avec le mot de
 passe du round 1, `Admin@123`, qui était **écrit en clair dans le code** (`DataInitializer`) et
 reste donc lisible dans l'historique git — il est **compromis**. Changez-le dès la première
 connexion depuis `/admin/compte`, puis relancez les scripts avec
-`TPUB_ADMIN_PASSWORD=<nouveau mot de passe>` (sans cette variable, les scripts lisent
-`TPUB_ADMIN_INITIAL_PASSWORD` de `.tpub-local.secrets`, qui ne vaut que pour une base neuve).
+`ZELQANE_ADMIN_PASSWORD=<nouveau mot de passe>` (sans cette variable, les scripts lisent
+`ZELQANE_ADMIN_INITIAL_PASSWORD` de `.zelqane-local.secrets`, qui ne vaut que pour une base neuve).
 
 **Réinitialiser le mot de passe d'un compte** : dans `/admin/utilisateurs`, le détail d'un compte
 propose « Réinitialiser le mot de passe » (jamais sur soi-même). Le backend tire un mot de passe
@@ -352,13 +352,13 @@ diffusion aujourd'hui, une à valider, une en revue manuelle, un brouillon) et l
 
 | Rôle                      | E-mail                   | Mot de passe                                               |
 | ------------------------- | ------------------------ | ---------------------------------------------------------- |
-| Administrateur            | `admin@tpub.local`       | `TPUB_ADMIN_PASSWORD`, sinon `.tpub-local.secrets`          |
-| Administrateur (2ᵉ)       | `admin2@tpub.local`      | `scripts/.demo-accounts.json` (généré au premier seed)      |
-| Superviseur               | `superviseur@tpub.local` | `scripts/.demo-accounts.json`                               |
-| Opérateur                 | `operateur@tpub.local`   | `scripts/.demo-accounts.json`                               |
+| Administrateur            | `admin@zelqane.local`       | `ZELQANE_ADMIN_PASSWORD`, sinon `.zelqane-local.secrets`          |
+| Administrateur (2ᵉ)       | `admin2@zelqane.local`      | `scripts/.demo-accounts.json` (généré au premier seed)      |
+| Superviseur               | `superviseur@zelqane.local` | `scripts/.demo-accounts.json`                               |
+| Opérateur                 | `operateur@zelqane.local`   | `scripts/.demo-accounts.json`                               |
 | Annonceur                 | `demo@annonceur.tn`      | `scripts/.demo-accounts.json`                               |
 
-Aucun mot de passe n'est écrit dans les scripts : `TPUB_DEMO_PASSWORD` impose un mot de passe
+Aucun mot de passe n'est écrit dans les scripts : `ZELQANE_DEMO_PASSWORD` impose un mot de passe
 commun aux comptes de démonstration, sinon chacun est généré une fois dans
 `scripts/.demo-accounts.json` (ignoré par git) et affiché en fin de seed. Un compte de
 démonstration créé par une ancienne version est **réaligné automatiquement** : le seed le
@@ -377,11 +377,11 @@ rotation et révocation).
 
 **Double authentification et mot de passe** : chaque compte peut activer la double
 authentification (application TOTP, QR code, 10 codes de secours) dans `/espace/profil#securite`
-ou `/admin/compte`. `TPUB_TOTP_REQUIRED_ROLES=ADMINISTRATEUR,SUPERVISEUR,OPERATEUR` la rend
+ou `/admin/compte`. `ZELQANE_TOTP_REQUIRED_ROLES=ADMINISTRATEUR,SUPERVISEUR,OPERATEUR` la rend
 obligatoire pour l'équipe (activation imposée à la connexion, `/connexion/activer-2fa`). Un
 administrateur peut la réinitialiser ou exiger un nouveau mot de passe depuis `/admin/utilisateurs`
 (détail d'un compte). Les scripts se connectent à un administrateur protégé avec
-`TPUB_ADMIN_TOTP_SECRET=<clé Base32>`.
+`ZELQANE_ADMIN_TOTP_SECRET=<clé Base32>`.
 
 **Scénario du cahier des charges (§11)** : `node scripts/demo-scenario.mjs` joue les 18 étapes
 en HTTP contre le backend (compte annonceur neuf, campagne, image PNG, analyse et rapport IA,
@@ -390,7 +390,7 @@ estimation, validation, appel du Porteur à une date simulée, statistiques, mes
 remplace la publicité) et affiche ✔ / ✘ par étape. Les appels du Porteur portent la clé
 d'appareil de `scripts/.demo-device-keys.json` (appairage automatique si elle manque), la date
 simulée n'est honorée qu'avec le profil `local` (sinon avertissement « horloge serveur utilisée »),
-et les doubles approbations sont complétées avec `admin2@tpub.local` (« 1/2 approbations » puis
+et les doubles approbations sont complétées avec `admin2@zelqane.local` (« 1/2 approbations » puis
 « validée par … et … »). À la fin, il donne l'URL du lecteur (`/ecran/<id>?datetime=…`) qui montre la
 même diffusion à l'écran.
 
@@ -430,7 +430,7 @@ Détail dans `docs/api-contract.md` §7 et écarts de réalisation dans
 `../docs/completion-contract.md` §6.
 
 - **Pas de réinitialisation du mot de passe par e-mail** : `/mot-de-passe-oublie` oriente vers
-  TPUB ; le changement de mot de passe se fait dans `/espace/profil`.
+  ZELQANE ; le changement de mot de passe se fait dans `/espace/profil`.
 - **Pas de jeton de rafraîchissement** : la session dure 24 h (bandeau 10 min avant la fin).
 - **Réseau non public** : la vitrine ne liste pas les Porteurs réels (contenu éditorial).
 - **OCR simulé** (texte déduit du nom de fichier) sauf si Tesseract est installé côté backend.
@@ -449,12 +449,12 @@ Le `Dockerfile` (Node 22 Alpine, multi-étapes) produit une image basée sur la 
 `standalone` de Next.js :
 
 ```bash
-docker build -t tpub-frontend .
-docker run -p 3000:3000 -e TPUB_API_URL=http://backend:8080 tpub-frontend
+docker build -t zelqane-frontend .
+docker run -p 3000:3000 -e ZELQANE_API_URL=http://backend:8080 zelqane-frontend
 ```
 
 - Utilisateur non root, `node server.js` sur le port 3000.
-- `TPUB_API_URL` vaut `http://backend:8080` par défaut, ce qui correspond au service `backend`
+- `ZELQANE_API_URL` vaut `http://backend:8080` par défaut, ce qui correspond au service `backend`
   lorsque l'image rejoint le `docker-compose.yml` racine.
 - Définir `SITE_URL` (et éventuellement `CONTACT_WEBHOOK_URL`) en production. Sans webhook, les
   demandes de contact sont écrites dans `/app/.data` : monter un volume pour les conserver.

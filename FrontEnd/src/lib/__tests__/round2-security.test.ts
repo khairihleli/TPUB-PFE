@@ -132,7 +132,7 @@ describe("player device key storage (§1.1)", () => {
   beforeEach(() => window.localStorage.clear());
 
   it("validates the key format", () => {
-    expect(DEVICE_KEY_HEADER).toBe("x-tpub-device-key");
+    expect(DEVICE_KEY_HEADER).toBe("x-zelqane-device-key");
     expect(isDeviceKey(KEY)).toBe(true);
     expect(isDeviceKey(`${KEY}x`)).toBe(false);
     expect(isDeviceKey("tpd_court")).toBe(false);
@@ -144,7 +144,7 @@ describe("player device key storage (§1.1)", () => {
     expect(storeDeviceKey(4, "pas-une-cle")).toBe(false);
     expect(readDeviceKey(3)).toBe(KEY);
     expect(readDeviceKey(4)).toBeNull();
-    window.localStorage.setItem("tpub.ecran.cle.5", "corrompu");
+    window.localStorage.setItem("zelqane.ecran.cle.5", "corrompu");
     expect(readDeviceKey(5)).toBeNull();
     clearDeviceKey(3);
     expect(readDeviceKey(3)).toBeNull();
@@ -154,7 +154,7 @@ describe("player device key storage (§1.1)", () => {
 describe("login challenge (§3.3, §3.7)", () => {
   const auth = {
     token: "a.b.c",
-    email: "admin@tpub.local",
+    email: "admin@zelqane.local",
     nom: "Admin",
     role: "ADMINISTRATEUR",
     userId: 1,
@@ -169,7 +169,7 @@ describe("login challenge (§3.3, §3.7)", () => {
       status: "TOTP_REQUIRED",
       challengeToken: "tpc_x",
       expiresAt: "2026-09-17T10:05:00Z",
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
     };
     expect(isLoginChallenge(challenge)).toBe(true);
     expect(isLoginChallenge({ ...challenge, status: "AUTHENTICATED" })).toBe(false);
@@ -229,15 +229,15 @@ describe("login challenge (§3.3, §3.7)", () => {
     window.sessionStorage.clear();
     storeChallengeInfo({
       status: "TOTP_REQUIRED",
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       expiresAt: "2026-09-17T10:05:00Z",
     });
-    expect(readChallengeInfo("TOTP_REQUIRED")?.email).toBe("admin@tpub.local");
+    expect(readChallengeInfo("TOTP_REQUIRED")?.email).toBe("admin@zelqane.local");
     expect(readChallengeInfo("TOTP_ENROLMENT_REQUIRED")).toBeNull();
-    window.sessionStorage.setItem("tpub.connexion.verification", "{");
+    window.sessionStorage.setItem("zelqane.connexion.verification", "{");
     expect(readChallengeInfo("TOTP_REQUIRED")).toBeNull();
     clearChallengeInfo();
-    expect(window.sessionStorage.getItem("tpub.connexion.verification")).toBeNull();
+    expect(window.sessionStorage.getItem("zelqane.connexion.verification")).toBeNull();
   });
 
   it("sends a session that must change its password to the forced change screen first", () => {

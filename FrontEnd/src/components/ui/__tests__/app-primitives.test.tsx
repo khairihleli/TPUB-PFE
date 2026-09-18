@@ -154,11 +154,11 @@ describe("DropdownMenu", () => {
     render(
       <DropdownMenu
         trigger={<button type="button">Menu</button>}
-        items={[{ label: "Voir le site TPUB", href: "/", external: true }]}
+        items={[{ label: "Voir le site ZELQANE", href: "/", external: true }]}
       />,
     );
     await user.click(screen.getByRole("button", { name: "Menu" }));
-    const link = await screen.findByRole("menuitem", { name: /Voir le site TPUB/ });
+    const link = await screen.findByRole("menuitem", { name: /Voir le site ZELQANE/ });
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   });

@@ -234,7 +234,7 @@ export function MapLibreView(props: EngineProps) {
       .getCanvas()
       .setAttribute(
         "aria-label",
-        "Carte interactive du réseau TPUB. Flèches pour se déplacer, plus et moins pour zoomer. Les Porteurs sont accessibles comme boutons après la carte.",
+        "Carte interactive du réseau ZELQANE. Flèches pour se déplacer, plus et moins pour zoomer. Les Porteurs sont accessibles comme boutons après la carte.",
       );
 
     // "style.load" (inline style parsed, sources exist) — not "load", which waits for every
@@ -739,7 +739,7 @@ export function MapLibreView(props: EngineProps) {
 
       {map && lastMeasure && measurePoints.length >= 2 ? (
         <MapMarker map={map} lngLat={lastMeasure} anchor="bottom" offset={[0, -10]} zIndex={35}>
-          <span className="tpub-map-surface pointer-events-none block rounded-full px-2.5 py-1 font-display text-xs font-semibold text-ink-strong tabular">
+          <span className="zelqane-map-surface pointer-events-none block rounded-full px-2.5 py-1 font-display text-xs font-semibold text-ink-strong tabular">
             {formatDistance(polylineLength(measurePoints))}
           </span>
         </MapMarker>
@@ -774,7 +774,7 @@ export function MapLibreView(props: EngineProps) {
           <span className="relative block size-4" role="img" aria-label="Votre position">
             <span
               aria-hidden="true"
-              className="tpub-map-pulse absolute inset-0 rounded-full bg-brand-blue-text/50"
+              className="zelqane-map-pulse absolute inset-0 rounded-full bg-brand-blue-text/50"
             />
             <span
               aria-hidden="true"
@@ -917,7 +917,7 @@ function ZoneRadiusHandle({
           <span aria-hidden="true" className="size-1.5 rounded-full bg-bg" />
         </button>
         {dragging || previewKm !== null ? (
-          <span className="tpub-map-surface pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 rounded-full px-2 py-0.5 font-display text-[0.75rem] font-semibold whitespace-nowrap text-ink-strong tabular">
+          <span className="zelqane-map-surface pointer-events-none absolute top-full left-1/2 mt-2 -translate-x-1/2 rounded-full px-2 py-0.5 font-display text-[0.75rem] font-semibold whitespace-nowrap text-ink-strong tabular">
             {formatRadiusKm(radius)}
           </span>
         ) : null}

@@ -45,7 +45,7 @@ export function MapMarker({
 }: MapMarkerProps) {
   const [element] = useState(() => {
     const el = document.createElement("div");
-    el.className = "tpub-map-marker";
+    el.className = "zelqane-map-marker";
     return el;
   });
   const markerRef = useRef<Marker | null>(null);

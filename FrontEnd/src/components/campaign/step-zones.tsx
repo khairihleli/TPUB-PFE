@@ -365,7 +365,7 @@ export function StepZones({
       setAnnounce(`${formatCount(created.length, "Porteur réservé", "Porteurs réservés")}.`);
       toast({
         title: formatCount(created.length, "Porteur réservé", "Porteurs réservés"),
-        description: "Ils restent bloqués pour cette campagne jusqu'à la décision de TPUB.",
+        description: "Ils restent bloqués pour cette campagne jusqu'à la décision de ZELQANE.",
         variant: "success",
       });
       onReservationsChange();

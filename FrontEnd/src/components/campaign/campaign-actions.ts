@@ -37,7 +37,7 @@ export interface CampaignActions {
   runAiCheck: boolean;
   /** Server duplication (always offered to the owner). */
   duplicate: boolean;
-  /** Waiting for a TPUB expert decision: nothing to do. */
+  /** Waiting for a ZELQANE expert decision: nothing to do. */
   awaitingDecision: boolean;
 }
 
@@ -81,7 +81,7 @@ export function nextStepHint(status: CampaignStatus, reservationCount?: number):
       return "Soumise : résultat de l'analyse IA en attente.";
     case "APPROVED_BY_AI":
     case "REVIEW_REQUIRED":
-      return "Un expert TPUB va statuer.";
+      return "Un expert ZELQANE va statuer.";
     case "REJECTED_BY_AI":
       return "À corriger : modifiez la campagne puis soumettez-la à nouveau.";
     case "VALIDATED_BY_ADMIN":
@@ -91,7 +91,7 @@ export function nextStepHint(status: CampaignStatus, reservationCount?: number):
     case "TERMINATED":
       return "Diffusion terminée.";
     case "BLOCKED":
-      return "Refusée par TPUB : corrigez-la selon le motif puis soumettez-la à nouveau.";
+      return "Refusée par ZELQANE : corrigez-la selon le motif puis soumettez-la à nouveau.";
   }
 }
 

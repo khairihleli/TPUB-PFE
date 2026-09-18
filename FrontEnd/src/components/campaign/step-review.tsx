@@ -299,7 +299,7 @@ export function StepReview({
           </ul>
           <p className="mt-4 text-[0.8125rem] leading-relaxed text-muted">
             La soumission lance l&apos;analyse IA (texte, visuels, texte dans l&apos;image, règles
-            TPUB) ; le résultat s&apos;affiche ici. Un expert TPUB valide toujours avant diffusion.{" "}
+            ZELQANE) ; le résultat s&apos;affiche ici. Un expert ZELQANE valide toujours avant diffusion.{" "}
             {REVIEW_WAIT_SENTENCE}
           </p>
           <div ref={gateRef}>
@@ -312,7 +312,7 @@ export function StepReview({
           </div>
           <div className="mt-4 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[0.875rem] font-medium text-ink-soft">
-              Après envoi, la campagne n&apos;est plus modifiable tant que TPUB n&apos;a pas statué.
+              Après envoi, la campagne n&apos;est plus modifiable tant que ZELQANE n&apos;a pas statué.
             </p>
             <Button
               variant="primary"

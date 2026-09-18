@@ -1,5 +1,5 @@
 /**
- * One vocabulary for /espace and /admin (UX-PLAN §3.6, IA-15). Documented in docs/tpub-brief.md.
+ * One vocabulary for /espace and /admin (UX-PLAN §3.6, IA-15). Documented in docs/zelqane-brief.md.
  * UI copy imports these strings instead of re-typing them. Never invent figures or promises.
  */
 import type { ReservationStatus } from "@/lib/api/types";
@@ -68,7 +68,7 @@ export const RESERVATION_LABEL: Record<ReservationStatus, string> = {
 
 /** Long labels, used where there is room (detail, tooltips, filters on desktop). */
 export const RESERVATION_LABEL_LONG: Record<ReservationStatus, string> = {
-  TEMPORAIRE: "Bloqué · en attente de décision TPUB",
+  TEMPORAIRE: "Bloqué · en attente de décision ZELQANE",
   CONFIRMEE: "Confirmé",
   ANNULEE: "Libéré",
   EXPIREE: "Passé",
@@ -76,7 +76,7 @@ export const RESERVATION_LABEL_LONG: Record<ReservationStatus, string> = {
 
 export const RESERVATION_HINT: Record<ReservationStatus, string> = {
   TEMPORAIRE:
-    "Le créneau est retenu pour cette campagne jusqu'à la décision de TPUB. Tant que la campagne est en brouillon, vous pouvez l'annuler.",
+    "Le créneau est retenu pour cette campagne jusqu'à la décision de ZELQANE. Tant que la campagne est en brouillon, vous pouvez l'annuler.",
   CONFIRMEE: "Le créneau est confirmé pour la période de la campagne.",
   ANNULEE: "Le créneau a été libéré.",
   EXPIREE: "La période réservée est passée.",
@@ -84,7 +84,7 @@ export const RESERVATION_HINT: Record<ReservationStatus, string> = {
 
 /** Default rule shown by EstimateTag (UX-PLAN §3.6, api-contract §7.17). */
 export const ESTIMATE_RULE =
-  "Estimation calculée par TPUB, non issue d'une mesure : audience horaire du type de Porteur × visibilité × heures × jours, puis coût pour mille affichages.";
+  "Estimation calculée par ZELQANE, non issue d'une mesure : audience horaire du type de Porteur × visibilité × heures × jours, puis coût pour mille affichages.";
 export const ESTIMATE_COST_RULE =
   "Estimation : affichages estimés × coût pour mille du type de Porteur. Rien n'est facturé.";
 export const ESTIMATE_VIEWS_RULE =
@@ -97,10 +97,10 @@ export const ESTIMATE_LABEL = "Estimation";
  */
 export const SUPPORT_HOURS = "lun–⁠ven, 9 h–⁠18 h";
 export const SUPPORT_HOURS_LONG = "Du lundi au vendredi, 9 h – 18 h";
-/** Waiting-on-TPUB sentence (no duration promise, UX-PLAN §6.2). */
-export const REVIEW_WAIT_SENTENCE = `Examen par l'équipe TPUB en jours ouvrés (${SUPPORT_HOURS}).`;
+/** Waiting-on-ZELQANE sentence (no duration promise, UX-PLAN §6.2). */
+export const REVIEW_WAIT_SENTENCE = `Examen par l'équipe ZELQANE en jours ouvrés (${SUPPORT_HOURS}).`;
 
 /** Consequence lines reused by booking surfaces. */
 export const BOOKING_CONSEQUENCE =
-  "Les Porteurs sont bloqués jusqu'à la décision de TPUB ; annulables tant que la campagne est en brouillon.";
+  "Les Porteurs sont bloqués jusqu'à la décision de ZELQANE ; annulables tant que la campagne est en brouillon.";
 export const SUBMIT_CONSEQUENCE = "Après envoi, la campagne n'est plus modifiable.";

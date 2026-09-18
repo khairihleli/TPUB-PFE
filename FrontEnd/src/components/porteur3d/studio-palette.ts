@@ -91,7 +91,7 @@ export const STUDIO_PALETTE = {
   streetLamp: mixTokens("warning", "orange-text", 0.5),
   screenSpill: mixTokens("orange-text", "red-text", 0.35),
 
-  // Creative default texture (TPUB gradient)
+  // Creative default texture (ZELQANE gradient)
   creativeRedDeep: TOKEN_HEX["red-600"],
   creativeRed: TOKEN_HEX.red,
   creativeOrange: TOKEN_HEX.orange,

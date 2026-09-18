@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Checks every round-2 feature (docs/round2-contract.md) end to end over HTTP against a running
- * TPUB backend, one ✔ / ✘ line per feature. Companion of demo-scenario.mjs, which covers the 18
+ * ZELQANE backend, one ✔ / ✘ line per feature. Companion of demo-scenario.mjs, which covers the 18
  * steps of the cahier des charges §11.
  *
  * Covered: real OCR (Tesseract) on a PNG whose text is drawn by this script, local image metrics,
@@ -14,7 +14,7 @@
  * (node scripts/seed-demo.mjs). Everything it creates is left in a harmless state: the test
  * campaigns are blocked, the emergency is deactivated and the throwaway advertiser keeps its 2FA.
  *
- * Usage: node scripts/bonus-scenario.mjs [--verbose]   (TPUB_API_URL defaults to http://localhost:8080)
+ * Usage: node scripts/bonus-scenario.mjs [--verbose]   (ZELQANE_API_URL defaults to http://localhost:8080)
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -30,11 +30,11 @@ import {
   SetupError,
 } from "./lib/demo-auth.mjs";
 import { totp } from "./lib/totp.mjs";
-import { API, call, day, fileForm, items, makeTextPng, SLOT_PRESETS } from "./lib/tpub-api.mjs";
+import { API, call, day, fileForm, items, makeTextPng, SLOT_PRESETS } from "./lib/zelqane-api.mjs";
 
 const VERBOSE = process.argv.includes("--verbose");
-const SECOND_ADMIN_EMAIL = "admin2@tpub.local";
-const OPERATOR_EMAIL = "operateur@tpub.local";
+const SECOND_ADMIN_EMAIL = "admin2@zelqane.local";
+const OPERATOR_EMAIL = "operateur@zelqane.local";
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 /** Words drawn into the PNG the real OCR must read back. */
 const OCR_LINES = ["SOLDES", "LIBRAIRIE", "TUNIS 2026"];
@@ -448,7 +448,7 @@ step("Heure simulée : honorée en profil local, ignorée sinon", async () => {
     assert(answer.datetime?.startsWith(day(1)), "date simulée attendue dans la réponse");
     return `datetime=${datetime} honoré (profil local), diffusion ${answer.type}`;
   }
-  return "horloge serveur utilisée (tpub.diffusion.simulated-time-enabled=false) — couvert par DiffusionSimulatedTimeTest";
+  return "horloge serveur utilisée (zelqane.diffusion.simulated-time-enabled=false) — couvert par DiffusionSimulatedTimeTest";
 });
 
 // 11 ────────────────────────────────────────────────────────────────────────────
@@ -804,7 +804,7 @@ step("Nettoyage : urgence désactivée et campagnes de test bloquées", async ()
 });
 
 async function main() {
-  console.log(`Scénario bonus TPUB (fonctionnalités round 2) — ${API}`);
+  console.log(`Scénario bonus ZELQANE (fonctionnalités round 2) — ${API}`);
   const health = await fetch(`${API}/actuator/health`)
     .then((r) => r.json())
     .catch(() => null);

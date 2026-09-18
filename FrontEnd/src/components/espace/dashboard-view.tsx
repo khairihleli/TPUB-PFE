@@ -392,7 +392,7 @@ const TODO_META: Record<
     tone: "border-danger/30 bg-danger/10 text-danger",
     title: (n) => `Corriger « ${n} »`,
     description:
-      "Refusée par l'analyse IA ou par TPUB : consultez le motif, corrigez puis soumettez à nouveau.",
+      "Refusée par l'analyse IA ou par ZELQANE : consultez le motif, corrigez puis soumettez à nouveau.",
   },
   analysis: {
     icon: ScanSearch,

@@ -13,7 +13,7 @@ describe("FAQ JSON-LD", () => {
     expect(data.mainEntity).toHaveLength(total);
     expect(data.mainEntity[0]).toEqual({
       "@type": "Question",
-      name: "TPUB est-il déjà en service ?",
+      name: "ZELQANE est-il déjà en service ?",
       acceptedAnswer: { "@type": "Answer", text: expect.stringContaining("phase de conception") },
     });
   });

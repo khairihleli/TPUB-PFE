@@ -87,7 +87,7 @@ export function UsersView() {
       <RoleRestricted
         header={<PageHeader title="Utilisateurs" />}
         title="Comptes réservés aux administrateurs et superviseurs"
-        description="La gestion des annonceurs et de l'équipe TPUB n'est pas ouverte aux opérateurs."
+        description="La gestion des annonceurs et de l'équipe ZELQANE n'est pas ouverte aux opérateurs."
       />
     );
   }
@@ -353,7 +353,7 @@ function UsersContent() {
             columns={tab === "annonceurs" ? advertiserColumns : staffColumns}
             rows={list.data.items}
             getRowKey={(u) => u.userId}
-            caption={tab === "annonceurs" ? "Comptes annonceurs" : "Équipe TPUB"}
+            caption={tab === "annonceurs" ? "Comptes annonceurs" : "Équipe ZELQANE"}
             rowActions={actions}
             emptyFiltered={
               usersFilterCount(state) > 0 || url.q ? (
@@ -388,7 +388,7 @@ function UsersContent() {
     <>
       <PageHeader
         title="Utilisateurs"
-        description="Validation des comptes annonceurs, niveau de confiance et comptes de l'équipe TPUB."
+        description="Validation des comptes annonceurs, niveau de confiance et comptes de l'équipe ZELQANE."
         primaryAction={
           canAct ? (
             <Button
@@ -433,7 +433,7 @@ function UsersContent() {
             Annonceurs
           </TabsTrigger>
           <TabsTrigger value="equipe" icon={<ShieldCheck />}>
-            Équipe TPUB
+            Équipe ZELQANE
           </TabsTrigger>
         </TabsList>
         {tabContent("annonceurs")}

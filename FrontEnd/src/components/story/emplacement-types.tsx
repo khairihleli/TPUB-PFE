@@ -126,7 +126,7 @@ function TypeCard({ type }: { type: EmplacementType }) {
   );
 }
 
-/** Porteur emplacement typologies A–D (brief §8.3), D = no screen, no TPUB inventory. */
+/** Porteur emplacement typologies A–D (brief §8.3), D = no screen, no ZELQANE inventory. */
 export function EmplacementTypes() {
   return (
     <Section tone="band" labelledBy="types-titre">

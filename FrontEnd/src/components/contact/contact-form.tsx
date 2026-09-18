@@ -63,7 +63,7 @@ interface FormValues {
 type Status = "idle" | "submitting" | "success";
 
 const SUCCESS_COPY =
-  "Merci, votre demande est bien envoyée. L'équipe TPUB revient vers vous par e-mail.";
+  "Merci, votre demande est bien envoyée. L'équipe ZELQANE revient vers vous par e-mail.";
 const ERROR_COPY = `L'envoi n'a pas abouti. Réessayez ou écrivez-nous à ${CONTACT.email}.`;
 
 const PROFILE_ICON: Record<ContactProfile, ReactNode> = {
@@ -85,7 +85,7 @@ function routingHint(profil: FormValues["profil"], besoin: FormValues["besoin"])
     return (
       <>
         Les messages d&apos;intérêt général sont conçus pour passer en priorité, avant toute
-        publicité, dans la zone concernée. Ils sont créés par l&apos;équipe TPUB, pas en
+        publicité, dans la zone concernée. Ils sont créés par l&apos;équipe ZELQANE, pas en
         libre-service : décrivez la zone et la période visées.
       </>
     );
@@ -573,7 +573,7 @@ export function ContactForm({ initial }: ContactFormProps) {
             error={errors.consentement}
             label={
               <>
-                J&apos;accepte que TPUB utilise ces informations pour répondre à ma demande.
+                J&apos;accepte que ZELQANE utilise ces informations pour répondre à ma demande.
                 <span aria-hidden="true" className="ml-0.5 text-brand-orange-text">
                   *
                 </span>

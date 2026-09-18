@@ -8,18 +8,18 @@ import { base64UrlEncode, serializeUserCookie } from "@/lib/session-cookie";
 const future = Math.floor(Date.now() / 1000) + 3600;
 const token = `${base64UrlEncode('{"alg":"HS512"}')}.${base64UrlEncode(JSON.stringify({ exp: future }))}.sig`;
 const userCookie = serializeUserCookie({
-  email: "superviseur@tpub.test",
+  email: "superviseur@zelqane.test",
   nom: "Superviseur",
   role: "SUPERVISEUR",
   userId: 4,
   exp: future,
 });
-const cookies = `tpub_token=${token}; tpub_user=${userCookie}`;
+const cookies = `zelqane_token=${token}; zelqane_user=${userCookie}`;
 
 const fetchMock = vi.fn<typeof fetch>();
 
 beforeEach(() => {
-  process.env.TPUB_API_URL = "http://backend.test";
+  process.env.ZELQANE_API_URL = "http://backend.test";
   vi.stubGlobal("fetch", fetchMock);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
@@ -28,7 +28,7 @@ afterEach(() => {
   fetchMock.mockReset();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  delete process.env.TPUB_API_URL;
+  delete process.env.ZELQANE_API_URL;
 });
 
 function ctx(path: string[]) {
@@ -96,7 +96,7 @@ describe("/api/realtime/[...path]", () => {
     const res = await realtimeGet(request(""), ctx(["supervision"]));
     expect(res.status).toBe(401);
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(res.headers.getSetCookie().some((c) => /^tpub_token=;/.test(c))).toBe(true);
+    expect(res.headers.getSetCookie().some((c) => /^zelqane_token=;/.test(c))).toBe(true);
   });
 
   it("ends the session when the backend rejects the token", async () => {
@@ -108,7 +108,7 @@ describe("/api/realtime/[...path]", () => {
     );
     const res = await realtimeGet(request(), ctx(["supervision"]));
     expect(res.status).toBe(401);
-    expect(res.headers.getSetCookie().some((c) => /^tpub_user=;/.test(c))).toBe(true);
+    expect(res.headers.getSetCookie().some((c) => /^zelqane_user=;/.test(c))).toBe(true);
   });
 
   it("refuses a path that could escape the realtime routes", async () => {

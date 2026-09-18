@@ -37,12 +37,12 @@ function Row({
 const linkClass =
   "underline-slide rounded-sm transition-colors hover:text-brand-blue-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue-text";
 
-/** « Parler à TPUB » card: coordinates from content/site.ts only (brief §8.7). */
+/** « Parler à ZELQANE » card: coordinates from content/site.ts only (brief §8.7). */
 export function ContactCoordinates() {
   return (
     <div className="glass-card overflow-hidden rounded-panel p-6 sm:p-8">
       <span aria-hidden="true" className="absolute inset-x-0 top-0 h-[3px] bg-grad-brand" />
-      <p className="eyebrow">Parler à TPUB</p>
+      <p className="eyebrow">Parler à ZELQANE</p>
       <h2 className="mt-4 font-display text-h3 text-ink-strong">Nos coordonnées</h2>
       <ul className="mt-5 divide-y divide-line border-y border-line">
         <Row
@@ -72,7 +72,7 @@ export function ContactCoordinates() {
         votre message passe là où il compte.
       </p>
       <a
-        href={GROUP.tpubPage}
+        href={GROUP.zelqanePage}
         target="_blank"
         rel="noopener noreferrer"
         className="mt-5 inline-flex min-h-touch items-center gap-1.5 text-[0.8125rem] font-medium text-ink-soft transition-colors hover:text-ink-strong"

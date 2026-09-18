@@ -1,13 +1,13 @@
 spring:
   application:
-    name: ${SPRING_APPLICATION_NAME:tpub-backend}
+    name: ${SPRING_APPLICATION_NAME:zelqane-backend}
 
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:tpub}
-    username: ${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:tpub_user}}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:zelqane}
+    username: ${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:zelqane_user}}
     password: ${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -16,7 +16,7 @@ spring:
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
-      pool-name: tpub-hikari
+      pool-name: zelqane-hikari
 
   jpa:
     open-in-view: false
@@ -67,7 +67,7 @@ logging:
     org.hibernate.SQL: WARN
 
 # Application-specific properties (consumed by future Java @ConfigurationProperties)
-tpub:
+zelqane:
   jwt:
     # No default: startup fails with a clear message when JWT_SECRET is missing or shorter than 32 bytes
     # (config/SecretsValidator). The secret once committed to git history is compromised: never reuse it.
@@ -87,14 +87,14 @@ tpub:
   analysis:
     ocr:
       # auto (Tess4J when tessdata is readable, else simulated) | tess4j | simulated
-      mode: ${TPUB_OCR_MODE:auto}
+      mode: ${ZELQANE_OCR_MODE:auto}
       # Folder of the *.traineddata files (BackEnd/scripts/fetch-tessdata.ps1|.sh; /app/tessdata in Docker)
-      tessdata-path: ${TPUB_OCR_TESSDATA:./tessdata}
-      languages: ${TPUB_OCR_LANGUAGES:fra+eng+ara}
+      tessdata-path: ${ZELQANE_OCR_TESSDATA:./tessdata}
+      languages: ${ZELQANE_OCR_LANGUAGES:fra+eng+ara}
     provider:
       # Optional LLM vision moderation; the local analysis always runs. local | openai | anthropic
-      type: ${TPUB_AI_PROVIDER:local}
-      timeout-ms: ${TPUB_AI_PROVIDER_TIMEOUT_MS:90000}
+      type: ${ZELQANE_AI_PROVIDER:local}
+      timeout-ms: ${ZELQANE_AI_PROVIDER_TIMEOUT_MS:90000}
       openai:
         api-key: ${OPENAI_API_KEY:}
         model: ${OPENAI_MODEL:gpt-4o-mini}
@@ -102,21 +102,21 @@ tpub:
         api-key: ${ANTHROPIC_API_KEY:}
         model: ${ANTHROPIC_MODEL:claude-opus-5}
     learning:
-      enabled: ${TPUB_AI_LEARNING_ENABLED:true}
-      auto-apply: ${TPUB_AI_LEARNING_AUTO_APPLY:true}
-  timezone: ${TPUB_TIMEZONE:Africa/Tunis}
+      enabled: ${ZELQANE_AI_LEARNING_ENABLED:true}
+      auto-apply: ${ZELQANE_AI_LEARNING_AUTO_APPLY:true}
+  timezone: ${ZELQANE_TIMEZONE:Africa/Tunis}
   scheduler:
-    enabled: ${TPUB_SCHEDULER_ENABLED:true}
+    enabled: ${ZELQANE_SCHEDULER_ENABLED:true}
   reservation:
-    temporary-ttl-hours: ${TPUB_RESERVATION_TTL_HOURS:72}
+    temporary-ttl-hours: ${ZELQANE_RESERVATION_TTL_HOURS:72}
   diffusion:
-    max-per-hour: ${TPUB_DIFFUSION_MAX_PER_HOUR:30}
-    default-duration-seconds: ${TPUB_DIFFUSION_DEFAULT_DURATION:10}
-    default-title: "${TPUB_DIFFUSION_DEFAULT_TITLE:TPUB — Tukhnanutha}"
-    default-content: "${TPUB_DIFFUSION_DEFAULT_CONTENT:Espace de diffusion TPUB}"
-    default-media-url: ${TPUB_DIFFUSION_DEFAULT_MEDIA_URL:}
+    max-per-hour: ${ZELQANE_DIFFUSION_MAX_PER_HOUR:30}
+    default-duration-seconds: ${ZELQANE_DIFFUSION_DEFAULT_DURATION:10}
+    default-title: "${ZELQANE_DIFFUSION_DEFAULT_TITLE:ZELQANE — Tukhnanutha}"
+    default-content: "${ZELQANE_DIFFUSION_DEFAULT_CONTENT:Espace de diffusion ZELQANE}"
+    default-media-url: ${ZELQANE_DIFFUSION_DEFAULT_MEDIA_URL:}
     # ?datetime= of /api/diffusion/next is honoured only when true (local demo profile)
-    simulated-time-enabled: ${TPUB_SIMULATED_TIME_ENABLED:false}
+    simulated-time-enabled: ${ZELQANE_SIMULATED_TIME_ENABLED:false}
   # Internal simulation constants (estimation only, never shown on marketing pages)
   pricing:
     base-views-per-hour:
@@ -134,20 +134,20 @@ tpub:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
   security:
-    session-touch-seconds: ${TPUB_SESSION_TOUCH_SECONDS:60}
+    session-touch-seconds: ${ZELQANE_SESSION_TOUCH_SECONDS:60}
     totp:
-      issuer: ${TPUB_TOTP_ISSUER:TPUB}
+      issuer: ${ZELQANE_TOTP_ISSUER:ZELQANE}
       # Empty → derived from JWT_SECRET (rotating JWT_SECRET then invalidates every TOTP secret)
       encryption-key: ${TOTP_ENCRYPTION_KEY:}
       # Comma list among ADMINISTRATEUR, SUPERVISEUR, OPERATEUR (recommended in production: all three)
-      required-roles: ${TPUB_TOTP_REQUIRED_ROLES:}
+      required-roles: ${ZELQANE_TOTP_REQUIRED_ROLES:}
       challenge-ttl-seconds: 300
       max-attempts: 5
     bootstrap-admin:
-      email: ${TPUB_ADMIN_EMAIL:admin@tpub.local}
+      email: ${ZELQANE_ADMIN_EMAIL:admin@zelqane.local}
       # Empty → a random password is generated and printed once in the log
-      initial-password: ${TPUB_ADMIN_INITIAL_PASSWORD:}
-      must-change-password: ${TPUB_ADMIN_MUST_CHANGE_PASSWORD:true}
+      initial-password: ${ZELQANE_ADMIN_INITIAL_PASSWORD:}
+      must-change-password: ${ZELQANE_ADMIN_MUST_CHANGE_PASSWORD:true}
   device:
     rate-limit:
       per-minute: 120
@@ -178,7 +178,7 @@ spring:
 
 logging:
   level:
-    com.example.tpubpfe: DEBUG
+    com.example.zelqanepfe: DEBUG
     org.hibernate.SQL: DEBUG
     org.flywaydb: INFO
 
@@ -189,13 +189,13 @@ spring:
     activate:
       on-profile: local
 
-tpub:
+zelqane:
   diffusion:
     simulated-time-enabled: true
 
 logging:
   level:
-    com.example.tpubpfe: INFO
+    com.example.zelqanepfe: INFO
     org.hibernate.SQL: WARN
 
 ---
@@ -206,9 +206,9 @@ spring:
       on-profile: docker
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${POSTGRES_DB:tpub}
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${POSTGRES_DB:zelqane}
 
 logging:
   level:
-    com.example.tpubpfe: INFO
+    com.example.zelqanepfe: INFO
     org.hibernate.SQL: WARN

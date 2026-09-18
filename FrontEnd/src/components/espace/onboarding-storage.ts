@@ -18,10 +18,10 @@ const DEFAULT_FLAGS: OnboardingFlags = {
   visitedNetwork: false,
 };
 
-const EVENT = "tpub:onboarding-change";
+const EVENT = "zelqane:onboarding-change";
 
 function storageKey(userId: number): string {
-  return `tpub:onboarding:${userId}`;
+  return `zelqane:onboarding:${userId}`;
 }
 
 export function readOnboardingFlags(userId: number): OnboardingFlags {

@@ -9,7 +9,7 @@ import { getSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "Espace annonceur", template: "%s — Espace annonceur — TPUB" },
+  title: { default: "Espace annonceur", template: "%s — Espace annonceur — ZELQANE" },
   robots: { index: false, follow: false },
 };
 

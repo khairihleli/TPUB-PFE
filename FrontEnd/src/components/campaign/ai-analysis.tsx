@@ -340,7 +340,7 @@ export function AiReportBody({ report }: { report: AiReport }) {
 
       <p className="flex items-start gap-2 text-[0.8125rem] leading-relaxed text-muted">
         <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand-blue-text" />
-        L&apos;IA assiste l&apos;analyse ; un expert TPUB valide toujours la campagne avant toute
+        L&apos;IA assiste l&apos;analyse ; un expert ZELQANE valide toujours la campagne avant toute
         diffusion.
       </p>
     </div>
@@ -379,7 +379,7 @@ const RESULT_VISUAL: Record<
 
 const RESULT_TEXT: Record<AiReportStatusUpper | "PENDING", string> = {
   APPROVED:
-    "Analyse favorable. Votre campagne attend la validation TPUB : un expert l'examine avant toute diffusion.",
+    "Analyse favorable. Votre campagne attend la validation ZELQANE : un expert l'examine avant toute diffusion.",
   REVIEW_REQUIRED: AI_REPORT_STATUS.REVIEW_REQUIRED.description,
   REJECTED: AI_REPORT_STATUS.REJECTED.description,
   PENDING:

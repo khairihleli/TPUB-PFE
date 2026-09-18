@@ -1,5 +1,5 @@
 /**
- * Mocked TPUB backend for Playwright: intercepts every same-origin `/api/**` call made by the
+ * Mocked ZELQANE backend for Playwright: intercepts every same-origin `/api/**` call made by the
  * browser (bridge + session + contact routes) and `/uploads/**` media, and answers from an
  * in-memory demo dataset that mutates on POST/PUT/DELETE like the v2 Spring backend would
  * (docs/completion-contract.md §2: codes, pages, lifecycle, availability, estimates…).
@@ -82,8 +82,8 @@ import {
   type Window,
 } from "./demo-data";
 
-export const TOKEN_COOKIE = "tpub_token";
-export const USER_COOKIE = "tpub_user";
+export const TOKEN_COOKIE = "zelqane_token";
+export const USER_COOKIE = "zelqane_user";
 
 // ---------------------------------------------------------------------------
 // Session cookies
@@ -1600,7 +1600,7 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
           const circles: CampaignZoneResponse[] = [];
           for (const z of zones) {
             const zone = resolveZone(z.latitude, z.longitude);
-            if (!zone) return apiError(route, 400, "INVALID_ZONE", "Aucune zone TPUB active.");
+            if (!zone) return apiError(route, 400, "INVALID_ZONE", "Aucune zone ZELQANE active.");
             state.seq.campaignZone += 1;
             circles.push({
               id: state.seq.campaignZone,
@@ -3491,7 +3491,7 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
           status: 200,
           contentType: "text/csv; charset=UTF-8",
           headers: {
-            "content-disposition": `attachment; filename="tpub-statistiques-${type}-${from}-${to}.csv"`,
+            "content-disposition": `attachment; filename="zelqane-statistiques-${type}-${from}-${to}.csv"`,
           },
           body: csv,
         });
@@ -3912,10 +3912,10 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
       const pdf = seg[1] === "export.pdf";
       // Minimal but real signatures: "%PDF" and the ZIP magic "PK\x03\x04" the callers check.
       const body = pdf
-        ? Buffer.from("%PDF-1.4\n% TPUB export simulé\n%%EOF\n", "utf8")
+        ? Buffer.from("%PDF-1.4\n% ZELQANE export simulé\n%%EOF\n", "utf8")
         : Buffer.concat([
             Buffer.from([0x50, 0x4b, 0x03, 0x04]),
-            Buffer.from("TPUB export simulé", "utf8"),
+            Buffer.from("ZELQANE export simulé", "utf8"),
           ]);
       return route.fulfill({
         status: 200,
@@ -3923,7 +3923,7 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
           "content-type": pdf
             ? "application/pdf"
             : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          "content-disposition": `attachment; filename="tpub-statistiques-${type}.${pdf ? "pdf" : "xlsx"}"`,
+          "content-disposition": `attachment; filename="zelqane-statistiques-${type}.${pdf ? "pdf" : "xlsx"}"`,
           "cache-control": "no-store",
         },
         body,

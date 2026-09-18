@@ -1,11 +1,11 @@
-# TPUB frontend: code and UX conventions (taken from tukai-frontend and tukai-v2/apps/web)
+# ZELQANE frontend: code and UX conventions (taken from tukai-frontend and tukai-v2/apps/web)
 
 Sources read (read-only):
 - **TF** = `scratchpad/tukai-frontend`: Next 15.5, React 19.2, Tailwind 4.3, framer-motion 12, vitest 4, Playwright 1.62. It is a port of an Angular app. The code is uneven (one 9.5k-line god store, 7k lines of hand-written CSS), but its **guard rails, e2e fixtures, API bridge and error messages are excellent**.
 - **V2** = `scratchpad/tukai-v2/apps/web`: Next 16.3, React 19.2, Tailwind 4.3, Radix (`radix-ui`), next-intl, MSW, Storybook, a typed OpenAPI client. This is the cleaner **architecture** reference: design-token discipline, UI primitives, immutable stores, RFC 9457 errors.
-- The TPUB backend was checked so the recommendations fit it: Spring Boot, `POST /api/auth/login` returns `{token,email,nom,role,userId}`, Bearer JWT with **no refresh token**. Error body is `{timestamp,status,message,errors?:{field:msg}}`, with English messages.
+- The ZELQANE backend was checked so the recommendations fit it: Spring Boot, `POST /api/auth/login` returns `{token,email,nom,role,userId}`, Bearer JWT with **no refresh token**. Error body is `{timestamp,status,message,errors?:{field:msg}}`, with English messages.
 
-Legend: **[TF]** / **[V2]** = observed in that repo. **[TPUB]** = recommendation for the new app (derived, not copied).
+Legend: **[TF]** / **[V2]** = observed in that repo. **[ZELQANE]** = recommendation for the new app (derived, not copied).
 
 ---
 
@@ -27,7 +27,7 @@ Legend: **[TF]** / **[V2]** = observed in that repo. **[TPUB]** = recommendation
 - **[V2]** Containers are separate from presentational components: `WorkspaceShell` (layout, skip link, drawer overlay) versus `Workspace` (reads stores and wires callbacks). That split is what lets stories and tests mount a full shell without network.
 - **[V2]** Navigation belongs to the **page**, not the form. `LoginForm` takes `onForgot` and `onRegister`, and the page calls `router.replace('/')` after login (`replace`, so Back does not return to an empty login form).
 
-### [TPUB] Proposed tree
+### [ZELQANE] Proposed tree
 ```
 src/
   app/
@@ -104,7 +104,7 @@ export const PATCH = handler; export const DELETE = handler;
 - `backendUrl()`: trim, then strip the trailing `/`.
 - `mockLatencyMs()`: capped at 5 s, used to *see* loading states.
 
-**[TPUB]** Spring already serves `/api/**`, so keep the prefix: `dest = ${BACKEND_URL}/api/${path}`. Env vars: `BACKEND_URL` (server-only), `BACKEND_MODE`, `MOCK_LATENCY_MS`. There is no `NEXT_PUBLIC_API_URL`: the browser only ever calls `/api/*`.
+**[ZELQANE]** Spring already serves `/api/**`, so keep the prefix: `dest = ${BACKEND_URL}/api/${path}`. Env vars: `BACKEND_URL` (server-only), `BACKEND_MODE`, `MOCK_LATENCY_MS`. There is no `NEXT_PUBLIC_API_URL`: the browser only ever calls `/api/*`.
 
 V2 contrast: V2 calls the API origin directly with `NEXT_PUBLIC_API_URL`. Its Playwright config documents the cost: `NEXT_PUBLIC_*` is **frozen at build**, so changing it needs a rebuild. The bridge avoids this.
 
@@ -129,10 +129,10 @@ V2 adds these:
 - `AbortSignal.any([callerSignal, AbortSignal.timeout(ms)])`, where `timeoutMs: null` disables the timeout for long uploads.
 - `fetch` is bound once (`globalThis.fetch.bind(globalThis)`), because an unbound fetch throws "Illegal invocation".
 - A `presentProblem()` step maps an error into what the UI renders: `{title, detail, fieldErrors[], retryAfterMs, supportReference}`. **The UI branches on `code`, never on message text.**
-- **Idempotency-Key** is minted for POSTs with effects, and the same key must be resent on retry, because "a fresh key on retry is a second order, a second charge". This is relevant for TPUB bookings and payments if the backend adds it.
-- **Single-flight refresh**: N concurrent 401s trigger one rotation. `onSessionEnded` is called once, and the store is cleared before the UI routes to login. TPUB has no refresh token today, but keep the single `onUnauthorized` hook.
+- **Idempotency-Key** is minted for POSTs with effects, and the same key must be resent on retry, because "a fresh key on retry is a second order, a second charge". This is relevant for ZELQANE bookings and payments if the backend adds it.
+- **Single-flight refresh**: N concurrent 401s trigger one rotation. `onSessionEnded` is called once, and the store is cleared before the UI routes to login. ZELQANE has no refresh token today, but keep the single `onUnauthorized` hook.
 
-**[TPUB] client (condensed, fits the Spring error shape)**
+**[ZELQANE] client (condensed, fits the Spring error shape)**
 ```ts
 // src/lib/api/errors.ts
 export interface FieldErrors { [field: string]: string }
@@ -144,7 +144,7 @@ export class ApiTransportError extends Error {
   override readonly name = 'ApiTransportError';
   constructor(readonly kind: 'network' | 'timeout' | 'unexpected-response', readonly status: number | null = null) {
     super(kind === 'timeout' ? 'La requête a pris trop de temps. Vérifiez votre connexion et réessayez.'
-        : kind === 'network' ? 'TPUB est injoignable. Vérifiez votre connexion et réessayez.'
+        : kind === 'network' ? 'ZELQANE est injoignable. Vérifiez votre connexion et réessayez.'
         : 'Réponse inattendue du serveur. Réessayez dans un instant.');
   }
 }
@@ -195,8 +195,8 @@ Backend messages are English (for example "Invalid email or password"), so add a
 
   Screens render three states: `!isAuthReady` shows the gate text, not signed in shows a CTA, and signed in shows the content. 401/403 on an action gives the specific message "Reconnectez-vous pour …".
 - **[V2]** A `SessionStore` port (`read/write/clear`) with memory and web-storage adapters. Its own comment: *"the token is a Bearer header, readable by JavaScript, which is why `dangerouslySetInnerHTML` is banned: one XSS is one stolen session"*. Terminal auth codes clear the session and call `onSessionEnded` once. With in-memory storage, a new tab shows logged out, which is a documented regression.
-- **[TPUB] Recommended (stronger than both):** an **httpOnly cookie set by the Next server**, with the JWT never exposed to JS.
-  - `POST /api/session` (route handler) forwards credentials to Spring `/api/auth/login`. On 200 it sets `tpub_session=<jwt>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=<jwt exp>` and returns `{email, nom, role, userId}` only.
+- **[ZELQANE] Recommended (stronger than both):** an **httpOnly cookie set by the Next server**, with the JWT never exposed to JS.
+  - `POST /api/session` (route handler) forwards credentials to Spring `/api/auth/login`. On 200 it sets `zelqane_session=<jwt>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=<jwt exp>` and returns `{email, nom, role, userId}` only.
   - `DELETE /api/session` clears the cookie.
   - The bridge reads the cookie and sets `Authorization: Bearer <jwt>` upstream, so the browser never holds the token.
   - `middleware.ts` protects `(espace)` routes: no cookie means a redirect to `/connexion?next=<path>`. It only checks presence; the backend remains the authority. Also add `robots: noindex` on auth and client pages.
@@ -245,7 +245,7 @@ Backend messages are English (for example "Invalid email or password"), so add a
 ```
 - **Why `@theme inline` and not `@theme`** [TF, V2]: plain `@theme` **copies** the value at compile time, so `bg-accent` stays the dark-theme colour in every theme. `inline` emits `var(--accent)`, resolved at paint under the current `data-theme`.
 - **[TF]** Legacy-only details (do not copy): preflight was dropped because of an existing reset. `@import 'tailwindcss/theme.css' layer(theme)` was used so the project's `:root` wins over Tailwind's `--shadow-*`. Utilities are imported **last** so they win over legacy classes.
-- **[TPUB] tokens** (`src/app/tokens/themes.css`), taken from the logo:
+- **[ZELQANE] tokens** (`src/app/tokens/themes.css`), taken from the logo:
   - Brand: `--brand-red:#E11D2A` (top bar, primary CTA), `--brand-orange:#F07A1A` (highlights, "en diffusion"), `--brand-blue:#0A5CA8` (links, info, focus ring).
   - Role tokens: `--accent: var(--brand-red)`, `--accent-ink:#fff`, `--focus: var(--brand-blue)`, `--info`, `--success`, `--warning` (orange family), `--danger` (distinct from brand red, darker: `#B4141F` on light).
   - Status tokens for the campaign lifecycle: `--status-draft`, `--status-moderation`, `--status-approved`, `--status-live`, `--status-rejected`, `--status-ended`.
@@ -277,7 +277,7 @@ const SIZE = { sm: 'min-h-9 gap-1.5 px-3 text-sm', md: 'min-h-touch gap-2 px-4 t
 - **[V2]** The script source is built from constants in `lib/theme.ts` (`THEMES`, `THEME_STORAGE_KEY`), which the switch and tests also use. It is rendered as `<script>{themeBeforePaintScript}</script>` (text child, not `dangerouslySetInnerHTML`).
 - Bare `:root` carries the default theme, so first paint is right even before the script runs. `color-scheme` is set per theme.
 - **[TF]** Test for **token parity**: a light theme block must declare every token the dark block declares. A missing token silently falls back to the dark value.
-- **[TPUB]** Light by default for the marketing site. Optionally offer dark in the client space. If you add dark, copy the parity test and the before-paint script.
+- **[ZELQANE]** Light by default for the marketing site. Optionally offer dark in the client space. If you add dark, copy the parity test and the before-paint script.
 
 ### 3.4 Breakpoints and `check-breakpoints`
 - **[TF]** `scripts/check-breakpoints.mjs` fails `npm run check` if any `.ts/.tsx/.css` under `src/` contains a **native** `max-sm:`…`max-2xl:`, `max-[Npx]:`, or `print:`. It reads the allowed custom variants **from `tailwind.css`** instead of keeping a copy, and blanks comments (preserving line numbers) so documentation that names the rule does not trip it. The error output explains the fix with examples.
@@ -287,7 +287,7 @@ const SIZE = { sm: 'min-h-9 gap-1.5 px-3 text-sm', md: 'min-h-touch gap-2 px-4 t
   2. Custom variants are emitted **in declaration order**. So they are declared **widest to narrowest** (`max1200` … `max360`); ascending order made `max820:grid-cols-2 max560:grid-cols-1` show 2 columns at 360 px.
   3. Built-in `print:` is emitted *before* custom variants and loses to them, hence a custom `onprint` declared last.
 - **[V2]** Four explicit breakpoints (`--breakpoint-*: initial` then sm/md/lg/xl), **mobile-first**, plus lint bans on physical `left/right` utilities (for RTL).
-- **[TPUB] rule:**
+- **[ZELQANE] rule:**
   - Mobile-first with `sm: md: lg: xl:` only, redefined in `@theme`.
   - **Forbid** `max-*:` and arbitrary `min-[…]:`/`max-[…]:` so there is one direction and one scale. Keep `print:` only if no custom variants exist.
   - Adapt TF's script (same walk, comment stripping and helpful message) with `FORBIDDEN = /\b(max-(sm|md|lg|xl|2xl|\[[^\]]+\])|min-\[[^\]]+\]):/g`, and add a check that nothing outside `app/tokens/` contains a literal colour (V2 `design-rules.test.ts`).
@@ -313,7 +313,7 @@ const SIZE = { sm: 'min-h-9 gap-1.5 px-3 text-sm', md: 'min-h-touch gap-2 px-4 t
   - **EMPTY**: say what is empty, why, and what to do.
   - **LOADING**: say it is loading, and finish.
   - **ERROR**: plain language, never a code, and always leave a way out (at least one button or link).
-- **[TPUB]** Examples: "Aucune campagne pour l'instant" with "Créez votre première campagne en 3 étapes" and a `Nouvelle campagne` button. For media: "Aucun média importé" with the formats and size limits, and an `Importer` button.
+- **[ZELQANE]** Examples: "Aucune campagne pour l'instant" with "Créez votre première campagne en 3 étapes" and a `Nouvelle campagne` button. For media: "Aucun média importé" with the formats and size limits, and an `Importer` button.
 
 ### 4.3 Toasts / notifications
 - **[V2] Radix Toast** behind `ToastProvider` and `useToast().toast({title, description, variant:'info'|'success'|'danger', duration})`:
@@ -339,7 +339,7 @@ const SIZE = { sm: 'min-h-9 gap-1.5 px-3 text-sm', md: 'min-h-touch gap-2 px-4 t
   - Enumeration-safe messaging: the same message for an unknown email and a wrong password.
   - Tell the truth: "Lost access? Ask an administrator" instead of a link to a recovery flow that does not exist.
 - **[TF]** Controlled inputs in a notifying store must flush synchronously (`setInput`), or the caret jumps to the end. There is a regression test for it.
-- **[TPUB]** Use `Field`/`Input` primitives plus light client checks for immediate feedback: required, email format, date range, file type and size before upload.
+- **[ZELQANE]** Use `Field`/`Input` primitives plus light client checks for immediate feedback: required, email format, date range, file type and size before upload.
   - Validate with a zod schema **shared by client checks and for typing**, and always render Spring's `errors{field:msg}` mapped to French.
   - On submit error, **move focus to the first invalid field** or the error summary.
   - Keep the user's input. Never clear the form on error.
@@ -347,7 +347,7 @@ const SIZE = { sm: 'min-h-9 gap-1.5 px-3 text-sm', md: 'min-h-touch gap-2 px-4 t
 ### 4.5 Optimistic UI
 - **[TF]** Shows the opposite discipline for anything with consequences: *"Local state is cleared ONLY if the server confirmed. Showing 'it's private again' while the public page still answers would be the one lie this screen cannot afford."* Double-submit guards appear everywhere (`if (busy) return`).
 - **[V2]** Money path: **amounts are read from the server order, never computed client-side** (an ESLint rule bans arithmetic in components that paint money).
-- **[TPUB]**
+- **[ZELQANE]**
   - Optimistic updates only for cheap, reversible actions (rename a draft, toggle a filter, mark a notification as read), with rollback plus an error toast.
   - **Never optimistic** for booking, payment, submission to moderation, or deleting media in use. Show a pending state until the server confirms.
   - Prices, taxes, availability and moderation status always come from the backend.
@@ -356,13 +356,13 @@ const SIZE = { sm: 'min-h-9 gap-1.5 px-3 text-sm', md: 'min-h-touch gap-2 px-4 t
 Both repos set **one global `:focus-visible` outline** (2 px, accent/focus token, offset 2 px). Everything else below.
 - **Skip link [V2]**: the first tab stop, `sr-only`, visible when focused:
   `<a href="#main" className="sr-only rounded-md bg-accent px-4 py-2 text-accent-ink focus:not-sr-only focus:absolute focus:start-2 focus:top-2 focus:z-(--z-toast)">Aller au contenu</a>`. The target is `<main id="main">`.
-- **Structure (TF e2e)**: exactly **one `<h1>`**, exactly **one `<main>`**, `<html lang>` set (`fr` for TPUB; TF shipped `lang="en"` on a French UI), and **no skipped heading levels**. TF's `AuthScreen` renders `<main>` normally and `<section>` when embedded (a `<main>` cannot live in an `<aside>`).
+- **Structure (TF e2e)**: exactly **one `<h1>`**, exactly **one `<main>`**, `<html lang>` set (`fr` for ZELQANE; TF shipped `lang="en"` on a French UI), and **no skipped heading levels**. TF's `AuthScreen` renders `<main>` normally and `<section>` when embedded (a `<main>` cannot live in an `<aside>`).
 - **Modals**:
   - [TF] `useModalFocus(active, panelRef, {initialFocusRef, onEscape})`: focus goes inside on open, Tab and Shift+Tab wrap, a focus that escaped is pulled back, focus **returns to the trigger** on close (if still connected), and Escape is captured and stops propagation so the top modal alone decides. The focusable filter uses no layout measurement, so it works in jsdom.
   - [V2] prefers **Radix Dialog**, which does all of this plus scroll lock and `aria-hidden` background. It needs a `DialogTitle`. Content uses `max-h-[calc(100dvh-2rem)] overflow-y-auto`.
 - **Live regions**:
   - [TF] Never put `aria-live` on a streaming transcript, because every delta re-announces the whole reply. Use one `sr-only aria-live="polite" aria-atomic` line: a short status while working, then the final result **once**.
-  - For TPUB: announce "Import terminé", "Modération : approuvé" and similar.
+  - For ZELQANE: announce "Import terminé", "Modération : approuvé" and similar.
 - **Icon buttons** need `aria-label`, and their SVGs are `aria-hidden`. Toggles use `aria-pressed`, disclosure buttons `aria-expanded`, and the active nav item `aria-current="page"`.
 - **Decorative images** use `alt=""` and `draggable={false}` on the logo. Content images need meaningful `alt`.
 - **Touch targets**: 44×44 px (`min-h-touch`). A dense exception is explicit via `data-dense-target` and still at least 24 px (WCAG 2.5.8). Inline links inside sentences are exempt.
@@ -373,7 +373,7 @@ Both repos set **one global `:focus-visible` outline** (2 px, accent/focus token
 - **[V2] shell**: `flex h-dvh`. The sidebar wrapper is `hidden md:flex`, and when the drawer is open it becomes `fixed inset-y-0 start-0 z-(--z-modal) flex md:static`. The overlay is `fixed inset-0 bg-bg/70 md:hidden`, and Escape closes. A topbar hamburger toggles `ui.drawerOpen`.
 - **[TF] mobile tab bar**: `<nav aria-label="Primary">` fixed to the bottom under 900 px. Pages reserve `padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom))`. Tabs use `aria-current="page"` and a shared `layoutId` indicator (framer-motion) that animates between tabs. Some routes open a panel instead of navigating, to keep state.
 - Use `min-h-dvh`/`h-dvh`, not `100vh` (mobile browser bars). E2E checks **no horizontal overflow** at 375/390/412/768/820/1280/1440/1920 with hostile content (long names, long URLs, unbreakable words, Arabic, emoji).
-- **[TPUB]**
+- **[ZELQANE]**
   - Marketing: sticky top bar (brand red) with logo; desktop links; mobile hamburger → Radix Dialog sheet.
   - Client space: sidebar (Tableau de bord, Campagnes, Médias, Réseau, Factures, Profil) that becomes a drawer below `md`. Optionally a bottom tab bar with 4 items on phones.
   - `Nouvelle campagne` is the one primary CTA.
@@ -399,7 +399,7 @@ const reduce = useReducedMotion();
 ```
 - Short durations (0.15 to 0.22 s) with an ease-out curve `[0.16,1,0.3,1]`. Animate only `opacity` and `transform`. Decorative glows are "transform-only, GPU composited".
 - **[V2]** uses no framer-motion at all. Its CSS `animate-ui-in` keyframes apply under `motion-safe:` only.
-- **[TPUB]** Use CSS `motion-safe:` utilities for primitives (dialog, menu, toast). Use framer-motion for richer marketing moments (hero reveal, network map, stat counters, campaign wizard step transitions), `layoutId` tab indicators, and list enter/exit. Always go through `useReducedMotion`.
+- **[ZELQANE]** Use CSS `motion-safe:` utilities for primitives (dialog, menu, toast). Use framer-motion for richer marketing moments (hero reveal, network map, stat counters, campaign wizard step transitions), `layoutId` tab indicators, and list enter/exit. Always go through `useReducedMotion`.
 
 ### 4.9 Error boundaries and 404
 - **[TF + V2]** Ship `app/error.tsx` (client, `reset()` button), `app/global-error.tsx` (its own `<html><body>`, **inline styles only**, because globals.css may not have loaded), and `app/not-found.tsx` (themed, with a link home).
@@ -413,7 +413,7 @@ const reduce = useReducedMotion();
   - An **ESLint rule bans literal UI text** in `app/**/*.tsx` and `components/**/*.tsx`: JSX text, `aria-label`, `placeholder`, `title`, sentence-like strings. Tests and stories are exempt.
   - Formatting uses `Intl` only, with `INTL_TAG = { fr: 'fr-TN' }` ("DT" currency), `timeZone: 'Africa/Tunis'`, and a forced 24 h clock for French. Logical properties (`ps-`, `ms-`, `start-`, `border-s`) are enforced by lint for RTL.
 - **[TF]** Tunisian dinar money is written with **3 decimals**, always the same way across the funnel ("29.500" vs "29.5" makes buyers doubt it is the same amount). Amounts are in integer **millimes**.
-- **[TPUB]** The UI is French only today.
+- **[ZELQANE]** The UI is French only today.
   - Keep all strings in `src/content/fr.ts` (typed object) or next-intl with `fr.json` if Arabic is likely. Write components with logical utilities from day one anyway; it costs nothing.
   - `<html lang="fr">`.
   - `lib/format.ts`: `formatTND(millimes)`, `formatDate` and `formatDateTime` (fr-TN, Africa/Tunis, h23), plus impression and audience counts via `Intl.NumberFormat('fr-TN', { notation: 'compact' })`.
@@ -515,7 +515,7 @@ expect(results.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help, 
 - `layout.spec.ts`: overflow grid of 8 viewports × pages; touch targets; hostile content; closed drawer leaves no focusables.
 - `journeys/*.spec.ts`: auth, payments, settings, and so on.
 
-**[TPUB] journeys to write**: visitor → tarifs → inscription → connexion (redirects back to `next`); create campaign wizard (zone, supports, dates, budget → recap → submit); media upload (type and size errors, progress, moderation pending, rejected with reason); campaign detail stats; invoices; session expiry mid-wizard (redirect, then return with the draft preserved).
+**[ZELQANE] journeys to write**: visitor → tarifs → inscription → connexion (redirects back to `next`); create campaign wizard (zone, supports, dates, budget → recap → submit); media upload (type and size errors, progress, moderation pending, rejected with reason); campaign detail stats; invoices; session expiry mid-wizard (redirect, then return with the draft preserved).
 
 ---
 
@@ -529,7 +529,7 @@ expect(results.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help, 
   - **Prettier** `.prettierrc.json`: `{ "semi": true, "singleQuote": false, "trailingComma": "all", "printWidth": 80, "tabWidth": 2, "endOfLine": "lf" }`.
   - **Husky**: `pre-commit` runs `lint-staged` (`*.{ts,tsx}` → `eslint --fix` + `prettier --write`; `*.{json,md,css}` → prettier) plus gitleaks, warning loudly if it is not installed. `commit-msg` runs commitlint (`@commitlint/config-conventional`, `body-max-line-length: 0`).
   - Next config: `reactStrictMode: true`, `poweredByHeader: false`, `output: 'standalone'`.
-- **[TPUB] gates**:
+- **[ZELQANE] gates**:
   - `check` = `typecheck` + `lint` + `format:check` + `check:breakpoints` + `check:tokens` + `test`.
   - CI: `check` → `build` → `test:e2e` (chromium plus mobile-chrome on PR; full matrix nightly).
   - tsconfig: V2's strict flags (at least `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`; `exactOptionalPropertyTypes` is optional because it is noisy with third-party props).
@@ -538,11 +538,11 @@ expect(results.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help, 
 
 ---
 
-## 7. Recommended `package.json` for the TPUB frontend
-Versions follow tukai-frontend where it has the package. Radix, MSW, ESLint, Prettier, Husky and commitlint versions come from V2. Removed from TF: `three` and `@types/three` (no 3D), `@opennextjs/cloudflare`, `wrangler`, `esbuild` (Cloudflare tooling). Deploy TPUB with `output: 'standalone'` in Docker next to the Spring backend, matching the repo's existing Docker Compose.
+## 7. Recommended `package.json` for the ZELQANE frontend
+Versions follow tukai-frontend where it has the package. Radix, MSW, ESLint, Prettier, Husky and commitlint versions come from V2. Removed from TF: `three` and `@types/three` (no 3D), `@opennextjs/cloudflare`, `wrangler`, `esbuild` (Cloudflare tooling). Deploy ZELQANE with `output: 'standalone'` in Docker next to the Spring backend, matching the repo's existing Docker Compose.
 ```json
 {
-  "name": "tpub-frontend",
+  "name": "zelqane-frontend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -635,7 +635,7 @@ export default nextConfig;
 
 ---
 
-## 8. Pitfalls documented by these repos (avoid in TPUB)
+## 8. Pitfalls documented by these repos (avoid in ZELQANE)
 1. **Reading env at module import** on edge or worker runtimes gives empty strings, so "all /api fails" with nothing pointing at the cause. Read inside the request [TF backend.ts].
 2. **`NEXT_PUBLIC_*` is inlined at build.** Setting it at `next start` does nothing [V2 playwright.config]. Keep the backend URL server-side behind the bridge.
 3. **Fail-closed defaults.**
@@ -662,7 +662,7 @@ export default nextConfig;
 12. **`@theme` instead of `@theme inline`** freezes colours, so theme switching breaks. A token missing in one theme silently inherits another; add a parity test.
 13. **Tailwind auto source detection** scanned `test/` and shipped probe classes into production CSS [V2]. Use `@import "tailwindcss" source(none)` plus explicit `@source`.
 14. **Deleting CSS or classes** [TF]: grep `src/`, `e2e/` and `scripts/` *and* the other stylesheets, because half a rule often lives elsewhere. Also check whether a rule actually applies (specificity or import order) before migrating it.
-15. **Global CSS order** is set by import order in `layout.tsx`. Importing feature CSS from a component puts it wherever chunking decides [TF]. For TPUB, avoid feature CSS files; use utilities plus tokens and a single `globals.css`.
+15. **Global CSS order** is set by import order in `layout.tsx`. Importing feature CSS from a component puts it wherever chunking decides [TF]. For ZELQANE, avoid feature CSS files; use utilities plus tokens and a single `globals.css`.
 16. **framer-motion ignores the CSS `prefers-reduced-motion` rule.** Guard in JS. jsdom lacks `matchMedia`, so mock it as reduced so exits are instant in tests.
 17. **Flaky tests block delivery** [TF vitest timeout note]. Raise `testTimeout` to 20 s for userEvent under load, but not higher, or real hangs stop looking like hangs. Never raise a visual diff tolerance to silence a noisy screen; remove the noise source (live animations, sub-pixel AA).
 18. **E2E against `next dev`** proves nothing about the shipped bundle. A running `next dev` also **overwrites** the production build that e2e starts [TF MIGRATION]. `output:'standalone'` refuses `next start`; run `node .next/standalone/server.js`, or keep `next start` for e2e without standalone [V2].
@@ -672,7 +672,7 @@ export default nextConfig;
 22. **`role="alert"` also matches Next's route announcer** in tests. Scope selectors [TF MIGRATION].
 23. **`dangerouslySetInnerHTML`** is banned when any token is JS-readable [V2]. Render rich text through a sanitized pipeline. Theme scripts go as a text child built from constants.
 24. **Next 16 writes `AGENTS.md`/`CLAUDE.md` into the app on `next dev`** unless `agentRules: false` [V2 next.config].
-25. **Build must not depend on the backend** [V2 README]. `/pricing` fetching offers at build broke `next build` without backend env. For TPUB, fetch catalogue data (zones, supports, offers) at request time with `revalidate`, or client-side with a graceful "grille indisponible" state.
+25. **Build must not depend on the backend** [V2 README]. `/pricing` fetching offers at build broke `next build` without backend env. For ZELQANE, fetch catalogue data (zones, supports, offers) at request time with `revalidate`, or client-side with a graceful "grille indisponible" state.
 26. **Redirects in `next.config`** must target page routes only. Never rewrite `/api/*` paths that the bridge forwards [TF].
 27. **Money**: never compute prices or totals client-side; read them from the server. Format TND with 3 decimals from integer millimes, identically on every screen.
 28. **`useSearchParams` without a Suspense boundary** breaks the static build of that route. Wrap it, with a fallback identical to the loading gate.

@@ -166,7 +166,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
     onViewModeChange,
     showListTool = true,
     forceFallback = false,
-    ariaLabel = "Carte du réseau TPUB",
+    ariaLabel = "Carte du réseau ZELQANE",
     onMapClick,
     focusZoneId = null,
     chrome = "full",
@@ -876,7 +876,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
       data-map-mode={mode}
       data-map-chrome={compact ? "compact" : "full"}
       className={cx(
-        "tpub-map relative isolate h-full w-full overflow-hidden rounded-panel border border-line bg-bg text-ink",
+        "zelqane-map relative isolate h-full w-full overflow-hidden rounded-panel border border-line bg-bg text-ink",
         fullscreen.active && "rounded-none",
         className,
       )}
@@ -898,7 +898,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
       {isWebgl && ui.tool !== "none" ? (
         <span
           aria-hidden="true"
-          className="tpub-map-crosshair pointer-events-none absolute inset-0 z-[5]"
+          className="zelqane-map-crosshair pointer-events-none absolute inset-0 z-[5]"
         />
       ) : null}
 
@@ -942,7 +942,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
           {engine === "svg" ? (
             <p
               role="note"
-              className="tpub-map-surface pointer-events-auto absolute bottom-2 left-2 rounded-full px-3 py-1 font-label text-[0.75rem] font-semibold text-warning"
+              className="zelqane-map-surface pointer-events-auto absolute bottom-2 left-2 rounded-full px-3 py-1 font-label text-[0.75rem] font-semibold text-warning"
             >
               Carte simplifiée (WebGL indisponible)
             </p>
@@ -959,7 +959,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
             onSelect={onSearchSelect}
             className="min-w-0 flex-1 md:w-80 md:flex-none"
           />
-          <div className="tpub-map-surface shrink-0 rounded-[14px] p-0">
+          <div className="zelqane-map-surface shrink-0 rounded-[14px] p-0">
             <MapToolButton
               label={
                 activeFilters > 0
@@ -986,7 +986,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
         </MapToolbar>
 
         {/* mobile tools button */}
-        <div className="tpub-map-surface pointer-events-auto absolute top-3 right-3 rounded-[14px] md:hidden">
+        <div className="zelqane-map-surface pointer-events-auto absolute top-3 right-3 rounded-[14px] md:hidden">
           <MapToolButton
             label="Outils de la carte"
             icon={ui.panel === "tools" ? <X /> : <Menu />}
@@ -998,14 +998,14 @@ export function NetworkMapClient(props: NetworkMapProps) {
         {engine === "svg" ? (
           <p
             role="note"
-            className="tpub-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-full px-3.5 py-1.5 text-center font-label text-[0.75rem] font-semibold text-warning"
+            className="zelqane-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-full px-3.5 py-1.5 text-center font-label text-[0.75rem] font-semibold text-warning"
           >
             Carte simplifiée (WebGL indisponible)
           </p>
         ) : null}
 
         {drawStatus ? (
-          <div className="tpub-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-card px-3 py-2 text-xs text-ink">
+          <div className="zelqane-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-card px-3 py-2 text-xs text-ink">
             <span
               aria-live="polite"
               className={cx(drawStatus.state === "invalid" && "font-semibold text-warning")}
@@ -1037,7 +1037,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
         ) : null}
 
         {placeHint ? (
-          <div className="tpub-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-card px-3 py-2 text-xs text-ink">
+          <div className="zelqane-map-surface pointer-events-auto absolute top-[4.25rem] left-1/2 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-card px-3 py-2 text-xs text-ink">
             <span>{placeHint}</span>
             {isWebgl ? (
               <button
@@ -1066,7 +1066,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
           <p
             aria-live="polite"
             data-map-counter=""
-            className="tpub-map-surface rounded-full px-3 py-1.5 font-label text-[0.75rem] font-semibold text-ink-soft tabular"
+            className="zelqane-map-surface rounded-full px-3 py-1.5 font-label text-[0.75rem] font-semibold text-ink-soft tabular"
           >
             {displayedCountLabel(displayedCount, supports.length)}
             {unlocated > 0 ? (
@@ -1074,7 +1074,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
             ) : null}
           </p>
           {hiddenByFilters > 0 || !ui.layers.porteurs ? (
-            <p className="tpub-map-surface flex items-center gap-2 rounded-full py-1 pr-1 pl-3 font-label text-[0.75rem] font-semibold text-warning tabular">
+            <p className="zelqane-map-surface flex items-center gap-2 rounded-full py-1 pr-1 pl-3 font-label text-[0.75rem] font-semibold text-warning tabular">
               {ui.layers.porteurs
                 ? hiddenByFiltersLabel(hiddenByFilters)
                 : "Couche « Porteurs » masquée"}
@@ -1088,7 +1088,7 @@ export function NetworkMapClient(props: NetworkMapProps) {
             </p>
           ) : null}
           {canSelect && selection.supportIds.length + selection.zoneIds.length > 0 ? (
-            <p className="tpub-map-surface flex items-center gap-2 rounded-full py-1 pr-1 pl-3 font-label text-[0.75rem] font-semibold text-brand-blue-text tabular">
+            <p className="zelqane-map-surface flex items-center gap-2 rounded-full py-1 pr-1 pl-3 font-label text-[0.75rem] font-semibold text-brand-blue-text tabular">
               {selection.supportIds.length} sélectionné{selection.supportIds.length > 1 ? "s" : ""}
               <button
                 type="button"

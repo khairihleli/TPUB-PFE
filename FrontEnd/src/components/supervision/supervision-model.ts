@@ -35,7 +35,7 @@ export const PRESENCE_TONE: Record<PresenceState, "success" | "danger" | "neutra
 export const CONTENT_TYPE_LABEL: Record<DiffusionLiveEvent["contentType"], string> = {
   PUBLICITE: "Publicité",
   URGENCE: "Message prioritaire",
-  DEFAUT: "Contenu TPUB",
+  DEFAUT: "Contenu ZELQANE",
 };
 
 export const ALERT_TYPE_LABEL: Record<SupervisionAlertType, string> = {

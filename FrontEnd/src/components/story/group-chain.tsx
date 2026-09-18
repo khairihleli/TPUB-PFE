@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { GROUP } from "@/content/site";
 import { cx } from "@/lib/cx";
 
-/** TPUB inside the Tukhnanutha group: pôle Médias, audience & données (TPUB · AFRIVA · INFINTRA). */
+/** ZELQANE inside the Tukhnanutha group: pôle Médias, audience & données (ZELQANE · AFRIVA · INFINTRA). */
 export function GroupChain() {
   return (
     <Section tone="glow" divider="tricolor" labelledBy="groupe-titre">
@@ -44,8 +44,8 @@ export function GroupChain() {
           </div>
           <div className="flex flex-col gap-2.5 border-t border-line pt-5 min-[420px]:flex-row min-[420px]:flex-wrap">
             <Button asChild variant="outline" shape="pill">
-              <a href={GROUP.tpubPage} target="_blank" rel="noopener noreferrer">
-                {GROUP_SECTION.tpubLink}
+              <a href={GROUP.zelqanePage} target="_blank" rel="noopener noreferrer">
+                {GROUP_SECTION.zelqaneLink}
                 <ArrowUpRight aria-hidden="true" />
                 <span className="sr-only"> (site du groupe Tukhnanutha, nouvel onglet)</span>
               </a>

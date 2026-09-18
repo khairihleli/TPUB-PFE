@@ -240,7 +240,7 @@ export function NetworkAdminMap({
           zones={zones}
           supports={supports}
           height="clamp(30rem, 74vh, 54rem)"
-          ariaLabel="Carte du réseau TPUB (administration)"
+          ariaLabel="Carte du réseau ZELQANE (administration)"
           focusSupportId={focusSupportId}
           focusZoneId={focusZoneId}
           activeZoneId={zone?.id ?? null}

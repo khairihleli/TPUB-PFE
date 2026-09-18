@@ -120,7 +120,7 @@ export function PersonaSection({
                       className="mt-0.5 size-4 shrink-0 text-brand-orange-text"
                     />
                     <span>
-                      <span className="sr-only">Réponse de TPUB : </span>
+                      <span className="sr-only">Réponse de ZELQANE : </span>
                       {frTypo(item.answer)}
                     </span>
                   </p>

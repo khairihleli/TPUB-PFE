@@ -553,7 +553,7 @@ export function PorteurConfigurator({
             }
           >
             {formatDateRange(success.reservation.startDate, success.reservation.endDate)} · bloqué
-            en attente de décision TPUB. {BOOKING_CONSEQUENCE}
+            en attente de décision ZELQANE. {BOOKING_CONSEQUENCE}
           </Alert>
         ) : (
           <>

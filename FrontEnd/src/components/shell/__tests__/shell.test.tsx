@@ -79,8 +79,8 @@ import { setSingleKeyShortcutsEnabled } from "@/lib/shortcuts";
 
 function user(role: RoleCode = "ANNONCEUR", expMinutes = 600): SessionUser {
   return {
-    email: role === "ANNONCEUR" ? "demo@annonceur.tn" : "admin@tpub.local",
-    nom: role === "ANNONCEUR" ? "Démo Annonceur" : "Admin TPUB",
+    email: role === "ANNONCEUR" ? "demo@annonceur.tn" : "admin@zelqane.local",
+    nom: role === "ANNONCEUR" ? "Démo Annonceur" : "Admin ZELQANE",
     role,
     userId: 42,
     exp: Math.floor((Date.now() + expMinutes * 60_000) / 1000),
@@ -221,7 +221,7 @@ describe("command palette logic", () => {
       pushRecent(42, { label: `C${i}`, href: `/espace/campagnes/${i}`, kind: "campagne" });
     expect(readRecents(42).map((r) => r.label)).toEqual(["C7", "C6", "C5", "C4", "C3"]);
     expect(readRecents(43)).toEqual([]);
-    window.localStorage.setItem("tpub:recents:42", "{oops");
+    window.localStorage.setItem("zelqane:recents:42", "{oops");
     expect(readRecents(42)).toEqual([]);
   });
 });

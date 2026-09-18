@@ -152,7 +152,7 @@ describe("colours, badges and captions", () => {
   });
 
   it("engine and issue source labels know the Anthropic values", () => {
-    expect(engineLabel("LOCAL_ANTHROPIC")).toBe("Règles TPUB et analyse Claude");
+    expect(engineLabel("LOCAL_ANTHROPIC")).toBe("Règles ZELQANE et analyse Claude");
     expect(engineLabel(null)).toBe("—");
     expect(issueSourceLabel("ANTHROPIC")).toBe("Analyse complémentaire (Claude)");
   });

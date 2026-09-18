@@ -29,7 +29,7 @@ import { TotpVerificationForm } from "@/components/auth/totp-verification-form";
 import { ApiError } from "@/lib/api/errors";
 
 const admin = {
-  email: "admin@tpub.local",
+  email: "admin@zelqane.local",
   nom: "Admin",
   role: "ADMINISTRATEUR" as const,
   userId: 1,
@@ -51,14 +51,14 @@ afterEach(() => vi.clearAllMocks());
 
 describe("LoginForm — second step (§3.7)", () => {
   function submit() {
-    fireEvent.change(screen.getByLabelText(/^E-mail/), { target: { value: "admin@tpub.local" } });
+    fireEvent.change(screen.getByLabelText(/^E-mail/), { target: { value: "admin@zelqane.local" } });
     fireEvent.change(screen.getByLabelText(/^Mot de passe/), { target: { value: "Admin2026x" } });
     fireEvent.click(screen.getByRole("button", { name: /Se connecter/ }));
   }
 
   it("goes to the verification page with next and remembers the challenge (no token)", async () => {
     const expiresAt = inFiveMinutes();
-    api.login.mockResolvedValue({ status: "TOTP_REQUIRED", email: "admin@tpub.local", expiresAt });
+    api.login.mockResolvedValue({ status: "TOTP_REQUIRED", email: "admin@zelqane.local", expiresAt });
     render(<LoginForm next="/admin/utilisateurs" expired={false} />);
     submit();
     await waitFor(() =>
@@ -68,7 +68,7 @@ describe("LoginForm — second step (§3.7)", () => {
     );
     expect(readChallengeInfo("TOTP_REQUIRED")).toEqual({
       status: "TOTP_REQUIRED",
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       expiresAt,
     });
   });
@@ -76,7 +76,7 @@ describe("LoginForm — second step (§3.7)", () => {
   it("goes to the mandatory enrolment", async () => {
     api.login.mockResolvedValue({
       status: "TOTP_ENROLMENT_REQUIRED",
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       expiresAt: inFiveMinutes(),
     });
     render(<LoginForm next={null} expired={false} />);
@@ -99,7 +99,7 @@ describe("TotpVerificationForm", () => {
   beforeEach(() => {
     storeChallengeInfo({
       status: "TOTP_REQUIRED",
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       expiresAt: inFiveMinutes(),
     });
   });
@@ -111,7 +111,7 @@ describe("TotpVerificationForm", () => {
       )
       .mockResolvedValueOnce({ status: "AUTHENTICATED", user: admin, recoveryCodeUsed: false });
     render(<TotpVerificationForm next="/admin/reseau" />);
-    expect(screen.getByText("admin@tpub.local")).toBeInTheDocument();
+    expect(screen.getByText("admin@zelqane.local")).toBeInTheDocument();
     expect(screen.getByText(/Temps restant/)).toBeInTheDocument();
 
     const input = screen.getByLabelText(/^Code de vérification/);
@@ -172,12 +172,12 @@ describe("TotpEnrolmentFlow", () => {
   it("scans, confirms the first code, then requires keeping the recovery codes", async () => {
     storeChallengeInfo({
       status: "TOTP_ENROLMENT_REQUIRED",
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       expiresAt: inFiveMinutes(),
     });
     api.enrolmentSetup.mockResolvedValue({
       secret: "JBSWY3DPEHPK3PXP",
-      otpauthUri: "otpauth://totp/TPUB:admin%40tpub.local?secret=JBSWY3DPEHPK3PXP&issuer=TPUB",
+      otpauthUri: "otpauth://totp/ZELQANE:admin%40zelqane.local?secret=JBSWY3DPEHPK3PXP&issuer=ZELQANE",
       expiresAt: inFiveMinutes(),
     });
     api.enrolmentEnable.mockResolvedValue({

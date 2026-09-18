@@ -52,38 +52,38 @@ describe("demo scripts — TOTP (RFC 6238 SHA1 vectors)", () => {
 describe("demo scripts — credentials without password literals", () => {
   it("reads the administrator password from the environment or the secrets file", async () => {
     const auth = await load<DemoAuthModule>("../../../scripts/lib/demo-auth.mjs");
-    const dir = mkdtempSync(join(tmpdir(), "tpub-demo-"));
-    const secrets = join(dir, ".tpub-local.secrets");
+    const dir = mkdtempSync(join(tmpdir(), "zelqane-demo-"));
+    const secrets = join(dir, ".zelqane-local.secrets");
     writeFileSync(
       secrets,
-      "# commentaire\nJWT_SECRET=abc\nTPUB_ADMIN_INITIAL_PASSWORD=Fichier2026x\n",
+      "# commentaire\nJWT_SECRET=abc\nZELQANE_ADMIN_INITIAL_PASSWORD=Fichier2026x\n",
     );
     expect(auth.readKeyValueFile(secrets).JWT_SECRET).toBe("abc");
     expect(auth.adminCredentials({}, secrets)).toEqual({
-      email: "admin@tpub.local",
+      email: "admin@zelqane.local",
       password: "Fichier2026x",
     });
     expect(
       auth.adminCredentials(
-        { TPUB_ADMIN_PASSWORD: "Env2026x", TPUB_ADMIN_EMAIL: "a@b.tn" },
+        { ZELQANE_ADMIN_PASSWORD: "Env2026x", ZELQANE_ADMIN_EMAIL: "a@b.tn" },
         secrets,
       ),
     ).toEqual({ email: "a@b.tn", password: "Env2026x" });
-    expect(() => auth.adminCredentials({}, join(dir, "absent"))).toThrow(/TPUB_ADMIN_PASSWORD/);
+    expect(() => auth.adminCredentials({}, join(dir, "absent"))).toThrow(/ZELQANE_ADMIN_PASSWORD/);
   });
 
   it("generates demo passwords once and reuses them", async () => {
     const auth = await load<DemoAuthModule>("../../../scripts/lib/demo-auth.mjs");
-    const file = join(mkdtempSync(join(tmpdir(), "tpub-demo-")), ".demo-accounts.json");
+    const file = join(mkdtempSync(join(tmpdir(), "zelqane-demo-")), ".demo-accounts.json");
     const generated = auth.generatePassword();
     expect(generated).toMatch(/^[A-HJ-NP-Za-km-z2-9]{16}$/);
     expect(generated).toMatch(/\d/);
-    expect(auth.demoPassword("x@tpub.local", { create: false, env: {}, file })).toBeNull();
-    const first = auth.demoPassword("x@tpub.local", { env: {}, file });
-    expect(auth.demoPassword("x@tpub.local", { env: {}, file })).toBe(first);
-    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ "x@tpub.local": first });
+    expect(auth.demoPassword("x@zelqane.local", { create: false, env: {}, file })).toBeNull();
+    const first = auth.demoPassword("x@zelqane.local", { env: {}, file });
+    expect(auth.demoPassword("x@zelqane.local", { env: {}, file })).toBe(first);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ "x@zelqane.local": first });
     expect(
-      auth.demoPassword("x@tpub.local", { env: { TPUB_DEMO_PASSWORD: "Commun2026" }, file }),
+      auth.demoPassword("x@zelqane.local", { env: { ZELQANE_DEMO_PASSWORD: "Commun2026" }, file }),
     ).toBe("Commun2026");
   });
 });

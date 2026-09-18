@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 export const metadata: Metadata = {
   title: "Annonceurs",
   description:
-    "Commerces et PME, marques, agences média, institutions : comment TPUB est conçu pour réserver du temps d'écran par zone et par créneau, avec des contenus contrôlés et des diffusions journalisées.",
+    "Commerces et PME, marques, agences média, institutions : comment ZELQANE est conçu pour réserver du temps d'écran par zone et par créneau, avec des contenus contrôlés et des diffusions journalisées.",
   alternates: { canonical: "/annonceurs" },
 };
 
@@ -67,7 +67,7 @@ export default function AnnonceursPage() {
         title="Votre message,"
         highlight="là où sont vos clients."
         lede={frTypo(
-          "Commerce de quartier, marque ou agence : TPUB est conçu pour vous permettre de réserver du temps d'écran par zone et par créneau, avec des contenus contrôlés et des diffusions journalisées.",
+          "Commerce de quartier, marque ou agence : ZELQANE est conçu pour vous permettre de réserver du temps d'écran par zone et par créneau, avec des contenus contrôlés et des diffusions journalisées.",
         )}
         image={{ src: "/images/screen-street.jpg", position: "center 35%" }}
         actions={
@@ -151,7 +151,7 @@ export default function AnnonceursPage() {
               </h2>
               <p className="max-w-[52ch] text-lead text-muted">
                 Cinq questions valables pour toute offre d&apos;affichage numérique, y compris celle
-                de TPUB.
+                de ZELQANE.
               </p>
             </Reveal>
             <Reveal variant="left" delay={120}>

@@ -17,7 +17,7 @@ test.describe("smoke — chaque route rend son h1 sans erreur console", () => {
       await expect(page.locator("h1")).toHaveCount(1);
       await expect(page.locator("h1")).not.toBeEmpty();
       // No generic error boundary / unreachable-service message.
-      await expect(page.getByText("Le service TPUB est momentanément indisponible.")).toHaveCount(
+      await expect(page.getByText("Le service ZELQANE est momentanément indisponible.")).toHaveCount(
         0,
       );
 

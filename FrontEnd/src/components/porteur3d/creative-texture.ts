@@ -1,6 +1,6 @@
 /**
  * Screen content: the advertiser's creative (image → texture, video → VideoTexture, muted loop) or
- * the default animated TPUB canvas « VOTRE MESSAGE ICI » + « Aperçu ». One texture per screen
+ * the default animated ZELQANE canvas « VOTRE MESSAGE ICI » + « Aperçu ». One texture per screen
  * surface so each keeps its own UV transform (cover for panels, wrap for the 360° band).
  */
 import {
@@ -87,7 +87,7 @@ function createDefaultCanvas(aspect: number, band: boolean): DefaultCanvas | nul
   return { ctx, texture, band, grid: g ? gridCanvas : null };
 }
 
-/** Draws one frame of the default TPUB creative. `t` in seconds (0 when reduced motion). */
+/** Draws one frame of the default ZELQANE creative. `t` in seconds (0 when reduced motion). */
 export function drawDefaultCreative(dc: DefaultCanvas, t: number): void {
   const { ctx } = dc;
   const w = ctx.canvas.width;
@@ -160,7 +160,7 @@ export function drawDefaultCreative(dc: DefaultCanvas, t: number): void {
       lines.forEach((line, k) => ctx.fillText(line, ox + cw / 2, top + k * lineH));
       ctx.font = `600 ${Math.round(size * 0.3)}px ${family}`;
       ctx.fillStyle = paletteRgba("creativeInk", 0.8);
-      ctx.fillText("TPUB · Maquette indicative", ox + cw / 2, top + lineH * 2.7);
+      ctx.fillText("ZELQANE · Maquette indicative", ox + cw / 2, top + lineH * 2.7);
       ctx.textAlign = "start";
     } else {
       const lines = ["VOTRE", "MESSAGE", "ICI"];
@@ -169,7 +169,7 @@ export function drawDefaultCreative(dc: DefaultCanvas, t: number): void {
       lines.forEach((line, k) => ctx.fillText(line, ox + pad, startY + k * size * 1.02));
       ctx.font = `600 ${Math.round(size * 0.26)}px ${family}`;
       ctx.fillStyle = paletteRgba("creativeInk", 0.78);
-      ctx.fillText("TPUB · Maquette indicative", ox + pad, h - pad);
+      ctx.fillText("ZELQANE · Maquette indicative", ox + pad, h - pad);
     }
   }
 

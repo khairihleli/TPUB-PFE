@@ -141,7 +141,7 @@ export const CAMPAIGN_STATUS: Readonly<Record<CampaignDisplayStatus, CampaignSta
   APPROVED_BY_AI: meta(
     "APPROVED_BY_AI",
     "Avis IA favorable",
-    "L'analyse est favorable, un expert TPUB doit statuer.",
+    "L'analyse est favorable, un expert ZELQANE doit statuer.",
   ),
   REVIEW_REQUIRED: meta(
     "REVIEW_REQUIRED",
@@ -156,7 +156,7 @@ export const CAMPAIGN_STATUS: Readonly<Record<CampaignDisplayStatus, CampaignSta
   VALIDATED_BY_ADMIN: meta(
     "VALIDATED_BY_ADMIN",
     "Programmée",
-    "Validée par TPUB, la diffusion commencera à la date de début.",
+    "Validée par ZELQANE, la diffusion commencera à la date de début.",
   ),
   SCHEDULED: meta(
     "SCHEDULED",
@@ -169,7 +169,7 @@ export const CAMPAIGN_STATUS: Readonly<Record<CampaignDisplayStatus, CampaignSta
   BLOCKED: meta(
     "BLOCKED",
     "Bloquée",
-    "Refusée ou bloquée par TPUB : la campagne n'est pas diffusée tant qu'elle n'est pas corrigée et resoumise.",
+    "Refusée ou bloquée par ZELQANE : la campagne n'est pas diffusée tant qu'elle n'est pas corrigée et resoumise.",
   ),
 };
 
@@ -191,13 +191,13 @@ export const CAMPAIGN_STATUS_ANNONCEUR: Readonly<
   ),
   APPROVED_BY_AI: meta(
     "APPROVED_BY_AI",
-    "En examen TPUB",
+    "En examen ZELQANE",
     `L'analyse est favorable. ${REVIEW_WAIT_SENTENCE}`,
     "Analyse favorable",
   ),
   REVIEW_REQUIRED: meta(
     "REVIEW_REQUIRED",
-    "En examen TPUB",
+    "En examen ZELQANE",
     `Quelques points sont à vérifier par l'équipe. ${REVIEW_WAIT_SENTENCE}`,
     "Quelques points à vérifier par l'équipe",
   ),
@@ -210,13 +210,13 @@ export const CAMPAIGN_STATUS_ANNONCEUR: Readonly<
   VALIDATED_BY_ADMIN: meta(
     "VALIDATED_BY_ADMIN",
     "Programmée",
-    "Validée par TPUB, la diffusion suit la période de la campagne.",
+    "Validée par ZELQANE, la diffusion suit la période de la campagne.",
     "Diffusion à partir de la date de début",
   ),
   SCHEDULED: meta(
     "SCHEDULED",
     "Programmée",
-    "Validée par TPUB, la diffusion commencera à la date de début.",
+    "Validée par ZELQANE, la diffusion commencera à la date de début.",
     "Diffusion à partir de la date de début",
   ),
   ACTIVE: meta("ACTIVE", "En diffusion", "Votre campagne passe sur ses créneaux."),
@@ -225,7 +225,7 @@ export const CAMPAIGN_STATUS_ANNONCEUR: Readonly<
   BLOCKED: meta(
     "BLOCKED",
     "Refusée",
-    "TPUB a refusé la diffusion. Consultez le motif, corrigez la campagne (elle repasse en brouillon) et soumettez-la à nouveau.",
+    "ZELQANE a refusé la diffusion. Consultez le motif, corrigez la campagne (elle repasse en brouillon) et soumettez-la à nouveau.",
     "Consultez le motif, corrigez puis soumettez à nouveau",
   ),
 };
@@ -345,10 +345,10 @@ export function getCampaignTimeCue(
 }
 
 /**
- * Compact 4-step stepper: Brouillon → Analyse IA → Validation TPUB → Diffusion.
+ * Compact 4-step stepper: Brouillon → Analyse IA → Validation ZELQANE → Diffusion.
  * The full lifecycle timeline (contract §5 F1) is `CAMPAIGN_TIMELINE_STEPS`.
  */
-export const CAMPAIGN_STEPS = ["Brouillon", "Analyse IA", "Validation TPUB", "Diffusion"] as const;
+export const CAMPAIGN_STEPS = ["Brouillon", "Analyse IA", "Validation ZELQANE", "Diffusion"] as const;
 
 export interface CampaignStep {
   /** Index of the current step in CAMPAIGN_STEPS (0..3). */
@@ -380,12 +380,12 @@ export function getCampaignStep(status: CampaignStatus): CampaignStep {
 
 /**
  * Full lifecycle timeline (contract §5 F1):
- * Brouillon → Analyse IA → Validation TPUB → Programmée → En diffusion → Terminée.
+ * Brouillon → Analyse IA → Validation ZELQANE → Programmée → En diffusion → Terminée.
  */
 export const CAMPAIGN_TIMELINE_STEPS = [
   "Brouillon",
   "Analyse IA",
-  "Validation TPUB",
+  "Validation ZELQANE",
   "Programmée",
   "En diffusion",
   "Terminée",
@@ -397,7 +397,7 @@ export interface CampaignTimelineStep {
   /** Index of the current step in CAMPAIGN_TIMELINE_STEPS (0..5). */
   index: number;
   /**
-   * "failed" = stopped at `index` (REJECTED_BY_AI at Analyse IA, BLOCKED at Validation TPUB —
+   * "failed" = stopped at `index` (REJECTED_BY_AI at Analyse IA, BLOCKED at Validation ZELQANE —
    * both can be corrected and resubmitted). "complete" = the campaign is over.
    */
   state: "current" | "failed" | "complete";
@@ -517,7 +517,7 @@ export function canEditPriority(status: CampaignStatus): boolean {
   return isAwaitingAdmin(status) || rejectBlocksDiffusion(status);
 }
 
-/** Waiting for a TPUB admin decision. */
+/** Waiting for a ZELQANE admin decision. */
 export function isAwaitingAdmin(status: CampaignStatus): boolean {
   return status === "APPROVED_BY_AI" || status === "REVIEW_REQUIRED";
 }
@@ -538,7 +538,7 @@ export const CAMPAIGN_FILTERS = [
   {
     value: "en-examen",
     label: "En examen",
-    description: "Analyse IA ou examen par l'équipe TPUB",
+    description: "Analyse IA ou examen par l'équipe ZELQANE",
     statuses: ["PENDING_AI_CHECK", "APPROVED_BY_AI", "REVIEW_REQUIRED"],
   },
   {
@@ -652,7 +652,7 @@ export const CAMPAIGN_BUCKETS: readonly CampaignBucketDef[] = [
   bucket(
     "en-examen",
     "En examen",
-    "Analyse IA ou examen par l'équipe TPUB en cours.",
+    "Analyse IA ou examen par l'équipe ZELQANE en cours.",
     ["PENDING_AI_CHECK", "APPROVED_BY_AI", "REVIEW_REQUIRED"],
     "en-examen",
   ),
@@ -680,7 +680,7 @@ export const CAMPAIGN_BUCKETS: readonly CampaignBucketDef[] = [
   bucket(
     "refusees",
     "Refusées",
-    "Refusées par TPUB, non diffusées : corrigeables puis resoumises.",
+    "Refusées par ZELQANE, non diffusées : corrigeables puis resoumises.",
     ["BLOCKED"],
     "terminees",
   ),
@@ -702,12 +702,12 @@ export const AI_REPORT_STATUS: Record<AiReportStatusUpper, StatusMeta> = {
   APPROVED: {
     label: "Analyse favorable",
     tone: "success",
-    description: "Analyse favorable. Votre campagne attend la validation d'un expert TPUB.",
+    description: "Analyse favorable. Votre campagne attend la validation d'un expert ZELQANE.",
   },
   REVIEW_REQUIRED: {
     label: "Revue manuelle",
     tone: "warning",
-    description: "Certains points demandent un examen humain. Un expert TPUB va statuer.",
+    description: "Certains points demandent un examen humain. Un expert ZELQANE va statuer.",
   },
   REJECTED: {
     label: "À corriger",
@@ -754,9 +754,9 @@ export const OCR_ENGINE_LABEL: Record<OcrEngine, string> = {
 };
 
 export const AI_ENGINE_LABEL: Record<AiEngine, string> = {
-  LOCAL: "Moteur de règles TPUB",
+  LOCAL: "Moteur de règles ZELQANE",
   OPENAI: "Analyse externe",
-  LOCAL_OPENAI: "Règles TPUB et analyse externe",
+  LOCAL_OPENAI: "Règles ZELQANE et analyse externe",
 };
 
 export const AI_CONTENT_TYPE_LABEL: Record<AiContentType, string> = {
@@ -806,7 +806,7 @@ export const CLIENT_VALIDATION_STATUS: Record<ClientValidationStatus, StatusMeta
   PENDING: {
     label: "En attente de validation",
     tone: "warning",
-    description: "Compte annonceur pas encore vérifié par TPUB.",
+    description: "Compte annonceur pas encore vérifié par ZELQANE.",
   },
   VALIDATED: { label: "Validé", tone: "success", description: "Compte annonceur vérifié." },
   REJECTED: {
@@ -903,12 +903,12 @@ export const AVAILABILITY_STATUS: Record<AvailabilityStatus, StatusMeta> = {
   RESERVE: {
     label: "Réservé",
     tone: "warning",
-    description: "Capacité retenue par d'autres campagnes en attente de décision TPUB.",
+    description: "Capacité retenue par d'autres campagnes en attente de décision ZELQANE.",
   },
   OCCUPE: {
     label: "Occupé",
     tone: "danger",
-    description: "Capacité prise par des campagnes confirmées ou bloquée par TPUB.",
+    description: "Capacité prise par des campagnes confirmées ou bloquée par ZELQANE.",
   },
   MAINTENANCE: {
     label: "Maintenance",
@@ -942,7 +942,7 @@ export const SUPPORT_BLOCK_STATUS: Record<SupportBlockStatus, StatusMeta> = {
   OCCUPE: {
     label: "Occupé",
     tone: "danger",
-    description: "Créneau réservé par TPUB (hors campagnes).",
+    description: "Créneau réservé par ZELQANE (hors campagnes).",
   },
 };
 

@@ -138,7 +138,7 @@ export const REVIEW_POLL_MS = 60_000;
 
 /**
  * Detail page polling: every 10 s while PENDING_AI_CHECK (only within the 2-minute window),
- * every 60 s while waiting for a TPUB decision, otherwise none.
+ * every 60 s while waiting for a ZELQANE decision, otherwise none.
  */
 export function pollIntervalFor(
   status: CampaignStatus,
@@ -149,7 +149,7 @@ export function pollIntervalFor(
   return null;
 }
 
-/** « CAMP-00007 »: reference quoted in e-mails to TPUB. */
+/** « CAMP-00007 »: reference quoted in e-mails to ZELQANE. */
 export function campaignReference(id: number): string {
   return `CAMP-${String(id).padStart(5, "0")}`;
 }

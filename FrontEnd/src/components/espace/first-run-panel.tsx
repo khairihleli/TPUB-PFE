@@ -37,7 +37,7 @@ export function FirstRunPanel({ milestones }: FirstRunPanelProps) {
       </h2>
       <p className="mt-2 max-w-[60ch] text-body text-muted">
         Préparez un brouillon, réservez des Porteurs sur votre période, puis soumettez-le à
-        l&apos;équipe TPUB. Rien n&apos;est diffusé sans validation.
+        l&apos;équipe ZELQANE. Rien n&apos;est diffusé sans validation.
       </p>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -133,8 +133,8 @@ const HOW_IT_WORKS = [
     text: "Vous saisissez la campagne et réservez des Porteurs. Tout reste modifiable jusqu'à l'envoi.",
   },
   {
-    title: "Analyse IA puis examen par l'équipe TPUB",
-    text: "Le contenu est analysé automatiquement, puis examiné par l'équipe TPUB en jours ouvrés.",
+    title: "Analyse IA puis examen par l'équipe ZELQANE",
+    text: "Le contenu est analysé automatiquement, puis examiné par l'équipe ZELQANE en jours ouvrés.",
   },
   {
     title: "Diffusion sur la période validée",

@@ -50,8 +50,8 @@ export function parseRetryAfter(value: string | null | undefined): number | null
 export type TransportErrorKind = "network" | "timeout" | "aborted" | "unexpected-response";
 
 const TRANSPORT_MESSAGES: Record<TransportErrorKind, string> = {
-  network: "TPUB est injoignable. Vérifiez votre connexion et réessayez.",
-  timeout: "TPUB met plus de temps que prévu à répondre. Réessayez dans un instant.",
+  network: "ZELQANE est injoignable. Vérifiez votre connexion et réessayez.",
+  timeout: "ZELQANE met plus de temps que prévu à répondre. Réessayez dans un instant.",
   aborted: "La requête a été interrompue.",
   "unexpected-response": "Réponse inattendue du serveur. Réessayez dans un instant.",
 };
@@ -231,7 +231,7 @@ const TITLES: Record<ErrorCategory, string> = {
 };
 
 export const SLOW_MESSAGE =
-  "TPUB met plus de temps que prévu à répondre. Réessayez dans un instant.";
+  "ZELQANE met plus de temps que prévu à répondre. Réessayez dans un instant.";
 export const OFFLINE_MESSAGE = "Vous semblez hors ligne. Vérifiez votre connexion, puis réessayez.";
 
 /** Maps any thrown value to what the UI renders. Never exposes technical text. */

@@ -89,7 +89,7 @@ describe("useFormDraft", () => {
   it("stores per user/key/version, restores on mount and expires after 24 h", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const key = draftStorageKey("campaign:new", 5, 1);
-    expect(key).toBe("tpub:draft:v1:5:campaign:new");
+    expect(key).toBe("zelqane:draft:v1:5:campaign:new");
 
     const { rerender, unmount } = renderHook(
       ({ value, dirty }) => useFormDraft({ key: "campaign:new", value, dirty, userId: 5 }),

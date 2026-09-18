@@ -22,7 +22,7 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    TPUB_API_URL=http://backend:8080
+    ZELQANE_API_URL=http://backend:8080
 
 RUN addgroup -S nodejs -g 1001 && adduser -S nextjs -u 1001 -G nodejs
 

@@ -133,23 +133,23 @@ export interface DemoAccount {
 
 export const ANNONCEUR: DemoAccount = {
   email: "amira.bensalah@demo-annonceur.tn",
-  password: "Demo-TPUB-2026",
+  password: "Demo-ZELQANE-2026",
   nom: "Amira Ben Salah",
   role: "ANNONCEUR",
   userId: 12,
 };
 
 export const ADMIN: DemoAccount = {
-  email: "karim.trabelsi@tpub-demo.tn",
-  password: "Admin-TPUB-2026",
+  email: "karim.trabelsi@zelqane-demo.tn",
+  password: "Admin-ZELQANE-2026",
   nom: "Karim Trabelsi",
   role: "ADMINISTRATEUR",
   userId: 1,
 };
 
 export const SUPERVISEUR: DemoAccount = {
-  email: "leila.mansour@tpub-demo.tn",
-  password: "Superviseur-TPUB-2026",
+  email: "leila.mansour@zelqane-demo.tn",
+  password: "Superviseur-ZELQANE-2026",
   nom: "Leïla Mansour",
   role: "SUPERVISEUR",
   userId: 2,
@@ -186,7 +186,7 @@ export function demoUsers(): AdminUserResponse[] {
       email: ADMIN.email,
       nom: ADMIN.nom,
       role: "ADMINISTRATEUR",
-      societe: "TPUB",
+      societe: "ZELQANE",
       lastLoginAt: isoInstant(0, 8),
       createdAt: isoInstant(120),
       client: null,
@@ -199,7 +199,7 @@ export function demoUsers(): AdminUserResponse[] {
       email: SUPERVISEUR.email,
       nom: SUPERVISEUR.nom,
       role: "SUPERVISEUR",
-      societe: "TPUB",
+      societe: "ZELQANE",
       lastLoginAt: isoInstant(2, 9),
       createdAt: isoInstant(90),
       client: null,
@@ -1108,7 +1108,7 @@ export function demoDiffusionLogs(supports: SupportResponse[]): DiffusionLogResp
       add(2, d, hour, "PUBLICITE", 5, "Semaine de la prévention santé");
       add(6, d, hour, "PUBLICITE", 5, "Semaine de la prévention santé");
     }
-    add(1, d, 10, "DEFAUT", null, "TPUB — Tukhnanutha");
+    add(1, d, 10, "DEFAUT", null, "ZELQANE — Tukhnanutha");
   }
   add(1, 0, 6, "URGENCE", null, "Alerte météo : fortes pluies attendues");
   return out;
@@ -1208,8 +1208,8 @@ export const DIFFUSION_DEFAUT: DiffusionResponse = {
   supportId: 1,
   campaignId: null,
   emergencyId: null,
-  title: "TPUB — Tukhnanutha",
-  content: "Espace de diffusion TPUB",
+  title: "ZELQANE — Tukhnanutha",
+  content: "Espace de diffusion ZELQANE",
   mediaUrl: null,
   mediaType: null,
   duration: 10,
@@ -1310,7 +1310,7 @@ export function demoAlerts(): SupervisionAlert[] {
       createdAt: at(180),
       resolvedAt: at(60),
       acknowledgedAt: at(120),
-      acknowledgedByName: "Administrateur TPUB",
+      acknowledgedByName: "Administrateur ZELQANE",
     },
   ];
 }
@@ -1409,7 +1409,7 @@ export function demoAiFeedback(): AiFeedbackResponse[] {
       qualityScore: 68,
       matchedRuleIds: [1],
       calibrationVersion: 2,
-      decidedByName: "Administrateur TPUB",
+      decidedByName: "Administrateur ZELQANE",
       createdAt: at(1),
     },
     {
@@ -1425,7 +1425,7 @@ export function demoAiFeedback(): AiFeedbackResponse[] {
       qualityScore: 82,
       matchedRuleIds: [],
       calibrationVersion: 2,
-      decidedByName: "Administrateur TPUB",
+      decidedByName: "Administrateur ZELQANE",
       createdAt: at(4),
     },
     {
@@ -1441,7 +1441,7 @@ export function demoAiFeedback(): AiFeedbackResponse[] {
       qualityScore: 40,
       matchedRuleIds: [2],
       calibrationVersion: 1,
-      decidedByName: "Administrateur TPUB",
+      decidedByName: "Administrateur ZELQANE",
       createdAt: at(9),
     },
   ];

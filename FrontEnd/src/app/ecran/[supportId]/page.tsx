@@ -30,7 +30,7 @@ export default async function Page({ params, searchParams }: PageProps) {
   if (id === null) {
     return (
       <div className="app-ground flex min-h-dvh flex-col items-center justify-center gap-4 p-8 text-center">
-        <Image src="/brand/tpub.png" alt="" width={64} height={70} className="h-auto w-14" />
+        <Image src="/brand/zelqane.png" alt="" width={64} height={70} className="h-auto w-14" />
         <h1 className="font-display text-h3 text-ink-strong">Identifiant d&apos;écran invalide</h1>
         <p className="max-w-md text-[0.9375rem] leading-relaxed text-muted">
           L&apos;adresse du lecteur doit se terminer par le numéro d&apos;un écran, par exemple{" "}

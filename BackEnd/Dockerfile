@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # =============================================================================
-# TPUB Backend — Multi-stage Docker build
+# ZELQANE Backend — Multi-stage Docker build
 # Stage 1: Maven build  |  Stage 2: tessdata download  |  Stage 3: JRE runtime (eclipse-temurin 21, Ubuntu Noble)
 # =============================================================================
 
@@ -31,8 +31,8 @@ RUN sh /scripts/fetch-tessdata.sh /tessdata
 # --- Runtime stage ------------------------------------------------------------
 FROM eclipse-temurin:21-jre-noble AS runtime
 
-LABEL org.opencontainers.image.title="TPUB Backend"
-LABEL org.opencontainers.image.description="TPUB intelligent advertising platform — Spring Boot API"
+LABEL org.opencontainers.image.title="ZELQANE Backend"
+LABEL org.opencontainers.image.description="ZELQANE intelligent advertising platform — Spring Boot API"
 
 # Native Tesseract for Tess4J (OCR); JNA looks for libtesseract.so
 RUN apt-get update \
@@ -40,18 +40,18 @@ RUN apt-get update \
     && ln -sf /usr/lib/x86_64-linux-gnu/libtesseract.so.5 /usr/lib/x86_64-linux-gnu/libtesseract.so \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --system tpub && useradd --system --gid tpub --home-dir /app tpub
+RUN groupadd --system zelqane && useradd --system --gid zelqane --home-dir /app zelqane
 
 WORKDIR /app
 
-RUN mkdir -p /app/uploads && chown -R tpub:tpub /app
+RUN mkdir -p /app/uploads && chown -R zelqane:zelqane /app
 
-COPY --from=tessdata --chown=tpub:tpub /tessdata /app/tessdata
-COPY --from=builder --chown=tpub:tpub /app/target/BackEnd-*.jar app.jar
+COPY --from=tessdata --chown=zelqane:zelqane /tessdata /app/tessdata
+COPY --from=builder --chown=zelqane:zelqane /app/target/BackEnd-*.jar app.jar
 
-ENV TPUB_OCR_TESSDATA=/app/tessdata
+ENV ZELQANE_OCR_TESSDATA=/app/tessdata
 
-USER tpub
+USER zelqane
 
 EXPOSE 8080
 

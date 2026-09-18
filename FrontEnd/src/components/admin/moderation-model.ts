@@ -446,16 +446,16 @@ export function refusalMessage(
   return [
     "Bonjour,",
     "",
-    `Votre campagne « ${campaign.name} » (référence ${campaignReference(campaign.id)}) n'a pas été validée par l'équipe TPUB.`,
+    `Votre campagne « ${campaign.name} » (référence ${campaignReference(campaign.id)}) n'a pas été validée par l'équipe ZELQANE.`,
     "",
     `Motif : ${reason.trim()}`,
     "",
-    "Prochaine étape : dans votre espace TPUB, ouvrez la campagne et choisissez « Corriger ». Elle repasse en brouillon : corrigez le point signalé, vérifiez vos Porteurs puis soumettez-la de nouveau.",
+    "Prochaine étape : dans votre espace ZELQANE, ouvrez la campagne et choisissez « Corriger ». Elle repasse en brouillon : corrigez le point signalé, vérifiez vos Porteurs puis soumettez-la de nouveau.",
     "",
     "Les créneaux réservés pour cette campagne ont été libérés.",
     "",
     "Cordialement,",
-    "L'équipe TPUB",
+    "L'équipe ZELQANE",
   ].join("\n");
 }
 

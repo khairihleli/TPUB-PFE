@@ -1350,7 +1350,7 @@ function AiReportBlock({ report }: { report: AiReport }) {
         {report.contentType
           ? `Contenu analysé : ${AI_CONTENT_TYPE_LABEL[report.contentType].toLowerCase()}. `
           : ""}
-        L&apos;IA assiste la modération ; la décision revient à un administrateur TPUB.
+        L&apos;IA assiste la modération ; la décision revient à un administrateur ZELQANE.
       </p>
     </div>
   );

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { STATUS_NOTICE } from "@/content/site";
 import { cx } from "@/lib/cx";
 
-const STORAGE_KEY = "tpub:status-banner-dismissed";
+const STORAGE_KEY = "zelqane:status-banner-dismissed";
 
 export interface StatusBannerProps {
   message?: string;

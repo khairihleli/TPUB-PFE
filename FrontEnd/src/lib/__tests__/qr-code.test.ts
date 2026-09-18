@@ -141,7 +141,7 @@ describe("qr-code", () => {
 
   it("encodes an otpauth URI that reads back byte for byte", () => {
     const uri =
-      "otpauth://totp/TPUB:admin%40tpub.local?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=TPUB&algorithm=SHA1&digits=6&period=30";
+      "otpauth://totp/ZELQANE:admin%40zelqane.local?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=ZELQANE&algorithm=SHA1&digits=6&period=30";
     const qr = encodeQr(uri);
     expect(qr.size).toBe(qr.version * 4 + 17);
     expect(qr.version).toBeGreaterThanOrEqual(6);
@@ -172,8 +172,8 @@ describe("qr-code", () => {
   });
 
   it("is deterministic and draws one square per dark module", () => {
-    const a = encodeQr("TPUB");
-    const b = encodeQr("TPUB");
+    const a = encodeQr("ZELQANE");
+    const b = encodeQr("ZELQANE");
     expect(a).toEqual(b);
     const dark = a.modules.flat().filter(Boolean).length;
     expect(qrSvgPath(a).match(/h1v1h-1z/g)).toHaveLength(dark);

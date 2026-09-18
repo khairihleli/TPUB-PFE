@@ -73,7 +73,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             </li>
             <li className="flex items-center gap-3">
               <span className="size-1.5 rounded-full bg-brand-orange" />
-              Analyse IA puis validation par un expert TPUB
+              Analyse IA puis validation par un expert ZELQANE
             </li>
             <li className="flex items-center gap-3">
               <span className="size-1.5 rounded-full bg-brand-orange" />

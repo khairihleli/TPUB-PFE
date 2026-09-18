@@ -477,14 +477,14 @@ describe("accounts administration", () => {
   it("validates staff accounts and maps backend codes", () => {
     const ok = staffCreateSchema.safeParse({
       ...emptyStaffForm(),
-      email: " Ops@TPUB.tn ",
+      email: " Ops@zelqane.com ",
       password: "motdepasse1",
       nom: "Opérateur Sud",
       role: "OPERATEUR",
       telephone: "+216 71 000 000",
     });
     expect(ok.success && ok.data).toEqual({
-      email: "ops@tpub.tn",
+      email: "ops@zelqane.com",
       password: "motdepasse1",
       nom: "Opérateur Sud",
       role: "OPERATEUR",

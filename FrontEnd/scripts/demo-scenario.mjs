@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
  * Runs the demonstration scenario of the cahier des charges (§11, 18 steps) end to end over HTTP
- * against a running TPUB backend, asserting every step and printing one ✔ / ✘ line per step.
+ * against a running ZELQANE backend, asserting every step and printing one ✔ / ✘ line per step.
  *
  * Prerequisites: backend started (start-local.ps1) and the network seeded (node scripts/seed-demo.mjs).
  * Each run registers a fresh advertiser and books a fresh future window, so it can be replayed.
  * The urgent message created at step 17 is deactivated at the end so the real Porteurs are untouched.
  *
- * Round 2 (docs/round2-contract.md §10): the administrator password comes from TPUB_ADMIN_PASSWORD /
- * .tpub-local.secrets, the player calls carry the device key of scripts/.demo-device-keys.json (the
+ * Round 2 (docs/round2-contract.md §10): the administrator password comes from ZELQANE_ADMIN_PASSWORD /
+ * .zelqane-local.secrets, the player calls carry the device key of scripts/.demo-device-keys.json (the
  * Porteur is paired as admin when the key is missing or revoked), ?datetime= needs the backend `local`
- * profile, and the double approvals are completed with admin2@tpub.local (created by seed-demo.mjs).
+ * profile, and the double approvals are completed with admin2@zelqane.local (created by seed-demo.mjs).
  *
- * Usage: node scripts/demo-scenario.mjs   (TPUB_API_URL defaults to http://localhost:8080)
+ * Usage: node scripts/demo-scenario.mjs   (ZELQANE_API_URL defaults to http://localhost:8080)
  *        --verbose  prints the payload summary of each step
  */
 import {
@@ -26,9 +26,9 @@ import {
   saveDeviceKey,
   SetupError,
 } from "./lib/demo-auth.mjs";
-import { API, SLOT_PRESETS, call, day, items, pngForm } from "./lib/tpub-api.mjs";
+import { API, SLOT_PRESETS, call, day, items, pngForm } from "./lib/zelqane-api.mjs";
 
-const SECOND_ADMIN_EMAIL = "admin2@tpub.local";
+const SECOND_ADMIN_EMAIL = "admin2@zelqane.local";
 const VERBOSE = process.argv.includes("--verbose");
 
 /** Map target: Tunis Centre (seeded zone), 3 km around Avenue Habib Bourguiba. */
@@ -279,7 +279,7 @@ step("Il choisit une période et un créneau horaire (Soir)", async () => {
 });
 
 // 10 ────────────────────────────────────────────────────────────────────────────
-step("TPUB affiche la disponibilité des supports selon le temps choisi", async () => {
+step("ZELQANE affiche la disponibilité des supports selon le temps choisi", async () => {
   const availability = await call("GET", "/api/availability", {
     token: ctx.token,
     query: {
@@ -571,7 +571,7 @@ step("Supervision : l'écran signale sa présence", async () => {
 });
 
 async function main() {
-  console.log(`Scénario de démonstration TPUB (cahier des charges §11) — ${API}`);
+  console.log(`Scénario de démonstration ZELQANE (cahier des charges §11) — ${API}`);
   const health = await fetch(`${API}/actuator/health`)
     .then((r) => r.json())
     .catch(() => null);

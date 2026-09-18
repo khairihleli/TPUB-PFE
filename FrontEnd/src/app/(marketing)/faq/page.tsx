@@ -17,7 +17,7 @@ import { CONTACT } from "@/content/site";
 export const metadata: Metadata = {
   title: "FAQ",
   description:
-    "Statut, prix, mesure, modération des contenus et ciblage : les réponses aux questions des annonceurs sur TPUB, la plateforme d'affichage numérique extérieur du groupe Tukhnanutha.",
+    "Statut, prix, mesure, modération des contenus et ciblage : les réponses aux questions des annonceurs sur ZELQANE, la plateforme d'affichage numérique extérieur du groupe Tukhnanutha.",
   alternates: { canonical: "/faq" },
 };
 
@@ -99,13 +99,13 @@ export default function FaqPage() {
                 Votre question n&apos;y est pas&nbsp;?
               </p>
               <p className="mt-2 text-[0.875rem] leading-relaxed text-muted">
-                L&apos;équipe TPUB vous répond par e-mail.
+                L&apos;équipe ZELQANE vous répond par e-mail.
               </p>
               <Link
                 href="/contact#formulaire"
                 className="underline-slide mt-3 inline-flex min-h-touch items-center gap-1.5 font-label text-[0.875rem] font-semibold text-brand-blue-text"
               >
-                Écrire à TPUB
+                Écrire à ZELQANE
                 <ArrowRight aria-hidden="true" className="size-3.5" />
               </Link>
               <p className="mt-1 flex items-center gap-2 text-[0.8125rem] text-muted-2">
@@ -170,9 +170,9 @@ export default function FaqPage() {
         title={frTypo("Une question plus précise ?")}
         highlight="Parlons-en."
         lede={frTypo(
-          "Dites-nous vos objectifs, vos cibles et vos zones : l'équipe TPUB revient vers vous par e-mail.",
+          "Dites-nous vos objectifs, vos cibles et vos zones : l'équipe ZELQANE revient vers vous par e-mail.",
         )}
-        primary={{ label: "Parler à TPUB", href: "/contact#formulaire" }}
+        primary={{ label: "Parler à ZELQANE", href: "/contact#formulaire" }}
         secondary={{ label: "Créer mon compte annonceur", href: "/inscription" }}
         image={{ src: "/images/led-closeup.jpg", alt: "" }}
       />

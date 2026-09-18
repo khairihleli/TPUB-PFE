@@ -7,7 +7,7 @@ import { CONTACT } from "@/content/site";
 export const metadata: Metadata = {
   title: "Politique de confidentialité",
   description:
-    "Quelles informations TPUB traite via le formulaire de contact et l'espace annonceur, pourquoi, et comment exercer vos demandes. Document en cours de validation juridique.",
+    "Quelles informations ZELQANE traite via le formulaire de contact et l'espace annonceur, pourquoi, et comment exercer vos demandes. Document en cours de validation juridique.",
 };
 
 const SECTIONS: readonly LegalSection[] = [
@@ -16,7 +16,7 @@ const SECTIONS: readonly LegalSection[] = [
     title: "Qui traite vos informations",
     content: (
       <p>
-        Les informations transmises sur ce site sont traitées par <strong>TPUB</strong>, une société
+        Les informations transmises sur ce site sont traitées par <strong>ZELQANE</strong>, une société
         du groupe Tukhnanutha, basée à {CONTACT.city}. Pour toute question sur ce document :{" "}
         {CONTACT.email}.
       </p>
@@ -84,7 +84,7 @@ const SECTIONS: readonly LegalSection[] = [
           Chaque campagne soumise est analysée par un outil d&apos;intelligence artificielle (niveau
           de risque et qualité notés sur 100, points relevés, recommandation). Cette analyse assiste
           la décision : la plateforme est conçue pour qu&apos;aucune campagne ne soit diffusée sans
-          la validation d&apos;un expert TPUB.
+          la validation d&apos;un expert ZELQANE.
         </p>
         <p>Les résultats d&apos;analyse et les décisions de modération sont enregistrés.</p>
       </>
@@ -96,7 +96,7 @@ const SECTIONS: readonly LegalSection[] = [
     content: (
       <p>
         La plateforme journalise les diffusions (écran, zone, campagne, horaire, durée) : ce journal
-        décrit l&apos;activité des écrans, pas les personnes. TPUB n&apos;a pas vocation à
+        décrit l&apos;activité des écrans, pas les personnes. ZELQANE n&apos;a pas vocation à
         identifier les passants. Lorsque des indicateurs d&apos;audience existent, ils sont
         anonymes, agrégés et présentés avec leur méthode.
       </p>
@@ -107,7 +107,7 @@ const SECTIONS: readonly LegalSection[] = [
     title: "Qui y a accès",
     content: (
       <p>
-        Vos informations sont accessibles à l&apos;équipe TPUB, dans la limite de ce qui est
+        Vos informations sont accessibles à l&apos;équipe ZELQANE, dans la limite de ce qui est
         nécessaire à ses missions, ainsi qu&apos;aux prestataires techniques qui assurent
         l&apos;hébergement et le fonctionnement du service. Elles ne sont pas vendues. La liste des
         prestataires sera précisée à l&apos;issue de la validation juridique.

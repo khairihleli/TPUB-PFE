@@ -1,4 +1,4 @@
-# TPUB completion contract (binding)
+# ZELQANE completion contract (binding)
 
 Authoritative functional source: `docs/source/cahier-des-charges-v1.3.txt` (below: "CdC").
 Current state: `FrontEnd/docs/api-contract.md` (below: "AC"), which describes the backend as it was at commit `b0fbbc7`.
@@ -25,7 +25,7 @@ Conventions used everywhere in this document:
 - Every enum value is written verbatim (UPPERCASE unless stated otherwise).
 - Dates are `"YYYY-MM-DD"`. Times are `"HH:mm:ss"`, and requests also accept `"HH:mm"`. Instants are ISO-8601 UTC.
 - Money is a TND number.
-- "now" and "today" come from the injected `java.time.Clock`, in zone `tpub.timezone` (default `Africa/Tunis`).
+- "now" and "today" come from the injected `java.time.Clock`, in zone `zelqane.timezone` (default `Africa/Tunis`).
 - `datetime` query params are local date-times with no offset, in that same zone.
 - Paginated endpoints take `page` (0-based, default 0), `size` (default 20, max 100) and `sort` (`field,asc|desc`), and return:
   `PageResponse<T> = { items: T[]; page: number; size: number; totalItems: number; totalPages: number }`.
@@ -282,14 +282,14 @@ Other rules for C:
   - `Campaign owned(Long campaignId)`: the ANNONCEUR owner only; anything else → 404 `CAMPAIGN_NOT_FOUND`.
 - `util/GeoUtils` (A): `static double distanceKm(double lat1, double lng1, double lat2, double lng2)` (haversine, R = 6371.0088) and `static boolean within(double lat, double lng, double cLat, double cLng, double radiusKm)`.
 - `dto/PageResponse<T>` (A): `@Data @Builder` with fields `items, page, size, totalItems, totalPages` and `static <T> PageResponse<T> of(org.springframework.data.domain.Page<T>)`.
-- `config/ClockConfig` (A): `@Bean Clock clock(TpubProperties p)` = `Clock.system(ZoneId.of(p.getTimezone()))`. `TpubProperties.timezone` defaults to `"Africa/Tunis"`.
-- `config/SchedulingConfig` (A): `@EnableScheduling` + `@ConditionalOnProperty(name="tpub.scheduler.enabled", havingValue="true", matchIfMissing=true)`. `application-test.yml` sets `tpub.scheduler.enabled: false`. Every scheduler exposes a public `runOnce()` method that tests call directly.
+- `config/ClockConfig` (A): `@Bean Clock clock(ZelqaneProperties p)` = `Clock.system(ZoneId.of(p.getTimezone()))`. `ZelqaneProperties.timezone` defaults to `"Africa/Tunis"`.
+- `config/SchedulingConfig` (A): `@EnableScheduling` + `@ConditionalOnProperty(name="zelqane.scheduler.enabled", havingValue="true", matchIfMissing=true)`. `application-test.yml` sets `zelqane.scheduler.enabled: false`. Every scheduler exposes a public `runOnce()` method that tests call directly.
 - `service/storage/FileStorageService` (B), `@Service`:
   - `StoredFile store(MultipartFile file, String directory, String extension)`: `directory` is relative (e.g. `"campaigns/12"`) and the filename is `UUID + "." + extension`.
-  - `Path resolve(String relativePath)`, `String publicUrl(String relativePath)` (= `tpub.media.base-url + "/" + relativePath`), `void delete(String relativePath)`, `void deleteDirectory(String relativeDir)`, `String copy(String relativePath, String targetDirectory)`.
+  - `Path resolve(String relativePath)`, `String publicUrl(String relativePath)` (= `zelqane.media.base-url + "/" + relativePath`), `void delete(String relativePath)`, `void deleteDirectory(String relativeDir)`, `String copy(String relativePath, String targetDirectory)`.
   - `static Optional<String> sniffMime(byte[] head)`, detecting by magic bytes: JPEG `FF D8 FF`, PNG `89 50 4E 47`, GIF `47 49 46 38`, WEBP `RIFF....WEBP`, MP4 `ftyp` at offset 4, WebM `1A 45 DF A3`.
   - `record StoredFile(String relativePath, long sizeBytes, String sha256)`.
-  - Every path is normalised and must stay under `tpub.media.upload-dir`; otherwise → 400 `INVALID_PARAMETER`.
+  - Every path is normalised and must stay under `zelqane.media.upload-dir`; otherwise → 400 `INVALID_PARAMETER`.
 - `service/AuditService` (C), `@Service`: `void record(String action, String entityType, Object entityId, String summary, Map<String,Object> details)`.
   - The actor (user, email, role) comes from the SecurityContext and may be null. The IP comes from `RequestContextHolder`: first `X-Forwarded-For` value, else `remoteAddr`.
   - It joins the caller's transaction.
@@ -421,7 +421,7 @@ interface CampaignZoneResponse { id: number; zoneId: number; zoneName: string; l
    - **Duplicate:** same `checksum` as a media file of another campaign → risk +15 MEDIUM « média identique à celui de la campagne #id ».
 4. **OCR** (`service/ai/OcrService` interface):
    - Applies to `IMAGE|BANNER` only.
-   - `TesseractOcrService` is used when `tpub.ai.ocr.mode` is `tesseract`, or `auto` and `tesseract --version` exits 0 within 5 s (probed once, lazily). It runs `tesseract <abs file> stdout -l fra+eng` with a 20 s timeout; on failure it falls back to simulated OCR.
+   - `TesseractOcrService` is used when `zelqane.ai.ocr.mode` is `tesseract`, or `auto` and `tesseract --version` exits 0 within 5 s (probed once, lazily). It runs `tesseract <abs file> stdout -l fra+eng` with a 20 s timeout; on failure it falls back to simulated OCR.
    - `SimulatedOcrService`: strips the extension from the original file name, splits on `[-_. ]+`, drops tokens that are pure digits or match `(?i)img|dsc|image|photo|screenshot|whatsapp`, and keeps the result if it has ≥ 3 letters.
    - `ocrEngine` is `TESSERACT`, `SIMULE` (simulated produced text) or `AUCUN` (no image, or nothing extracted). Videos give `AUCUN`. No new native dependency is added.
 5. **Sector** (`SectorClassifier`):
@@ -502,7 +502,7 @@ Each seeded rule gets a French description. Tests with H2 get no seeds, so the p
 
 | Method & path | Roles | Behaviour |
 |---|---|---|
-| `POST` multipart | ANNONCEUR owner | Parts: `file` (required), `kind` (`BANNER` optional, images only), `durationSeconds` (optional int 1..600, videos). Campaign must be BROUILLON, else 409 `CAMPAIGN_NOT_EDITABLE`. Allowed: `image/jpeg, image/png, image/webp, image/gif` (IMAGE/BANNER, ≤ `tpub.media.max-image-bytes` = 10 MB) and `video/mp4, video/webm` (VIDEO, ≤ `tpub.media.max-video-bytes` = 50 MB). Declared type not allowed → 415 `MEDIA_TYPE_UNSUPPORTED`. Sniffed bytes ≠ declared family → 415 `MEDIA_CONTENT_MISMATCH`. Size → 413 `MEDIA_TOO_LARGE`. More than `tpub.media.max-files-per-campaign` = 5 → 400 `MEDIA_LIMIT_REACHED`. Stored under `campaigns/{campaignId}/`, sha256 checksum, `widthPx`/`heightPx` via `ImageIO` (null if unreadable), `sortOrder` = count. 201 `MediaFileResponse`. |
+| `POST` multipart | ANNONCEUR owner | Parts: `file` (required), `kind` (`BANNER` optional, images only), `durationSeconds` (optional int 1..600, videos). Campaign must be BROUILLON, else 409 `CAMPAIGN_NOT_EDITABLE`. Allowed: `image/jpeg, image/png, image/webp, image/gif` (IMAGE/BANNER, ≤ `zelqane.media.max-image-bytes` = 10 MB) and `video/mp4, video/webm` (VIDEO, ≤ `zelqane.media.max-video-bytes` = 50 MB). Declared type not allowed → 415 `MEDIA_TYPE_UNSUPPORTED`. Sniffed bytes ≠ declared family → 415 `MEDIA_CONTENT_MISMATCH`. Size → 413 `MEDIA_TOO_LARGE`. More than `zelqane.media.max-files-per-campaign` = 5 → 400 `MEDIA_LIMIT_REACHED`. Stored under `campaigns/{campaignId}/`, sha256 checksum, `widthPx`/`heightPx` via `ImageIO` (null if unreadable), `sortOrder` = count. 201 `MediaFileResponse`. |
 | `GET` | readable | `MediaFileResponse[]` by sortOrder, id |
 | `DELETE /{mediaId}` | ANNONCEUR owner, BROUILLON | 204; file deleted; 404 `MEDIA_NOT_FOUND` |
 
@@ -618,7 +618,7 @@ interface ReservationConflict { supportId: number; supportName: string; zoneId: 
 
 **Expiry scheduler** `scheduler/ReservationExpiryScheduler` (cron `0 */5 * * * *`). A `TEMPORAIRE` reservation becomes `EXPIREE` (`expiredAt=now`) when either:
 - `endDate < today`, or
-- its campaign is `BROUILLON|REJECTED_BY_AI` and `createdAt < now − tpub.reservation.temporary-ttl-hours` (default 72).
+- its campaign is `BROUILLON|REJECTED_BY_AI` and `createdAt < now − zelqane.reservation.temporary-ttl-hours` (default 72).
 
 It then recomputes estimatedViews of the affected campaigns.
 
@@ -645,19 +645,19 @@ d = datetime.date, t = datetime.time
      ∧ support inside ≥ 1 campaign_zones circle
      ∧ client.validationStatus ∉ {REJECTED, SUSPENDED} ∧ client.user.isActive
      ∧ C.budget > 0 ∧ C.consumedBudget + unitCost(support) ≤ C.budget
-     ∧ count(diffusion_logs PUBLICITE, campaign C, support, diffusedAt ∈ (datetime − 60 min, datetime]) < tpub.diffusion.max-per-hour (30)
+     ∧ count(diffusion_logs PUBLICITE, campaign C, support, diffusedAt ∈ (datetime − 60 min, datetime]) < zelqane.diffusion.max-per-hour (30)
    one entry per campaign (earliest reservation id)
 4. SCORE(C) = C.priorityScore × 10 + round(0.2 × qualityScore of latest non-preview check, 0 if none)   // 0..120
 5. pool = candidates with score ≥ maxScore − 5; pick the one with the oldest last PUBLICITE diffusion on this support
    (never diffused first); tie → lowest campaign id  (equitable rotation)
 6. → type "publicite": media = first by sortOrder,id; mediaUrl = publicUrl, mediaType;
-     duration = (VIDEO with durationSeconds) ? durationSeconds : tpub.diffusion.default-duration-seconds (10); priority = score
+     duration = (VIDEO with durationSeconds) ? durationSeconds : zelqane.diffusion.default-duration-seconds (10); priority = score
      side effects: C.consumedBudget += unitCost; latest payments_simulation row of C: budgetConsumed += unitCost
-7. else DEFAULT → type "defaut", title tpub.diffusion.default-title ("TPUB — Tukhnanutha"),
-     content tpub.diffusion.default-content ("Espace de diffusion TPUB"), mediaUrl tpub.diffusion.default-media-url (null), duration 10, priority 0
+7. else DEFAULT → type "defaut", title zelqane.diffusion.default-title ("ZELQANE — Tukhnanutha"),
+     content zelqane.diffusion.default-content ("Espace de diffusion ZELQANE"), mediaUrl zelqane.diffusion.default-media-url (null), duration 10, priority 0
 EVERY call inserts diffusion_logs: support, zone, campaign|null, emergency|null, reservation|null, contentType,
   title, mediaUrl, durationSeconds, priority, cost (unitCost for PUBLICITE else 0),
-  diffusedAt = datetime at tpub.timezone as Instant, createdAt = real now
+  diffusedAt = datetime at zelqane.timezone as Instant, createdAt = real now
 ```
 
 ```ts
@@ -681,7 +681,7 @@ interface DiffusionLogResponse { id: number; supportId: number; supportName: str
   clicks: number; interactions: number; diffusedAt: string; createdAt: string }
 ```
 
-### 2.6 Estimation formula (lane B, `service/EstimationService`, constants in `tpub.pricing`)
+### 2.6 Estimation formula (lane B, `service/EstimationService`, constants in `zelqane.pricing`)
 
 ```
 hoursPerDay = minutes(endTime − startTime) / 60        days = endDate − startDate + 1
@@ -770,7 +770,7 @@ Scheduler `scheduler/EmergencyAutoStopScheduler` (cron `0 * * * * *`): active me
 - `GET /api/statistics/export.csv?type=views|dashboard|mine|campaign&from&to&groupBy&campaignId`:
   - Roles: `views`/`dashboard` staff; `mine` ANNONCEUR; `campaign` readable. Anything else → 400 `EXPORT_TYPE_INVALID`.
   - Format: `text/csv; charset=UTF-8` with BOM, separator `;`, decimal comma, French headers (e.g. `Date;Affichages;Clics;Interactions;Coût (TND)`).
-  - Header `Content-Disposition: attachment; filename="tpub-statistiques-<type>-<from>-<to>.csv"`.
+  - Header `Content-Disposition: attachment; filename="zelqane-statistiques-<type>-<from>-<to>.csv"`.
 
 **Interactions / clicks.** Source is `diffusion_interactions`, attributed to the log's `diffusedAt` day.
 
@@ -780,7 +780,7 @@ Scheduler `scheduler/EmergencyAutoStopScheduler` (cron `0 * * * * *`): active me
 - Login and register create a `user_sessions` row: `id` = UUID string, `expiresAt = now + jwt.expiration-ms`, plus IP and user agent.
 - JWT claims: `sub`, `role`, `sid`, `iat`, `exp`.
 - On each request the filter validates signature and expiry (401 `TOKEN_EXPIRED`/`TOKEN_INVALID`), then that the session exists, is not revoked and has not expired (401 `SESSION_REVOKED`), then that the user is active (401 `ACCOUNT_DISABLED`).
-- `lastSeenAt` is updated at most every `tpub.security.session-touch-seconds` (60).
+- `lastSeenAt` is updated at most every `zelqane.security.session-touch-seconds` (60).
 - Revocation reasons: `LOGOUT`, `REVOKED_BY_USER`, `REVOKED_BY_ADMIN`, `PASSWORD_CHANGED`, `ACCOUNT_DISABLED`.
 - Every login attempt writes `login_history`, with `failureReason` among `BAD_CREDENTIALS`, `ACCOUNT_DISABLED`, `UNKNOWN_USER`.
 
@@ -835,9 +835,9 @@ interface AuditLogResponse { id: number; actorUserId: number|null; actorEmail: s
 
 | Lane | Keys |
 |---|---|
-| A | `tpub.timezone` (Africa/Tunis); `tpub.scheduler.enabled` (true; **false in application-test.yml**); `tpub.ai.ocr.mode` (`auto`, `tesseract` or `simulated`), `tpub.ai.ocr.command` (tesseract), `tpub.ai.ocr.languages` (fra+eng) |
-| B | `tpub.media.max-image-bytes` (10485760), `tpub.media.max-video-bytes` (52428800), `tpub.media.max-files-per-campaign` (5); `tpub.reservation.temporary-ttl-hours` (72); `tpub.diffusion.max-per-hour` (30), `tpub.diffusion.default-duration-seconds` (10), `tpub.diffusion.default-title`, `tpub.diffusion.default-content`, `tpub.diffusion.default-media-url` (empty = null); `tpub.pricing.base-views-per-hour.*`, `tpub.pricing.cpm-tnd.*`; multipart 60MB |
-| C | `tpub.security.session-touch-seconds` (60); `tpub.cors.allowed-origins` default |
+| A | `zelqane.timezone` (Africa/Tunis); `zelqane.scheduler.enabled` (true; **false in application-test.yml**); `zelqane.ai.ocr.mode` (`auto`, `tesseract` or `simulated`), `zelqane.ai.ocr.command` (tesseract), `zelqane.ai.ocr.languages` (fra+eng) |
+| B | `zelqane.media.max-image-bytes` (10485760), `zelqane.media.max-video-bytes` (52428800), `zelqane.media.max-files-per-campaign` (5); `zelqane.reservation.temporary-ttl-hours` (72); `zelqane.diffusion.max-per-hour` (30), `zelqane.diffusion.default-duration-seconds` (10), `zelqane.diffusion.default-title`, `zelqane.diffusion.default-content`, `zelqane.diffusion.default-media-url` (empty = null); `zelqane.pricing.base-views-per-hour.*`, `zelqane.pricing.cpm-tnd.*`; multipart 60MB |
+| C | `zelqane.security.session-touch-seconds` (60); `zelqane.cors.allowed-origins` default |
 
 ---
 
@@ -930,7 +930,7 @@ Rules:
 
 ## 4. Backend file ownership
 
-Paths are relative to `BackEnd/src/main/java/com/example/tpubpfe/`. Tests are owned by the owner of the class under test, in `src/test/java/.../<same package>/<Class>Test.java`.
+Paths are relative to `BackEnd/src/main/java/com/example/zelqanepfe/`. Tests are owned by the owner of the class under test, in `src/test/java/.../<same package>/<Class>Test.java`.
 
 **Lane A: campaign lifecycle, AI, admin decision, campaign zones, search**
 - controller: `CampaignController`, `AdminCampaignController`, `AiController`, new `AiRuleController`.
@@ -950,21 +950,21 @@ Paths are relative to `BackEnd/src/main/java/com/example/tpubpfe/`. Tests are ow
 
 **Lane C: security, JWT, filter, exception handler, users/profile/sessions, admin users, audit, roles**
 - `security/**`.
-- config: `config/GlobalExceptionHandler`, `AppConfig`, `CorsConfig`, `DataInitializer`, `OpenApiConfig`, `TpubProperties` (shared, see below).
+- config: `config/GlobalExceptionHandler`, `AppConfig`, `CorsConfig`, `DataInitializer`, `OpenApiConfig`, `ZelqaneProperties` (shared, see below).
 - `exception/**`.
 - controller: `AuthController`, new `MeController`, `AdminUserController`, `AuditController`.
 - service: `AuthService`, `SecurityUtils`, new `MeService`, `SessionService`, `LoginHistoryService`, `AdminUserService`, `AuditService`.
 - model: `User`, `Client`, `ClientValidationStatus`, `Role`, `RoleCode`, new `UserSession`, `SessionRevokeReason`, `LoginHistory`, `LoginFailureReason`, `AuditLog`.
 - repository: `UserRepository`, `ClientRepository`, `RoleRepository`, + new ones for the new entities.
 - dto: `AuthResponse`, `LoginRequest`, `RegisterRequest`, `MessageResponse`, new `Me*`, `PasswordChangeRequest`, `SessionResponse`, `LoginHistoryResponse`, `AdminUser*`, `ClientValidationRequest`, `AuditLogResponse`, `RoleResponse`.
-- other: `db/migration/V5__accounts_security_audit.sql`; `TpubPfeApplicationTests`; `src/test/resources/application-test.yml`.
+- other: `db/migration/V5__accounts_security_audit.sql`; `ZelqanePfeApplicationTests`; `src/test/resources/application-test.yml`.
 
 **Shared files and allowed additive edits:**
 
 | File | Owner | Others may |
 |---|---|---|
 | `security/SecurityConfig` | C | B adds `"/uploads/**"` and `"/api/diffusion/interactions"` to `PUBLIC_ENDPOINTS`. Nobody makes `/api/diffusion/logs` public. |
-| `config/TpubProperties`, `application.yml`, `application-test.yml` | C | Each lane adds its own nested classes/keys (§2.11) without touching others' |
+| `config/ZelqaneProperties`, `application.yml`, `application-test.yml` | C | Each lane adds its own nested classes/keys (§2.11) without touching others' |
 | `dto/CampaignResponse`, `service/CampaignMapper` | A | Nobody else edits. A reads media via `MediaFileRepository.findByCampaignId` and reservations via `ReservationRepository.findByCampaignId` (read-only), and builds `mediaUrl` with `FileStorageService.publicUrl`. |
 | `model/Campaign` | A | B changes only `consumedBudget` precision/scale (16,4) and writes `consumedBudget` in the diffusion engine |
 | `repository/ReservationRepository` | B | A may call existing methods and `save`/`saveAll` for the lifecycle status writes of §2.1 and §2.1 zones, but adds no methods |
@@ -1044,7 +1044,7 @@ General rules:
      | `TERMINATED` | « Terminée » | same |
      | `BLOCKED` | « Refusée » | « Bloquée » |
 
-   - Stepper mapping: Brouillon → Analyse IA → Validation TPUB → Programmée → En diffusion → Terminée.
+   - Stepper mapping: Brouillon → Analyse IA → Validation ZELQANE → Programmée → En diffusion → Terminée.
    - Also: reservation labels incl. `EXPIREE`, availability labels (Disponible, Réservé, Occupé, Maintenance, Hors ligne), urgency labels (Faible, Moyen, Élevé, Critique), sector labels, emergency state labels, audit action labels.
 6. **New `src/lib/time-slots.ts`:** `SLOT_PRESETS` (MATIN, APRES_MIDI, SOIR, JOURNEE with the §2.4 times, and French labels « Matin (7 h – 12 h) », « Après-midi (12 h – 18 h) », « Soir (18 h – 23 h) », « Journée complète (7 h – 23 h) »), `PERSONNALISE`, `presetOf(start,end)`.
    **New `src/lib/geo.ts`:** `distanceKm`, `circlePolygon(lat,lng,radiusKm,steps=64)` → GeoJSON for MapLibre.
@@ -1106,7 +1106,7 @@ General rules:
       - « Soumettre » → `campaignsApi.submit` (single call; loader « Analyse IA en cours… », no client timeout). The result panel follows the returned status (approved / review_required / rejected) with issues and recommendations and a link to the detail page.
 2. **Campaign detail** `/espace/campagnes/[id]` (`campaign-detail.tsx`):
    - Status timeline including Programmée / Terminée (+ `terminationReason` label).
-   - `rejectionReason` alert (« Motif du refus TPUB ») and `adminComment`.
+   - `rejectionReason` alert (« Motif du refus ZELQANE ») and `adminComment`.
    - Full AI report (`aiApi.report`).
    - Media gallery (img / video `controls`), read-only zones map (circles + reserved supports).
    - Reservations (`reservation-list.tsx`) with cancel when `cancellable`.
@@ -1177,7 +1177,7 @@ Nav entries go in `menus.tsx`, with badges in `nav-badges.ts` (moderation queue 
      - columns: company, contact, validation badge, trust level, campaigns, last login;
      - « Valider / Refuser / Suspendre » dialog (status, trustLevel slider, notes);
      - activate/deactivate.
-   - Tab « Équipe TPUB »:
+   - Tab « Équipe ZELQANE »:
      - create staff dialog (email, nom, mot de passe, rôle ADMINISTRATEUR/OPERATEUR/SUPERVISEUR);
      - edit and activate/deactivate (self disabled).
    - User drawer: profile, active sessions + « Révoquer les sessions », login history.
@@ -1217,7 +1217,7 @@ _Lanes append entries here as `YYYY-MM-DD · lane · what changed · why`._
 - 2026-09-16 · A · `config/GlobalExceptionHandler` (owner C) got one additive change: `ApiException` bodies now include `code`, `path` and `errors`, using the new `ApiException(status, code, message[, errors])` constructors. · Without it, none of lane A's stable codes reach clients before lane C lands. C may rewrite the handler freely as long as it keeps this output.
 - 2026-09-16 · A · Created `service/AuditService` with the exact §2.0 signature. For now it resolves the actor and IP, then writes a structured `AUDIT …` line to the application log. · The `audit_logs` table only arrives with V5 (lane C). C replaces the method body with the persistent implementation; callers do not change.
 - 2026-09-16 · A · Created `service/storage/FileStorageService` as specified in §2.0 (store/resolve/publicUrl/delete/deleteDirectory/copy/sniffMime, path confinement → 400 `INVALID_PARAMETER`). · A needs it for duplication, campaign deletion and `mediaUrl`, and it was missing. Lane B owns it from now on.
-- 2026-09-16 · A · `src/test/resources/application-test.yml` (owner C): set `spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect` and added lane A keys (`tpub.scheduler.enabled: false`, `tpub.ai.openai-enabled: false`, `tpub.ai.ocr.mode: simulated`). · The global PostgreSQL dialect double-encodes JSON columns on H2, so reading any `jsonb` field (`detected_issues`, `issues`, …) failed in tests. Production still uses the PostgreSQL dialect.
+- 2026-09-16 · A · `src/test/resources/application-test.yml` (owner C): set `spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect` and added lane A keys (`zelqane.scheduler.enabled: false`, `zelqane.ai.openai-enabled: false`, `zelqane.ai.ocr.mode: simulated`). · The global PostgreSQL dialect double-encodes JSON columns on H2, so reading any `jsonb` field (`detected_issues`, `issues`, …) failed in tests. Production still uses the PostgreSQL dialect.
 - 2026-09-16 · A · `media_files` has no `width_px`/`height_px`/`sort_order` until V4 (lane B). The AI pipeline reads image dimensions from the stored file with `ImageIO` (null when the file is unreadable). "First media" is ordered by `id` for `CampaignResponse.mediaUrl` and `ai_content_checks.media_id`. · The entity fields don't exist yet. Once B adds them, A's `CampaignMapper`/`AiVerificationService` should prefer `sortOrder,id` and the stored dimensions.
 - 2026-09-16 · A · The duplicate-media heuristic (§2.2) ignores campaigns of the **same client**. · Otherwise every campaign created with `/duplicate` + media would be flagged against its own source.
 - 2026-09-16 · A · Scoring details the contract left open: each quality issue label is deducted once, however many media show it. A rule adds its risk points once, even when it matches both the text and the OCR text (both issues are still listed). A zone with a null `radius_km` counts as 3 km for circle resolution, matching the V3 backfill. `supportsInside` counts every support in the circle, whatever its technical status. · These are deterministic, documented choices.
@@ -1257,12 +1257,12 @@ _Lanes append entries here as `YYYY-MM-DD · lane · what changed · why`._
 - 2026-09-17 · C · V5 also rewrites `roles.description`/`roles.permissions` for the four roles so `GET /api/admin/roles` describes the enforced matrix (`campaigns:read`, `diffusion:logs`, `users:write`, …). Permissions are descriptive; enforcement stays in `@PreAuthorize`. V5 was not run against a live PostgreSQL 16 (Docker daemon stopped, no local psql); entities were checked with H2 create-drop only. · Run `flyway migrate` + boot with `ddl-auto: validate` once before the demo.
 - 2026-09-17 · C · Tokens issued before V5 carry no `sid` and are rejected with 401 `SESSION_REVOKED`: every user logs in once after the upgrade. `/api/auth/register` now also opens a session, sets `lastLoginAt` and writes a successful `login_history` row. E-mails are trimmed and lower-cased on register and staff creation; login looks up the exact e-mail, then a unique case-insensitive match. Login checks the password before the account status, so `ACCOUNT_DISABLED` is only revealed with the right password; an unknown e-mail answers `BAD_CREDENTIALS` (journal: `UNKNOWN_USER`) after a dummy BCrypt check. Failed attempts are journaled in their own transaction. · Contract details left open; avoids account enumeration.
 - 2026-09-17 · C · Session details: `DELETE /api/me/sessions/{id}` on an own session that is already revoked/expired → 204 no-op; the current session may be deleted (reason `REVOKED_BY_USER`). `POST /api/me/logout` without a JWT session (e.g. test principals) → 204 no-op. `login-history?limit` is clamped to 1..100 (no 400). `GET /api/admin/users/{id}/sessions` lists active sessions only. A session whose token subject differs from the session's user → 401 `TOKEN_INVALID`. · Deterministic choices.
-- 2026-09-17 · C · Admin users: activate/deactivate return 200 `AdminUserResponse`, are idempotent, and audit every call. Demoting the last active ADMINISTRATEUR through `PUT` also gives 400 `LAST_ADMIN`. `PUT /api/admin/users/{id}` syncs `clients.company_name` like `PUT /api/me`. `GET /api/admin/users` sort whitelist: `createdAt` (default desc), `email`, `nom`, `lastLoginAt`. `GET /api/admin/audit`: `action` is a comma list, `entityType` is upper-cased, `from`/`to` are inclusive local dates in `tpub.timezone`, sort `createdAt,desc`. Audit `details` are sanitised to JSON-safe values (enums/dates → strings). · Details the contract left open.
+- 2026-09-17 · C · Admin users: activate/deactivate return 200 `AdminUserResponse`, are idempotent, and audit every call. Demoting the last active ADMINISTRATEUR through `PUT` also gives 400 `LAST_ADMIN`. `PUT /api/admin/users/{id}` syncs `clients.company_name` like `PUT /api/me`. `GET /api/admin/users` sort whitelist: `createdAt` (default desc), `email`, `nom`, `lastLoginAt`. `GET /api/admin/audit`: `action` is a comma list, `entityType` is upper-cased, `from`/`to` are inclusive local dates in `zelqane.timezone`, sort `createdAt,desc`. Audit `details` are sanitised to JSON-safe values (enums/dates → strings). · Details the contract left open.
 - 2026-09-17 · C · `users.logo_url` stores the storage-relative path (`logos/{userId}/<uuid>.<ext>`); `MeResponse.logoUrl` renders it with `FileStorageService.publicUrl`. Legacy absolute URLs are returned unchanged and never deleted. Logo type is sniffed from bytes (the declared content type is ignored). · Same pattern as campaign media.
 - 2026-09-17 · C · Error handler details: `Size` messages read « Doit contenir au plus {max} caractères. » when min = 0 and « au moins {min} » when max is unbounded (otherwise the contract phrase); an explicit `message` on a constraint wins (e.g. the password-strength rule). Extra code 406 `NOT_ACCEPTABLE`. `MultipartException` → 400 `INVALID_BODY`. An unknown route answers 401 `UNAUTHENTICATED` without a token (authentication runs first) and 404 `NOT_FOUND` with one. Errors raised outside Spring MVC (servlet `/error` dispatch, now permitted by the security chain) keep Spring Boot's default body. · Security chain ordering; documented.
 - 2026-09-17 · Integration · Flyway V3, V4 and V5 were applied on the existing local PostgreSQL 17 database (schema v2 → v5) by `start-local.ps1`, and Spring started with `ddl-auto: validate`. Only warnings: `CREATE INDEX IF NOT EXISTS` skipping the V1 indexes. · Closes the "not run on a real PostgreSQL" gap reported by lanes A, B and C (PostgreSQL 17 portable, not 16).
 - 2026-09-17 · Integration · `FrontEnd/scripts/demo-scenario.mjs` plays CdC §11 in CdC order rather than the wizard order of §1 "Scénario": steps 4–5 use the owner **preview** (`POST /ai/check-content` on the BROUILLON, then `GET /ai/report` + `/ai/issues`), step 6 is the admin reading the report and decision log, steps 7–12 are recommendations, `PUT /zones`, `PUT` campaign with the Soir preset, `/availability`, `/reservations/batch`, `/estimates`, and step 13 is `submit` (official AI run) followed by the admin validation. Each run registers a fresh advertiser and books a future window (20–79 days ahead); step 14 retries `/diffusion/next` up to 12 times so the equitable rotation reaches the new campaign; the urgent message of step 17 is deactivated at the end of step 18. · Shows every CdC step in order with the real endpoints and keeps replays independent of existing data.
-- 2026-09-17 · Integration · `FrontEnd/scripts/seed-demo.mjs` rewritten for v2 (shared helpers in `scripts/lib/tpub-api.mjs`): 10 Porteurs with every technical status and visibility scores, one MAINTENANCE block, 2 extra moderation rules (`comparatif-denigrant`, `remise-excessive`), OPERATEUR and SUPERVISEUR accounts, advertiser validated (trust 80, only from PENDING), 4 campaigns through the real flow (media, circles, batch reservation, submit, validation). Campaigns of the pre-v2 seed that have **no map circle** are replaced once (admin reject when not deletable, then owner delete); "Festival d'été — billetterie" became "Festival de Sfax — billetterie" (objective with « garanti » → REVIEW_REQUIRED). · Pre-v2 campaigns can never be diffused (circle gate) and would have made the local demo inconsistent.
+- 2026-09-17 · Integration · `FrontEnd/scripts/seed-demo.mjs` rewritten for v2 (shared helpers in `scripts/lib/zelqane-api.mjs`): 10 Porteurs with every technical status and visibility scores, one MAINTENANCE block, 2 extra moderation rules (`comparatif-denigrant`, `remise-excessive`), OPERATEUR and SUPERVISEUR accounts, advertiser validated (trust 80, only from PENDING), 4 campaigns through the real flow (media, circles, batch reservation, submit, validation). Campaigns of the pre-v2 seed that have **no map circle** are replaced once (admin reject when not deletable, then owner delete); "Festival d'été — billetterie" became "Festival de Sfax — billetterie" (objective with « garanti » → REVIEW_REQUIRED). · Pre-v2 campaigns can never be diffused (circle gate) and would have made the local demo inconsistent.
 - 2026-09-17 · Integration · Frontend bugs fixed on the real stack: (1) « Cibler cette zone » built a circle with the zone's nominal radius, which can exclude the zone's own Porteurs that the recommendation counted (seed: « Panneau numérique Lac 2 » is 3.06 km from the 2.5 km Lac centre); `circleFromRecommendation(rec, supports)` now widens the radius to cover them (rounded up to 0.5 km, max 20). (2) `useUrlState` merged writes into `window.location`, but the Next router commits asynchronously, so « Examiner » followed by the debounced search commit dropped `?examen=` and closed the review; pending writes are now chained (`baseSearchForWrite`/`nextPendingWrite`). (3) Absolutely positioned sr-only header labels escaped the `overflow-x-auto` table scroller and widened `/admin/moderation` by 118 px at 1440 px; table scrollers are now `relative`. · Found by the Playwright suite and the real-stack browser pass; unit tests added.
 - 2026-09-17 · Integration · e2e specs updated to the v2 screens: `flows.spec` annonceur test drives the 4-step wizard (real upload, recommended zone, batch booking, single `submit` call); `network.spec` expects the explorer link to `etape=4` and the old « onglet Carte » test became « assistant étape 3 : zone recommandée → carte de ciblage → marqueur → réservation explicite »; `screens.spec` `assistant-carte` captures the targeting map of draft 1. `start-local.ps1` waits for `pg_isready` before `psql` and no longer errors on `-Stop` with a stale `postmaster.pid`. `.env.example` lists the new optional variables and the 3000/4200 CORS default. `FrontEnd/docs/api-contract.md` rewritten for v2. · Keeps the mocked suite aligned with the shipped UI and the docs with the backend.
 - 2026-09-17 · Final review · §2.2 heuristics gain one rule: gibberish or unprofessional text (no more than 3 distinct letters, a letter repeated 5 times in a row, or at least half of the Latin words of 4+ letters without a vowel; Arabic words are never judged on vowels) → risk +25 MEDIUM and quality −20 « texte incohérent ou non professionnel » (`TextNormalizer.looksIncoherent`). · CdC §3.5 asks to detect « incohérents ou non professionnels » content. Before this rule, a campaign named « x » with the objective « aaa » was APPROVED; it now gets REVIEW_REQUIRED.

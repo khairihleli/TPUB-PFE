@@ -61,15 +61,15 @@ export const MAP_SOURCE_IDS = {
   clair: "basemap-clair",
   satellite: "basemap-satellite",
   satelliteLabels: "basemap-satellite-labels",
-  zones: "tpub-zones",
-  cones: "tpub-cones",
-  extrusions: "tpub-extrusions",
-  catchment: "tpub-catchment",
-  measure: "tpub-measure",
+  zones: "zelqane-zones",
+  cones: "zelqane-cones",
+  extrusions: "zelqane-extrusions",
+  catchment: "zelqane-catchment",
+  measure: "zelqane-measure",
   /** Round 2 (docs/round2-contract.md §4.8). */
-  polygons: "tpub-polygons",
-  polygonDraft: "tpub-polygon-draft",
-  heatmap: "tpub-heatmap",
+  polygons: "zelqane-polygons",
+  polygonDraft: "zelqane-polygon-draft",
+  heatmap: "zelqane-heatmap",
 } as const;
 
 export const MAP_LAYER_IDS = {
@@ -117,7 +117,7 @@ export function buildMapStyle(
   const canvasAttribution = `${ATTRIBUTION_ESRI_CANVAS}, ${ATTRIBUTION_OSM}`;
   return {
     version: 8,
-    name: "TPUB réseau",
+    name: "ZELQANE réseau",
     sources: {
       [MAP_SOURCE_IDS.sombre]: {
         type: "raster",
@@ -210,7 +210,7 @@ const polygonColor = (): DataDrivenPropertyValueSpecification<string> => [
   MAP_COLORS.zoneLine,
 ];
 
-/** TPUB overlay layers, bottom → top. */
+/** ZELQANE overlay layers, bottom → top. */
 export function overlayLayers(): LayerSpecification[] {
   return [
     {
@@ -532,7 +532,7 @@ export const MAPLIBRE_LOCALE_FR: Record<string, string> = {
   "GeolocateControl.FindMyLocation": "Ma position",
   "GeolocateControl.LocationNotAvailable": "Position indisponible",
   "LogoControl.Title": "Logo MapLibre",
-  "Map.Title": "Carte interactive du réseau TPUB",
+  "Map.Title": "Carte interactive du réseau ZELQANE",
   "Marker.Title": "Repère",
   "NavigationControl.ResetBearing": "Réinitialiser l'orientation",
   "NavigationControl.ZoomIn": "Zoom avant",

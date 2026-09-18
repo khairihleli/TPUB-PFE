@@ -53,11 +53,11 @@ export function resetRateLimit(): void {
 export interface ContactRecord extends ContactRequest {
   id: string;
   receivedAt: string;
-  source: "site-tpub";
+  source: "site-zelqane";
 }
 
 export function buildContactRecord(data: ContactRequest, now: Date = new Date()): ContactRecord {
-  return { id: randomUUID(), receivedAt: now.toISOString(), source: "site-tpub", ...data };
+  return { id: randomUUID(), receivedAt: now.toISOString(), source: "site-zelqane", ...data };
 }
 
 export function contactDataFile(): string {

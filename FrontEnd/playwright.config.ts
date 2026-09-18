@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * E2E against the production build (`npm run build` first). No backend: every browser call
- * to `/api/**` is mocked in e2e/fixtures/api.ts. TPUB_API_URL points at a closed port so
+ * to `/api/**` is mocked in e2e/fixtures/api.ts. ZELQANE_API_URL points at a closed port so
  * anything that slips through fails fast with the bridge's 502.
  */
 const PORT = Number(process.env.E2E_PORT ?? 4310);
@@ -51,6 +51,6 @@ export default defineConfig({
     timeout: 180_000,
     stdout: "ignore",
     stderr: "pipe",
-    env: { TPUB_API_URL: "http://127.0.0.1:9", PORT: String(PORT), HOSTNAME: "127.0.0.1" },
+    env: { ZELQANE_API_URL: "http://127.0.0.1:9", PORT: String(PORT), HOSTNAME: "127.0.0.1" },
   },
 });

@@ -5,12 +5,12 @@ import { SITE } from "@/content/site";
 import { cx } from "@/lib/cx";
 
 export interface LogoProps {
-  /** mark = monogram only · full = monogram + TPUB wordmark (+ subline) · wordmark = text only */
+  /** mark = monogram only · full = monogram + ZELQANE wordmark (+ subline) · wordmark = text only */
   variant?: "mark" | "full" | "wordmark";
   size?: "sm" | "md" | "lg";
   /** Show « Affichage numérique extérieur » under the wordmark. */
   subline?: boolean;
-  /** Wraps in a link (e.g. "/"). The accessible name becomes « TPUB — Accueil ». */
+  /** Wraps in a link (e.g. "/"). The accessible name becomes « ZELQANE — Accueil ». */
   href?: string;
   /** Load eagerly (header). */
   priority?: boolean;
@@ -33,7 +33,7 @@ export function Logo({
     <span className={cx("inline-flex items-center gap-2.5", className)}>
       {variant !== "wordmark" ? (
         <Image
-          src="/brand/tpub.png"
+          src="/brand/zelqane.png"
           alt={variant === "mark" && !href ? SITE.name : ""}
           width={px}
           height={Math.round((px * 296) / 274)}

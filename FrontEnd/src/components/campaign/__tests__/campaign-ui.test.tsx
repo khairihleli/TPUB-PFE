@@ -190,7 +190,7 @@ describe("CampaignList", () => {
     expect(screen.getAllByText("Aucun Porteur réservé")).toHaveLength(1);
     expect(screen.queryByRole("link", { name: /Finaliser.*Mouette/ })).not.toBeInTheDocument();
     // advertiser wording
-    expect(screen.getByText("En examen TPUB")).toBeInTheDocument();
+    expect(screen.getByText("En examen ZELQANE")).toBeInTheDocument();
   });
 });
 
@@ -232,7 +232,7 @@ describe("ReservationList (IA-06, IA-13)", () => {
       "href",
       "/espace/reseau?zone=3",
     );
-    expect(screen.getByText("Bloqué · en attente de décision TPUB")).toBeInTheDocument();
+    expect(screen.getByText("Bloqué · en attente de décision ZELQANE")).toBeInTheDocument();
   });
 
   it("renders plain names when links are off", () => {

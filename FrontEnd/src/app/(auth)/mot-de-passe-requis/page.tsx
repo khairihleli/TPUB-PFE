@@ -6,7 +6,7 @@ import { ForcedPasswordChange } from "@/components/auth/forced-password-change";
 
 export const metadata: Metadata = {
   title: "Définissez un nouveau mot de passe",
-  description: "Un nouveau mot de passe est requis avant d'accéder à votre espace TPUB.",
+  description: "Un nouveau mot de passe est requis avant d'accéder à votre espace ZELQANE.",
 };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;

@@ -2,7 +2,7 @@
 
 /**
  * Local drafts in sessionStorage before a server draft exists (UX-PLAN §7.2, FFA-07).
- * Key: `tpub:draft:v{version}:{userId}:{key}`. Ignored after 24 h. Every storage access is
+ * Key: `zelqane:draft:v{version}:{userId}:{key}`. Ignored after 24 h. Every storage access is
  * wrapped in try/catch: without storage the form simply never shows the restore notice.
  */
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -22,7 +22,7 @@ export function draftStorageKey(
   userId: number | string | null | undefined,
   version = 1,
 ): string {
-  return `tpub:draft:v${version}:${userId ?? "anon"}:${key}`;
+  return `zelqane:draft:v${version}:${userId ?? "anon"}:${key}`;
 }
 
 export function readDraft<T>(

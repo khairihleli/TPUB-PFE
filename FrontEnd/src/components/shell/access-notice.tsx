@@ -12,7 +12,7 @@ export const ACCESS_RESERVED = "reserve";
 export function accessNoticeMessage(variant: "espace" | "admin"): string {
   // The user landed in their own section after trying the other one.
   return variant === "espace"
-    ? "Cette section est réservée à l'équipe TPUB."
+    ? "Cette section est réservée à l'équipe ZELQANE."
     : "Cette section est réservée aux comptes annonceurs.";
 }
 

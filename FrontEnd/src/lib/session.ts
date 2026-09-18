@@ -46,7 +46,7 @@ function baseCookieOptions() {
   };
 }
 
-/** Sets tpub_token + tpub_user on a response. */
+/** Sets zelqane_token + zelqane_user on a response. */
 export function applySessionCookies(res: NextResponse, token: string, user: SessionUser): void {
   const maxAge = sessionMaxAge(user.exp);
   const opts = { ...baseCookieOptions(), maxAge };

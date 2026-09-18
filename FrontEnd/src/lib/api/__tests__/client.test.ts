@@ -145,7 +145,7 @@ describe("apiFetch", () => {
 
   it("distinguishes 502 unreachable from 400 invalid", async () => {
     fetchMock.mockResolvedValueOnce(
-      respond(502, { status: 502, message: "Le service TPUB est momentanément indisponible." }),
+      respond(502, { status: 502, message: "Le service ZELQANE est momentanément indisponible." }),
     );
     const e502 = await apiFetch("/zones").catch((e: unknown) => e);
     expect(presentError(e502).category).toBe("unreachable");

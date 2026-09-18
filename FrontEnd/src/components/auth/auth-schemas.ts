@@ -84,7 +84,7 @@ const COMMON = new Set([
   "qwertyui",
   "00000000",
   "11111111",
-  "tpub1234",
+  "zelqane1234",
 ]);
 
 export function passwordStrength(pw: string): PasswordStrength {

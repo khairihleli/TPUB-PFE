@@ -76,7 +76,7 @@ export const MAP_OPACITY = {
   extrusion: 0.88,
 } as const;
 
-/** Raster basemap paint tuned so the TPUB overlays keep their contrast. */
+/** Raster basemap paint tuned so the ZELQANE overlays keep their contrast. */
 export const BASEMAP_PAINT = {
   dark: { "raster-opacity": 1, "raster-saturation": -0.35, "raster-brightness-max": 0.9 },
   light: { "raster-opacity": 1, "raster-saturation": -0.2, "raster-brightness-max": 1 },

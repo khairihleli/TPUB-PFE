@@ -55,7 +55,7 @@ export function MapPanel({
       tabIndex={-1}
       aria-labelledby={headingId}
       className={cx(
-        "tpub-map-surface pointer-events-auto absolute inset-x-2 bottom-2 z-30 flex max-h-[72%] animate-panel-in flex-col overflow-hidden rounded-t-panel rounded-b-card outline-none md:w-[21rem] md:rounded-card",
+        "zelqane-map-surface pointer-events-auto absolute inset-x-2 bottom-2 z-30 flex max-h-[72%] animate-panel-in flex-col overflow-hidden rounded-t-panel rounded-b-card outline-none md:w-[21rem] md:rounded-card",
         placement === "right" &&
           "md:top-3 md:right-[4.25rem] md:bottom-auto md:left-auto md:max-h-[calc(100%-1.5rem)]",
         placement === "left" &&

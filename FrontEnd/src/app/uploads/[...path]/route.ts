@@ -1,6 +1,6 @@
 /**
  * Same-origin passthrough for campaign media and logos: /uploads/<path>?exp=…&sig=… →
- * ${TPUB_API_URL}/uploads/<path>?exp=…&sig=… (docs/round2-contract.md §3.5).
+ * ${ZELQANE_API_URL}/uploads/<path>?exp=…&sig=… (docs/round2-contract.md §3.5).
  * Round 2: the backend only serves signed, expiring URLs. Only `exp` and `sig` are forwarded
  * (other query params are dropped); a 403 (missing, invalid or expired signature) is passed
  * through as an empty 403 so an <img>/<video> error handler can fetch a fresh URL. Streamed (no

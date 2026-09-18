@@ -138,7 +138,7 @@ export function trailParent(trail: readonly Breadcrumb[]): Breadcrumb | null {
 }
 
 /**
- * `useDocumentTitle(campaign?.name ?? null)` → « Ouverture boutique La Marsa — Campagnes — TPUB ».
+ * `useDocumentTitle(campaign?.name ?? null)` → « Ouverture boutique La Marsa — Campagnes — ZELQANE ».
  * Restores the previous title on unmount.
  */
 export function useDocumentTitle(label: string | null | undefined, section?: string): void {
@@ -148,7 +148,7 @@ export function useDocumentTitle(label: string | null | undefined, section?: str
   useEffect(() => {
     if (!label || typeof document === "undefined") return;
     const previous = document.title;
-    const parts = [label, middle && middle !== label ? middle : null, "TPUB"].filter(Boolean);
+    const parts = [label, middle && middle !== label ? middle : null, "ZELQANE"].filter(Boolean);
     document.title = parts.join(" — ");
     return () => {
       document.title = previous;

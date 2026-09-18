@@ -25,7 +25,7 @@ type Common = { size?: "sm" | "md"; className?: string };
 
 interface CampaignAudienceProps {
   /**
-   * « annonceur » labels (En examen TPUB…) or « staff » precise labels (Avis IA favorable…).
+   * « annonceur » labels (En examen ZELQANE…) or « staff » precise labels (Avis IA favorable…).
    * Default: from the session role (ANNONCEUR → annonceur, staff → staff); « staff » outside a
    * session (public pages).
    */
@@ -46,7 +46,7 @@ export type StatusPillProps = Common &
     | {
         type: "reservation";
         status: ReservationStatus;
-        /** « Bloqué · en attente de décision TPUB » instead of « Bloqué ». */
+        /** « Bloqué · en attente de décision ZELQANE » instead of « Bloqué ». */
         long?: boolean;
       }
     | { type: "support"; status: TechnicalStatus }

@@ -1,5 +1,5 @@
 /**
- * TPUB backend contract types. Names and enum values are verbatim from
+ * ZELQANE backend contract types. Names and enum values are verbatim from
  * docs/completion-contract.md §2 (which supersedes docs/api-contract.md).
  * Lowercase enums from the backend (AiReportResponse.aiStatus, DiffusionResponse.type)
  * are normalised to UPPERCASE by the endpoint layer: see `AiReport` and `Diffusion`.
@@ -345,7 +345,7 @@ export interface MeResponse {
   client: MeClient | null;
   /** Round 2 (§3.3). Optional for pre-round-2 payloads and fixtures: read with `?? false`. */
   twoFactorEnabled?: boolean;
-  /** TOTP mandatory for this role (`tpub.security.totp.required-roles`). */
+  /** TOTP mandatory for this role (`zelqane.security.totp.required-roles`). */
   twoFactorRequired?: boolean;
   mustChangePassword?: boolean;
 }

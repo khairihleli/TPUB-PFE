@@ -10,14 +10,14 @@ const token = `${base64UrlEncode('{"alg":"HS512"}')}.${base64UrlEncode(JSON.stri
 
 function cookieOf(mustChangePassword: boolean) {
   const user = serializeUserCookie({
-    email: "admin@tpub.local",
+    email: "admin@zelqane.local",
     nom: "Admin",
     role: "ADMINISTRATEUR",
     userId: 1,
     exp: future,
     mustChangePassword,
   });
-  return `tpub_token=${token}; tpub_user=${user}`;
+  return `zelqane_token=${token}; zelqane_user=${user}`;
 }
 
 function run(path: string, cookie?: string) {
@@ -49,6 +49,6 @@ describe("middleware — round 2 (§3.7)", () => {
       "http://localhost:3000/connexion?expire=1&next=%2Fadmin",
     );
     expect(run("/connexion/activer-2fa").location).toBe("http://localhost:3000/connexion?expire=1");
-    expect(run("/connexion/verification", "tpub_challenge_actif=1").location).toBeNull();
+    expect(run("/connexion/verification", "zelqane_challenge_actif=1").location).toBeNull();
   });
 });

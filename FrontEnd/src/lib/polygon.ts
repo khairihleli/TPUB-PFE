@@ -36,7 +36,7 @@ export interface PolygonLimits {
   maxRadiusKm: number;
 }
 
-/** `tpub.geo.polygon.*` defaults (§4.1). */
+/** `zelqane.geo.polygon.*` defaults (§4.1). */
 export const DEFAULT_POLYGON_LIMITS: PolygonLimits = {
   maxVertices: 100,
   maxTotalVertices: 200,

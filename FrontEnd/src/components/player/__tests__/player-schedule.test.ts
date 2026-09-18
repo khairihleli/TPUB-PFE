@@ -49,7 +49,7 @@ const urgent: Diffusion = {
 const fallback: Diffusion = {
   type: "DEFAUT",
   campaignId: null,
-  title: "TPUB - Contenu par defaut",
+  title: "ZELQANE - Contenu par defaut",
   mediaUrl: null,
   duration: 10,
   zone: "Tunis Centre",
@@ -149,7 +149,7 @@ describe("isNewUrgence", () => {
 
   it("keys slides by type, campaign and title", () => {
     expect(slideKey(ad)).toBe("PUBLICITE:4:Lancement Café Démo");
-    expect(slideKey(fallback)).toBe("DEFAUT:-:TPUB - Contenu par defaut");
+    expect(slideKey(fallback)).toBe("DEFAUT:-:ZELQANE - Contenu par defaut");
   });
 });
 

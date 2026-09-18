@@ -269,7 +269,7 @@ describe("CampaignDetail", () => {
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/espace/campagnes"));
   });
 
-  it("shows the TPUB refusal reason and reopens a BLOCKED campaign for correction", async () => {
+  it("shows the ZELQANE refusal reason and reopens a BLOCKED campaign for correction", async () => {
     const user = userEvent.setup();
     serve(
       campaign({
@@ -284,7 +284,7 @@ describe("CampaignDetail", () => {
     mocks.reopen.mockResolvedValue(campaign());
     renderWithToasts(<CampaignDetail idParam="7" />);
 
-    expect(await screen.findByText("Motif du refus TPUB")).toBeInTheDocument();
+    expect(await screen.findByText("Motif du refus ZELQANE")).toBeInTheDocument();
     expect(screen.getByText("Visuel illisible sur écran extérieur.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Annuler.*Écran LED Avenue/ })).toBeNull();
 

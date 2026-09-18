@@ -7,7 +7,7 @@ import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata: Metadata = {
   title: "Connexion",
-  description: "Connectez-vous à votre espace annonceur TPUB.",
+  description: "Connectez-vous à votre espace annonceur ZELQANE.",
 };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;

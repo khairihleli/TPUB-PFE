@@ -325,7 +325,7 @@ export function EstimateInvoice({
           ) : null}
           <div className="mt-4 flex flex-col gap-2 rounded-control border border-line bg-overlay-inset p-3 text-[0.8125rem] leading-relaxed text-muted">
             <p>
-              Montants simulés par TPUB à partir des audiences estimées. Le budget consommé suit les
+              Montants simulés par ZELQANE à partir des audiences estimées. Le budget consommé suit les
               diffusions réelles ; rien n&apos;est facturé en ligne.
               {dynamic ? ` ${DYNAMIC_PRICE_NOTE}` : ""}
             </p>

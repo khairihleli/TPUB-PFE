@@ -13,7 +13,7 @@ export interface KeyStroke {
 }
 
 export const SEQUENCE_TIMEOUT_MS = 1200;
-export const SINGLE_KEY_STORAGE_KEY = "tpub:shortcuts:single-key-off";
+export const SINGLE_KEY_STORAGE_KEY = "zelqane:shortcuts:single-key-off";
 
 const KEY_ALIASES: Record<string, string> = {
   esc: "escape",

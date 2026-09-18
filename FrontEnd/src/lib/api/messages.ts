@@ -7,7 +7,7 @@
 import type { CampaignStatus, SubmitIncompleteKey } from "@/lib/api/types";
 import { CAMPAIGN_STATUS, campaignStatusFor } from "@/lib/campaign-status";
 
-export const UNREACHABLE_MESSAGE = "Le service TPUB est momentanément indisponible.";
+export const UNREACHABLE_MESSAGE = "Le service ZELQANE est momentanément indisponible.";
 export const SESSION_EXPIRED_MESSAGE = "Votre session a expiré. Reconnectez-vous pour continuer.";
 export const SERVER_ERROR_MESSAGE =
   "Un problème est survenu de notre côté. Réessayez dans un instant.";
@@ -20,7 +20,7 @@ const CODE_OVERRIDES: Readonly<Record<string, string>> = {
   SESSION_EXPIRED: SESSION_EXPIRED_MESSAGE,
   SESSION_REVOKED: "Votre session a été fermée. Reconnectez-vous pour continuer.",
   BAD_CREDENTIALS: "E-mail ou mot de passe incorrect.",
-  ACCOUNT_DISABLED: "Ce compte est désactivé. Contactez TPUB pour le réactiver.",
+  ACCOUNT_DISABLED: "Ce compte est désactivé. Contactez ZELQANE pour le réactiver.",
   ACCESS_DENIED: "Vous n'avez pas accès à cette action.",
   INTERNAL_ERROR: SERVER_ERROR_MESSAGE,
   BACKEND_UNREACHABLE: UNREACHABLE_MESSAGE,
@@ -46,7 +46,7 @@ export const CODE_MESSAGES: Readonly<Record<string, string>> = {
   // Campaigns (§2.1)
   CAMPAIGN_NOT_FOUND: "Cette campagne est introuvable.",
   CLIENT_NOT_ALLOWED:
-    "Votre compte annonceur ne permet pas cette action pour le moment. Contactez TPUB.",
+    "Votre compte annonceur ne permet pas cette action pour le moment. Contactez ZELQANE.",
   INVALID_PERIOD: "La date de fin doit être après la date de début.",
   INVALID_TIME_RANGE: "L'heure de fin doit être après l'heure de début.",
   START_DATE_IN_PAST: "La date de début ne peut pas être dans le passé.",
@@ -55,7 +55,7 @@ export const CODE_MESSAGES: Readonly<Record<string, string>> = {
   SUBMIT_INCOMPLETE:
     "La campagne est incomplète : complétez les points signalés avant de la soumettre.",
   ZONE_LIMIT_EXCEEDED: "Vous pouvez cibler au maximum 5 zones.",
-  INVALID_ZONE: "Aucune zone TPUB active ne couvre ce point.",
+  INVALID_ZONE: "Aucune zone ZELQANE active ne couvre ce point.",
   CAMPAIGN_NOT_REVIEWABLE:
     "Cette campagne ne peut pas faire l'objet d'une décision dans son état actuel.",
   AI_OVERRIDE_REQUIRED:
@@ -161,9 +161,9 @@ const EXACT: Record<string, string> = {
   "Campaign is not eligible for AI analysis":
     "Cette campagne ne peut pas être analysée dans son état actuel.",
   "Campaign must be AI-analyzed before admin decision":
-    "La campagne doit être analysée par l'IA avant une décision TPUB.",
+    "La campagne doit être analysée par l'IA avant une décision ZELQANE.",
   "AI check required before admin decision":
-    "La campagne doit être analysée par l'IA avant une décision TPUB.",
+    "La campagne doit être analysée par l'IA avant une décision ZELQANE.",
   "Support already reserved for the selected period":
     "Ce Porteur est déjà réservé sur la période choisie. Choisissez d'autres dates ou un autre Porteur.",
   "Invalid email or password": "E-mail ou mot de passe incorrect.",

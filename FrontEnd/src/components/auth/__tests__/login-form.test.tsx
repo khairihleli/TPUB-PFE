@@ -55,10 +55,10 @@ describe("LoginForm", () => {
 
   it("sends staff to /admin when next is an annonceur page", async () => {
     login.mockResolvedValue({
-      user: { email: "admin@tpub.local", nom: "Admin", role: "ADMINISTRATEUR", userId: 2, exp: 1 },
+      user: { email: "admin@zelqane.local", nom: "Admin", role: "ADMINISTRATEUR", userId: 2, exp: 1 },
     });
     render(<LoginForm next="/espace" expired={false} />);
-    fill("admin@tpub.local", "Admin@123");
+    fill("admin@zelqane.local", "Admin@123");
     fireEvent.click(screen.getByRole("button", { name: /Se connecter/ }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/admin"));
   });
@@ -84,7 +84,7 @@ describe("LoginForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /Se connecter/ }));
     expect(
       await screen.findByText(
-        "Ce compte est désactivé. Contactez l'équipe TPUB pour le réactiver.",
+        "Ce compte est désactivé. Contactez l'équipe ZELQANE pour le réactiver.",
       ),
     ).toBeInTheDocument();
   });

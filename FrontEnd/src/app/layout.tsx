@@ -29,8 +29,8 @@ export function generateMetadata(): Metadata {
     },
     description: SITE.description,
     applicationName: SITE.name,
-    authors: [{ name: "TPUB", url: GROUP.tpubPage }],
-    creator: "TPUB",
+    authors: [{ name: "ZELQANE", url: GROUP.zelqanePage }],
+    creator: "ZELQANE",
     publisher: "Groupe Tukhnanutha",
     formatDetection: { telephone: false, email: false, address: false },
     openGraph: {

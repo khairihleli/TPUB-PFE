@@ -39,7 +39,7 @@ export function TunisieBand() {
       <Reveal
         as="ul"
         stagger
-        aria-label="Coordonnées TPUB"
+        aria-label="Coordonnées ZELQANE"
         className="mt-4 grid grid-cols-1 overflow-hidden rounded-card border border-line sm:grid-cols-3"
       >
         <li className="flex items-center gap-3 border-b border-line p-4 sm:border-r sm:border-b-0 sm:p-5">

@@ -1,4 +1,4 @@
-# TPUB Backend: frontend API contract (v2)
+# ZELQANE Backend: frontend API contract (v2)
 
 Source of truth: `../BackEnd` (Spring Boot 4.1, Java 21, Spring Security, JJWT, Jackson 3, PostgreSQL 16+ with Flyway V1–V5).
 This document describes the backend **as implemented** after the completion of the cahier des charges (Flyway V3 lifecycle & AI, V4 media/reservations/diffusion, V5 accounts/security/audit). It was checked against the running stack with `scripts/demo-scenario.mjs`.
@@ -37,8 +37,8 @@ Where the shapes live:
 | Swagger | `/swagger-ui.html`, OpenAPI `/v3/api-docs` (public) |
 | Multipart | 60 MB request limit (per-type limits in §5.3) |
 | Media | stored under `MEDIA_UPLOAD_DIR`, served publicly at `GET /uploads/**` (1-day cache, `Range` supported, 404 JSON when missing) |
-| Time zone | `TPUB_TIMEZONE` (Africa/Tunis) for "today", schedulers and diffusion datetimes |
-| Schedulers (`TPUB_SCHEDULER_ENABLED`) | campaign lifecycle (every minute), emergency auto-stop (every minute), reservation expiry (every 5 min), statistics snapshot (every 15 min) |
+| Time zone | `ZELQANE_TIMEZONE` (Africa/Tunis) for "today", schedulers and diffusion datetimes |
+| Schedulers (`ZELQANE_SCHEDULER_ENABLED`) | campaign lifecycle (every minute), emergency auto-stop (every minute), reservation expiry (every 5 min), statistics snapshot (every 15 min) |
 | CORS | `CORS_ALLOWED_ORIGINS`, default `http://localhost:3000,http://localhost:4200`; exposes `Content-Disposition` (unused behind the bridge) |
 
 All new environment variables are optional and documented in `../.env.example`.
@@ -48,7 +48,7 @@ All new environment variables are optional and documented in `../.env.example`.
 ```
 Browser ─► /api/session/login|register ─► Spring /api/auth/*   (never with Authorization; forwards user agent + client IP)
         ─► /api/session/logout         ─► Spring POST /api/me/logout, then clears the cookies (even if Spring is down)
-        ─► /api/<path>                 ─► Spring /api/<path>   (+ Authorization: Bearer <tpub_token cookie>)
+        ─► /api/<path>                 ─► Spring /api/<path>   (+ Authorization: Bearer <zelqane_token cookie>)
         ─► /uploads/<path>             ─► Spring /uploads/<path> (public, streamed, Range + cache headers, no cookie)
 ```
 
@@ -62,7 +62,7 @@ Browser ─► /api/session/login|register ─► Spring /api/auth/*   (never wi
 `/api/auth/**`, `GET /api/diffusion/next`, `POST /api/diffusion/interactions`, `POST /api/diffusion/heartbeat`, `/uploads/**`, `/actuator/health`, Swagger. An invalid token is ignored on public routes, and the `Authorization` header is skipped entirely on register, every `/api/auth/login*` route and `/api/auth/2fa/*`. Everything else requires a valid token **and** an active session **and** an active account.
 
 Round 2 (docs/round2-contract.md §3):
-- **Player routes** (`/api/diffusion/next`, `/interactions`, `/heartbeat`) are public for Spring Security but require the header `X-TPUB-Device-Key` matching the `supportId` query param: missing → 401 `DEVICE_KEY_REQUIRED`, wrong/revoked → 401 `DEVICE_KEY_INVALID`, no/invalid `supportId` → 400 `MISSING_PARAMETER`, too many calls per support (token bucket 30, refill 120/min) or too many invalid keys per IP (20/min) → 429 `DEVICE_RATE_LIMITED` with `Retry-After`. The Next bridge forwards `x-tpub-device-key`.
+- **Player routes** (`/api/diffusion/next`, `/interactions`, `/heartbeat`) are public for Spring Security but require the header `X-ZELQANE-Device-Key` matching the `supportId` query param: missing → 401 `DEVICE_KEY_REQUIRED`, wrong/revoked → 401 `DEVICE_KEY_INVALID`, no/invalid `supportId` → 400 `MISSING_PARAMETER`, too many calls per support (token bucket 30, refill 120/min) or too many invalid keys per IP (20/min) → 429 `DEVICE_RATE_LIMITED` with `Retry-After`. The Next bridge forwards `x-zelqane-device-key`.
 - **Media** `/uploads/**` is served only with a signed, expiring URL `?exp=&sig=` produced by the API (HMAC-SHA256, 5-minute expiry buckets, TTL `MEDIA_SIGNED_URL_TTL_SECONDS`, default 3600): missing → 403 `MEDIA_SIGNATURE_REQUIRED`, bad → 403 `MEDIA_SIGNATURE_INVALID`, past → 403 `MEDIA_URL_EXPIRED`, traversal → 404 without body. Valid answers carry `Cache-Control: private, max-age=min(exp − now, 3600)`. The Next `/uploads` passthrough forwards only `exp` and `sig` and turns a 403 into an empty 403 (the UI refetches the owning resource once).
 - **Forced password change**: a user with `mustChangePassword` gets 403 `PASSWORD_CHANGE_REQUIRED` on every authenticated route except `GET /api/me`, `POST /api/me/password`, `POST /api/me/logout` and `/api/me/2fa/**`.
 
@@ -172,13 +172,13 @@ Roles: see §1.4. "owner" = the ANNONCEUR who owns the campaign.
 | `POST /2fa/setup` `{ challengeToken }` | mandatory enrolment only → 200 `TotpSetupResponse { secret (Base32), otpauthUri, expiresAt }` |
 | `POST /2fa/enable` `{ challengeToken, code }` | 200 `AuthResponse & { recoveryCodes: string[10] }`, TOTP enabled and session opened; 401 `TOTP_CODE_INVALID` / `CHALLENGE_EXPIRED` |
 
-TOTP: RFC 6238 (HMAC-SHA1, 6 digits, 30 s, window ±1 step, replay of a used step refused), secret stored AES-256-GCM encrypted. Next session routes keep the `challengeToken` in the httpOnly cookie `tpub_challenge` (path `/api/session`): `POST /api/session/login` → `{ status, user }` or `{ status, email, expiresAt }`, then `POST /api/session/login/verify { code }`, `POST /api/session/enrolment/setup`, `POST /api/session/enrolment/enable { code }`; `GET /api/session?actualiser=1` rewrites the user cookie from `GET /api/me`.
+TOTP: RFC 6238 (HMAC-SHA1, 6 digits, 30 s, window ±1 step, replay of a used step refused), secret stored AES-256-GCM encrypted. Next session routes keep the `challengeToken` in the httpOnly cookie `zelqane_challenge` (path `/api/session`): `POST /api/session/login` → `{ status, user }` or `{ status, email, expiresAt }`, then `POST /api/session/login/verify { code }`, `POST /api/session/enrolment/setup`, `POST /api/session/enrolment/enable { code }`; `GET /api/session?actualiser=1` rewrites the user cookie from `GET /api/me`.
 
 ### 5.2 Me `/api/me` (authenticated)
 
 `GET` / `PUT { nom, societe?, telephone?, adresse? }` → `MeResponse` (includes `client { clientId, companyName, validationStatus, trustLevel }` for advertisers) · `POST /password { currentPassword, newPassword }` 204, revokes the other sessions · `POST /logo` multipart `file` (png/jpeg/webp ≤ 2 MB) / `DELETE /logo` → `MeResponse` · `GET /sessions` (active, `current` flag) · `DELETE /sessions/{id}` 204 · `POST /sessions/revoke-others` → `{ revoked }` · `POST /logout` 204 · `GET /login-history?limit=` (1..100, default 20).
 
-`MeResponse` (and `AdminUserResponse`) gain `twoFactorEnabled`, `twoFactorRequired` (role listed in `TPUB_TOTP_REQUIRED_ROLES`) and `mustChangePassword`; `POST /password` clears `mustChangePassword`. `logoUrl` is a signed URL.
+`MeResponse` (and `AdminUserResponse`) gain `twoFactorEnabled`, `twoFactorRequired` (role listed in `ZELQANE_TOTP_REQUIRED_ROLES`) and `mustChangePassword`; `POST /password` clears `mustChangePassword`. `logoUrl` is a signed URL.
 
 Two-factor self-service: `GET /2fa` → `TwoFactorStatusResponse { enabled, enabledAt, required, recoveryCodesRemaining, pendingSetup }` · `POST /2fa/setup` → `TotpSetupResponse` (pending 10 min; 409 `TOTP_ALREADY_ENABLED`) · `POST /2fa/enable { code }` → `{ recoveryCodes }` (409 `TOTP_SETUP_REQUIRED`, 400 `TOTP_CODE_INVALID`; audit `USER_2FA_ENABLED`) · `POST /2fa/disable { password, code }` 204, closes the other sessions (403 `TOTP_REQUIRED_FOR_ROLE`, 400 `INVALID_CURRENT_PASSWORD` / `TOTP_CODE_INVALID`; audit `USER_2FA_DISABLED`) · `POST /2fa/recovery-codes { code }` (TOTP code only) → `{ recoveryCodes }`, previous codes deleted (409 `TOTP_NOT_ENABLED`).
 
@@ -232,7 +232,7 @@ Round 2, lane L1 (`docs/round2-contract.md` §2). Types in `src/lib/api/types-ia
 
 **Report additions.** `AiReportResponse` gains `providerModel` and `calibrationVersion`; `engine` may be `ANTHROPIC` or `LOCAL_ANTHROPIC`; issue `source` may be `ANTHROPIC`. Each `mediaAnalyses[]` item gains `ocrEngine`, `ocrConfidence` (mean word confidence 0..100), `metrics` (`width`, `height`, `aspectRatio`, `aspectFit` `16:9`\|`9:16`\|`CARRE`\|`PROCHE`\|`AUTRE`, `sharpness` = Laplacian variance, `brightness` = mean luma, `contrast` = luma standard deviation, `textCoverage` 0..1, `dominantColors[] { hex, share }`), `frames[]` (`DEBUT`\|`MILIEU`\|`FIN`, `positionSeconds`, `extractedText`, `metrics`), `thumbnailUrl` (built by `publicUrl`, signed once media signing lands), `videoSupported`, `containerDurationSeconds`. Reports stored before round 2 lack these fields: read them through `asReportV2`.
 
-**Analysis.** OCR runs Tess4J (`fra+eng+ara`, tessdata_fast from `BackEnd/scripts/fetch-tessdata.ps1`, path `TPUB_OCR_TESSDATA`); without tessdata or the native library the simulated OCR answers (`ocrEngine: SIMULE`) and the backend logs one WARN. MP4 videos: container duration and size, frames at 0 s, middle and end (OCR + image metrics, worst frame kept), thumbnail `campaigns/{id}/thumbs/{mediaId}.jpg`; WebM → « analyse vidéo impossible (format WebM) ». Pixel thresholds: flou < 50, netteté limitée < 100, trop sombre < 50, surexposé > 215, contraste faible < 30, texte > 35 % (> 50 % adds risk), quasi uniforme ≥ 90 %. Optional vision provider (`TPUB_AI_PROVIDER=openai|anthropic` + key): risk = max, quality = min, most severe status, `engine` `LOCAL_OPENAI`/`LOCAL_ANTHROPIC`; on failure the local result is kept with « (<Fournisseur> indisponible : analyse locale appliquée) ».
+**Analysis.** OCR runs Tess4J (`fra+eng+ara`, tessdata_fast from `BackEnd/scripts/fetch-tessdata.ps1`, path `ZELQANE_OCR_TESSDATA`); without tessdata or the native library the simulated OCR answers (`ocrEngine: SIMULE`) and the backend logs one WARN. MP4 videos: container duration and size, frames at 0 s, middle and end (OCR + image metrics, worst frame kept), thumbnail `campaigns/{id}/thumbs/{mediaId}.jpg`; WebM → « analyse vidéo impossible (format WebM) ». Pixel thresholds: flou < 50, netteté limitée < 100, trop sombre < 50, surexposé > 215, contraste faible < 30, texte > 35 % (> 50 % adds risk), quasi uniforme ≥ 90 %. Optional vision provider (`ZELQANE_AI_PROVIDER=openai|anthropic` + key): risk = max, quality = min, most severe status, `engine` `LOCAL_OPENAI`/`LOCAL_ANTHROPIC`; on failure the local result is kept with « (<Fournisseur> indisponible : analyse locale appliquée) ».
 
 **Learning.** Every effective administrator decision in `ai_decision_logs` becomes one `ai_feedback` row (sync every 10 min and before `/quality` and each recalibration). The nightly recalibration (03:30) moves the review threshold A (21..45) and the reject threshold R (60..85, R ≥ A + 20) by at most 5 per version and each rule weight (0.5..1.5) by at most 0.25; with fewer than 20 decisions A = 31 and R = 70. Rule points = round(severity points × weight). Status: REJECTED on a CRITICAL rule or risk > R; REVIEW_REQUIRED on risk ≥ A, a HIGH rule or quality < 40; else APPROVED.
 
@@ -321,12 +321,12 @@ Conflicts are computed on dates **and** time of day against the support capacity
 
 ### 5.7 Diffusion `/api/diffusion`
 
-`GET /next?supportId&zone?&datetime?` (paired player: header `X-TPUB-Device-Key`, see §1.3; `datetime` local, **honoured only when `tpub.diffusion.simulated-time-enabled` is true** — backend `local` profile — otherwise the server clock is used) → `DiffusionResponse { type, diffusionLogId, supportId, campaignId, emergencyId, title, content, mediaUrl (signed), mediaType, duration, zone, priority, urgencyLevel, datetime, simulatedTime }`. Order:
+`GET /next?supportId&zone?&datetime?` (paired player: header `X-ZELQANE-Device-Key`, see §1.3; `datetime` local, **honoured only when `zelqane.diffusion.simulated-time-enabled` is true** — backend `local` profile — otherwise the server clock is used) → `DiffusionResponse { type, diffusionLogId, supportId, campaignId, emergencyId, title, content, mediaUrl (signed), mediaType, duration, zone, priority, urgencyLevel, datetime, simulatedTime }`. Order:
 
 1. **Urgent message** active at that datetime whose circle contains the support (or whose zone is the support's zone): highest urgency, then priority. Delivered even when the support is not ACTIF.
 2. Support not ACTIF or blocked at that time → default content.
 3. **Campaign** with a CONFIRMEE reservation on the support covering date and time, status `ACTIVE`/`VALIDATED_BY_ADMIN`, admin-validated, AI `APPROVED` (or `REVIEW_REQUIRED` with admin override), support inside one of its circles, client allowed, budget left, and fewer than 30 plays in the last hour. Score = priority × 10 + 20 % of the quality score; among the top scores the least recently played wins (equitable rotation). The unit cost is added to `consumedBudget` and to the payment simulation.
-4. Otherwise default content (`TPUB_DIFFUSION_DEFAULT_*`).
+4. Otherwise default content (`ZELQANE_DIFFUSION_DEFAULT_*`).
 
 Every call writes a `diffusion_logs` row (with cost and the **unsigned** media URL; `GET /logs` re-signs it on read). `POST /interactions?supportId= { diffusionLogId, type: "CLIC" | "INTERACTION" }` (paired player, idempotent, only on `publicite` logs less than 1 h old **of that support**, else 404 `DIFFUSION_LOG_NOT_FOUND`) → 204. `GET /logs` (staff, paged) with click/interaction counts.
 
@@ -345,7 +345,7 @@ Every call writes a `diffusion_logs` row (with cost and the **unsigned** media U
 | `GET /mine?from&to` (advertiser) | totals, status counts, daily series, by campaign / support / zone |
 | `GET /campaigns/{id}?from&to` (readable) | views, clicks, interactions, budget consumed, last diffusion, daily / by support / by zone |
 | `GET /history?from&to` (staff) | daily platform snapshots (updated every 15 min) |
-| `GET /export.csv?type=views|dashboard|mine|campaign&from&to&groupBy&campaignId` | UTF-8 with BOM, `;` separator, decimal comma, French headers, `attachment; filename="tpub-statistiques-<type>-<from>-<to>.csv"` |
+| `GET /export.csv?type=views|dashboard|mine|campaign&from&to&groupBy&campaignId` | UTF-8 with BOM, `;` separator, decimal comma, French headers, `attachment; filename="zelqane-statistiques-<type>-<from>-<to>.csv"` |
 
 ### 5.9b Supervision, approbations, notifications, exports
 
@@ -367,7 +367,7 @@ Every event carries a monotonic `id`; the stream opens with `retry: 5000` and se
 | `GET /supervision/snapshot` | staff | `SupervisionSnapshot`: Porteurs with presence (`EN_LIGNE`/`HORS_LIGNE`/`INCONNU`) and current content, live emergencies, open alerts, last 50 diffusions, counters |
 | `GET /supervision/alerts?status=OUVERTE\|RESOLUE\|TOUTES&type&page&size` | staff | paged `SupervisionAlert` |
 | `POST /supervision/alerts/{id}/acknowledge` | staff | 200 `SupervisionAlert`, 404 `ALERT_NOT_FOUND` |
-| `POST /diffusion/heartbeat?supportId=` | paired player (`X-TPUB-Device-Key`) | body `{ playerVersion?, currentDiffusionLogId?, visible? }` → `{ supportId, state, serverTime, nextHeartbeatSeconds }`, 404 `SUPPORT_NOT_FOUND` |
+| `POST /diffusion/heartbeat?supportId=` | paired player (`X-ZELQANE-Device-Key`) | body `{ playerVersion?, currentDiffusionLogId?, visible? }` → `{ supportId, state, serverTime, nextHeartbeatSeconds }`, 404 `SUPPORT_NOT_FOUND` |
 
 A Porteur without heartbeat for 90 s becomes `HORS_LIGNE`; an ACTIF Porteur then opens a `SUPPORT_OFFLINE` alert (CRITIQUE) and notifies the staff. A zone whose ACTIF Porteurs are booked to capacity opens `ZONE_SATURATION` (AVERTISSEMENT).
 
@@ -383,9 +383,9 @@ A Porteur without heartbeat for 90 s becomes `HORS_LIGNE`; an ACTIF Porteur then
 
 A campaign validation needs two distinct administrators when the policy asks for it **and** the decision is an AI override or the risk score reaches the threshold. An emergency message created while two approvals are required stays `EN_ATTENTE` and is **not** broadcast. `EmergencyResponse` gains `approvalStatus`, `approvalsRequired`, `approvalsRequiredConfigured`, `approvals[]` and `approvedAt`; `state` gains `EN_ATTENTE_APPROBATION` and `REFUSE`, and `GET /emergency?state=` accepts both. The effective number of approvals never exceeds the number of active administrators.
 
-**Notifications.** `GET /notifications?unreadOnly&page&size` · `GET /notifications/unread-count` · `POST /notifications/{id}/read` (204, 404 `NOTIFICATION_NOT_FOUND`) · `POST /notifications/read-all` → `{ updated }`. Types: `EMERGENCY_APPROVAL_REQUIRED`, `EMERGENCY_BROADCAST`, `EMERGENCY_REFUSED`, `CAMPAIGN_APPROVAL_REQUIRED`, `SUPPORT_OFFLINE`, `ZONE_SATURATION`; severities `INFO`, `AVERTISSEMENT`, `CRITIQUE`. E-mail is sent only when SMTP and `TPUB_MAIL_FROM` are configured; nothing is ever simulated.
+**Notifications.** `GET /notifications?unreadOnly&page&size` · `GET /notifications/unread-count` · `POST /notifications/{id}/read` (204, 404 `NOTIFICATION_NOT_FOUND`) · `POST /notifications/read-all` → `{ updated }`. Types: `EMERGENCY_APPROVAL_REQUIRED`, `EMERGENCY_BROADCAST`, `EMERGENCY_REFUSED`, `CAMPAIGN_APPROVAL_REQUIRED`, `SUPPORT_OFFLINE`, `ZONE_SATURATION`; severities `INFO`, `AVERTISSEMENT`, `CRITIQUE`. E-mail is sent only when SMTP and `ZELQANE_MAIL_FROM` are configured; nothing is ever simulated.
 
-**Exports.** `GET /statistics/export.pdf` and `GET /statistics/export.xlsx` take the same query, roles and `EXPORT_TYPE_INVALID` as `export.csv`. The PDF is an A4 report (TPUB header, period, KPI grid, tables with repeated headers, page footer, the campaign visual for `type=campaign`); the workbook holds a « Synthèse » sheet plus one sheet per table, with numeric, money and date cells, and text that could be read as a formula is quote-prefixed.
+**Exports.** `GET /statistics/export.pdf` and `GET /statistics/export.xlsx` take the same query, roles and `EXPORT_TYPE_INVALID` as `export.csv`. The PDF is an A4 report (ZELQANE header, period, KPI grid, tables with repeated headers, page footer, the campaign visual for `type=campaign`); the workbook holds a « Synthèse » sheet plus one sheet per table, with numeric, money and date cells, and text that could be read as a formula is quote-prefixed.
 
 ### 5.10 Admin users & audit (`/api/admin`)
 
@@ -411,7 +411,7 @@ REJECTED_BY_AI | BLOCKED → PUT / PUT zones / reopen → BROUILLON (correct and
 |---|---|
 | Brouillon | `BROUILLON` |
 | Analyse IA | `PENDING_AI_CHECK` |
-| Validation TPUB | `APPROVED_BY_AI`, `REVIEW_REQUIRED` |
+| Validation ZELQANE | `APPROVED_BY_AI`, `REVIEW_REQUIRED` |
 | Programmée | `VALIDATED_BY_ADMIN` |
 | Diffusion | `ACTIVE` |
 | Terminée | `TERMINATED` (reason shown) |
@@ -423,7 +423,7 @@ REJECTED_BY_AI | BLOCKED → PUT / PUT zones / reopen → BROUILLON (correct and
 
 Everything listed in the previous version of this section (no upload, no zone linking, no `/me`, no user management, no per-advertiser statistics, no cancel, no pagination, AI not run on submit, dead-end `REJECTED_BY_AI`, `REVIEW_REQUIRED` never diffused, statuses never set, no ownership checks, date-only conflicts, flat estimates, English messages, empty 403, 400 for a missing report, lenient/strict time formats, stale-token login failure, ignored zone and emergency windows, CORS default) is resolved in the backend. What is left:
 
-1. **No password reset by e-mail.** `/mot-de-passe-oublie` directs the user to TPUB; a logged-in user changes their password in `/espace/profil`.
+1. **No password reset by e-mail.** `/mot-de-passe-oublie` directs the user to ZELQANE; a logged-in user changes their password in `/espace/profil`.
 2. **No refresh token.** Sessions last 24 h, then the user logs in again (the shell warns 10 min before).
 3. **No public network catalogue.** Zones and supports require a token; marketing pages use editorial content only.
 4. **No support deletion endpoint.** Retire a Porteur with `technicalStatus: "INACTIF"`.
@@ -436,7 +436,7 @@ Everything listed in the previous version of this section (no upload, no zone li
 
 ## 8. Demo data and scenario
 
-- Flyway seeds the four roles (V1, permissions described in V5) and the 8 moderation rules (V3); `DataInitializer` creates `admin@tpub.local` only when no active administrator exists, with `TPUB_ADMIN_INITIAL_PASSWORD` or a random password logged once (round 2 §3.2; an existing database keeps its administrator and password).
-- `node scripts/seed-demo.mjs` (idempotent) adds 5 zones, 10 Porteurs covering every technical status with visibility scores, a maintenance block, 2 extra moderation rules, `operateur@tpub.local`, `superviseur@tpub.local`, a second administrator `admin2@tpub.local`, the validated advertiser `demo@annonceur.tn` (passwords from `TPUB_DEMO_PASSWORD` or generated once into the gitignored `scripts/.demo-accounts.json`; the admin password comes from `TPUB_ADMIN_PASSWORD` or `.tpub-local.secrets`), device keys for every ACTIF Porteur (gitignored `scripts/.demo-device-keys.json`, pairing URLs printed; `--rotate-keys`) and four campaigns created through the real flow (one ACTIVE and diffusing today, one APPROVED_BY_AI and one REVIEW_REQUIRED awaiting the admin, one draft).
-- `node scripts/demo-scenario.mjs` runs the 18 steps of cahier des charges §11 over HTTP (fresh advertiser, PNG upload, AI preview and report, admin reads it, point + radius, Soir slot, availability, batch reservation, estimates, submit + admin validation, `/diffusion/next` at a datetime inside the window, click and statistics, urgent message replacing the ad) and prints ✔ / ✘ per step; player calls send `X-TPUB-Device-Key`, `datetime` needs the backend `local` profile, double approvals are completed as `admin2@tpub.local`. Both scripts read `TPUB_API_URL` (default `http://localhost:8080`).
+- Flyway seeds the four roles (V1, permissions described in V5) and the 8 moderation rules (V3); `DataInitializer` creates `admin@zelqane.local` only when no active administrator exists, with `ZELQANE_ADMIN_INITIAL_PASSWORD` or a random password logged once (round 2 §3.2; an existing database keeps its administrator and password).
+- `node scripts/seed-demo.mjs` (idempotent) adds 5 zones, 10 Porteurs covering every technical status with visibility scores, a maintenance block, 2 extra moderation rules, `operateur@zelqane.local`, `superviseur@zelqane.local`, a second administrator `admin2@zelqane.local`, the validated advertiser `demo@annonceur.tn` (passwords from `ZELQANE_DEMO_PASSWORD` or generated once into the gitignored `scripts/.demo-accounts.json`; the admin password comes from `ZELQANE_ADMIN_PASSWORD` or `.zelqane-local.secrets`), device keys for every ACTIF Porteur (gitignored `scripts/.demo-device-keys.json`, pairing URLs printed; `--rotate-keys`) and four campaigns created through the real flow (one ACTIVE and diffusing today, one APPROVED_BY_AI and one REVIEW_REQUIRED awaiting the admin, one draft).
+- `node scripts/demo-scenario.mjs` runs the 18 steps of cahier des charges §11 over HTTP (fresh advertiser, PNG upload, AI preview and report, admin reads it, point + radius, Soir slot, availability, batch reservation, estimates, submit + admin validation, `/diffusion/next` at a datetime inside the window, click and statistics, urgent message replacing the ad) and prints ✔ / ✘ per step; player calls send `X-ZELQANE-Device-Key`, `datetime` needs the backend `local` profile, double approvals are completed as `admin2@zelqane.local`. Both scripts read `ZELQANE_API_URL` (default `http://localhost:8080`).
 - `node scripts/bonus-scenario.mjs` checks the round-2 features over HTTP in 18 points: real Tesseract OCR on a PNG whose text the script draws, local image metrics, video frames from `scripts/fixtures/demo-clip.mp4`, dynamic pricing off-peak vs peak, polygon zone plus `SUPPORT_OUTSIDE_CAMPAIGN_ZONE`, the three heatmaps and `INVALID_RANGE`, `export.pdf` (`%PDF`) and `export.xlsx` (`PK`), `DEVICE_KEY_REQUIRED` / `DEVICE_KEY_INVALID`, simulated time, signed / unsigned / expired media URLs, the SSE supervision stream, a campaign validation answering 202 then 200, an emergency broadcast only after two approvals, the operator notification, TOTP enrolment then a two-step login, and a recalibration that moves a threshold or a rule weight. It is replayable: it looks for a free window before each reservation, then deactivates its emergency and blocks its test campaigns.

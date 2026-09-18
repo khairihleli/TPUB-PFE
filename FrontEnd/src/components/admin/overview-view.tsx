@@ -594,7 +594,7 @@ function DecisionPanel({
   const now = new Date();
 
   return (
-    <SectionCard icon={ShieldCheck} title="À décider par TPUB" id="a-decider">
+    <SectionCard icon={ShieldCheck} title="À décider par ZELQANE" id="a-decider">
       {summary ? (
         <>
           <div className="flex flex-wrap items-end gap-x-6 gap-y-2">

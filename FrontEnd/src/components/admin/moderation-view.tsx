@@ -83,7 +83,7 @@ import { param, useUrlState } from "@/lib/url-state";
 import { useResource } from "@/lib/use-resource";
 
 const DESCRIPTION =
-  "Chaque campagne est analysée par l'IA, puis validée ou refusée par un administrateur TPUB. Rien n'est diffusé sans cette décision.";
+  "Chaque campagne est analysée par l'IA, puis validée ou refusée par un administrateur ZELQANE. Rien n'est diffusé sans cette décision.";
 
 const URL_SCHEMA = {
   onglet: param.enum(MODERATION_TAB_VALUES, "a-traiter", LEGACY_MODERATION_TABS),

@@ -348,7 +348,7 @@ export function RegisterForm({ next }: RegisterFormProps) {
 
       <p className="flex gap-3 rounded-card border border-line bg-surface/40 px-4 py-3.5 text-[0.8125rem] leading-relaxed text-muted">
         <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-brand-blue-text" />
-        Pour protéger l&apos;espace public, chaque compte annonceur est examiné par TPUB avant la
+        Pour protéger l&apos;espace public, chaque compte annonceur est examiné par ZELQANE avant la
         diffusion de sa première campagne.
       </p>
     </form>

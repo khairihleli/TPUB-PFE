@@ -111,7 +111,7 @@ describe("DashboardView — first run", () => {
 
   it("shows a retryable page error only when /mine fails", async () => {
     api.campaignsMine
-      .mockRejectedValueOnce(new ApiError(502, "Le service TPUB est momentanément indisponible."))
+      .mockRejectedValueOnce(new ApiError(502, "Le service ZELQANE est momentanément indisponible."))
       .mockResolvedValueOnce([]);
     render(<DashboardView />);
 
@@ -340,7 +340,7 @@ describe("StatisticsView", () => {
         byZone: [{ zoneId: 1, name: "Tunis Centre", views: 250 }],
       }),
     );
-    api.exportCsv.mockResolvedValue("tpub-statistiques-mine.csv");
+    api.exportCsv.mockResolvedValue("zelqane-statistiques-mine.csv");
     render(
       <ToastProvider>
         <StatisticsView />

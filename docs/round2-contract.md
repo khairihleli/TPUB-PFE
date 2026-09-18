@@ -1,4 +1,4 @@
-# TPUB round-2 contract (binding)
+# ZELQANE round-2 contract (binding)
 
 Base: branch `feat/complete-cahier-des-charges` at `fa9a9d7`. The round-1 contract `docs/completion-contract.md` (below: "R1") stays valid wherever this document says nothing. If the two conflict, **this contract wins**. Changes to this contract go in §11 "Deviations", with the reason.
 
@@ -11,17 +11,17 @@ Owner decisions are fixed (real OCR, video frames, local image analysis, optiona
 | **L3 `carte-prix`** | `r2/carte-prix` | `V8__polygons_pricing.sql` | Polygon zones (campaigns + emergencies) with a drawing tool, heatmaps (admin + wizard), dynamic pricing with a breakdown UI |
 | **L4 `supervision`** | `r2/supervision` | `V9__supervision_approvals_notifications.sql` | SSE realtime supervision + player heartbeat, multi-level approval, notification centre + optional mail, PDF/Excel exports |
 
-Conventions: R1 conventions apply (TypeScript notation for JSON, verbatim enums, dates `YYYY-MM-DD`, times `HH:mm:ss`, instants ISO-8601 UTC, money TND, "now" from the injected `Clock` in `tpub.timezone`, `PageResponse<T>`, error body `{ timestamp, status, code, message, path, errors? }` with a **French `message`**).
+Conventions: R1 conventions apply (TypeScript notation for JSON, verbatim enums, dates `YYYY-MM-DD`, times `HH:mm:ss`, instants ISO-8601 UTC, money TND, "now" from the injected `Clock` in `zelqane.timezone`, `PageResponse<T>`, error body `{ timestamp, status, code, message, path, errors? }` with a **French `message`**).
 
 ---
 
 ## 0. Global rules for every lane
 
 1. **Each branch compiles and passes its tests on its own**, starting from `fa9a9d7`. A lane never imports a class, module or type that only another lane creates, except the verbatim snippets of §1, which any lane may create if they are absent (the content must be byte-identical, so git merges identical additions cleanly).
-2. Backend gate: `./mvnw -q -B test` (JDK from `%LOCALAPPDATA%\tpub-jdk`). Frontend gate: `npx tsc --noEmit -p .`, `npx eslint <changed files>`, `npx vitest run <changed test paths>`. Playwright and `next build` are **not** run by lanes.
+2. Backend gate: `./mvnw -q -B test` (JDK from `%LOCALAPPDATA%\zelqane-jdk`). Frontend gate: `npx tsc --noEmit -p .`, `npx eslint <changed files>`, `npx vitest run <changed test paths>`. Playwright and `next build` are **not** run by lanes.
 3. **Never** start or stop servers, touch ports 5432/8080/3000 or the local database. Flyway migrations are tested with H2 entities only (`ddl-auto: create-drop`). The integration step applies V6–V9 on the real PostgreSQL.
 4. Strict file ownership (§9). Outside the owned set, a lane may only apply the **exact additive hunks** listed in §9.3, at the stated anchors.
-5. New configuration goes into a **new `@ConfigurationProperties` class per lane**, registered by that lane's own `@Configuration` with `@EnableConfigurationProperties`. `TpubProperties` and `TpubPfeApplication` are not edited, except by L2 (owner of `TpubProperties`).
+5. New configuration goes into a **new `@ConfigurationProperties` class per lane**, registered by that lane's own `@Configuration` with `@EnableConfigurationProperties`. `ZelqaneProperties` and `ZelqanePfeApplication` are not edited, except by L2 (owner of `ZelqaneProperties`).
 6. New backend error codes are thrown with `new ApiException(HttpStatus, CODE, frenchMessage[, errors])`. `GlobalExceptionHandler` is not edited, except by the hunks of §9.3. The frontend shows the backend's French `message` for unknown codes (`translateMessage`), so lanes **do not edit `src/lib/api/messages.ts`** (L2 excepted).
 7. New frontend API code goes into per-lane modules, which callers import **by path** (never through `@/lib/api` or `index.ts`): `src/lib/api/types-ia.ts` + `endpoints-ia.ts` (L1), `types-carte.ts` + `endpoints-carte.ts` (L3), `types-supervision.ts` + `endpoints-supervision.ts` (L4). L2 edits the core `types.ts`, `endpoints.ts`, `client.ts`, `errors.ts` and `messages.ts` directly. A lane that needs extra fields on a core DTO declares an extension interface in its own types module, e.g. `interface EmergencyResponseCarte extends EmergencyResponse { targetPolygon?: GeoJsonPolygonal | null }`.
 8. French UI (fr-TN, TND), loading, empty and error states, a11y (keyboard equivalent for every map interaction, `aria-live` for live feeds), and unit tests for every non-trivial rule. No TODO stubs, no invented metrics: every number shown comes from an endpoint of this contract or of R1.
@@ -35,7 +35,7 @@ Conventions: R1 conventions apply (TypeScript notation for JSON, verbatim enums,
 
 ### 1.1 Device key header and player storage
 
-- HTTP header: `X-TPUB-Device-Key` (lower-case `x-tpub-device-key` in the Next bridge).
+- HTTP header: `X-ZELQANE-Device-Key` (lower-case `x-zelqane-device-key` in the Next bridge).
 - Key format: `tpd_` + base64url, no padding, of 32 random bytes → 47 characters, regex `^tpd_[A-Za-z0-9_-]{43}$`.
 - Device-authenticated routes (L2 enforces all three, from its first commit): `GET /api/diffusion/next`, `POST /api/diffusion/interactions`, `POST /api/diffusion/heartbeat`. Each carries the query param `supportId`.
 
@@ -43,12 +43,12 @@ Conventions: R1 conventions apply (TypeScript notation for JSON, verbatim enums,
 
 ```ts
 /** Player device key (docs/round2-contract.md §1.1). Stored per Porteur in localStorage. */
-export const DEVICE_KEY_HEADER = "x-tpub-device-key";
+export const DEVICE_KEY_HEADER = "x-zelqane-device-key";
 
 const KEY_PATTERN = /^tpd_[A-Za-z0-9_-]{43}$/;
 
 function storageKey(supportId: number): string {
-  return `tpub.ecran.cle.${supportId}`;
+  return `zelqane.ecran.cle.${supportId}`;
 }
 
 export function isDeviceKey(value: unknown): value is string {
@@ -86,14 +86,14 @@ export function clearDeviceKey(supportId: number): void {
 **Backend** `security/device/DeviceRequest.java` (verbatim; created by L2, and by L4 if absent):
 
 ```java
-package com.example.tpubpfe.security.device;
+package com.example.zelqanepfe.security.device;
 
 /** Device authentication of player routes (docs/round2-contract.md §1.1). */
 public final class DeviceRequest {
 
-    public static final String HEADER = "X-TPUB-Device-Key";
+    public static final String HEADER = "X-ZELQANE-Device-Key";
     /** Request attribute (Long) set once the key matched the {@code supportId} query parameter. */
-    public static final String SUPPORT_ID_ATTRIBUTE = "tpub.device.supportId";
+    public static final String SUPPORT_ID_ATTRIBUTE = "zelqane.device.supportId";
 
     private DeviceRequest() {
     }
@@ -114,7 +114,7 @@ L4 heartbeat code does **not** depend on L2 beans. After the merge, L2's interce
 `service/realtime/DiffusionRecordedEvent.java` (L4):
 
 ```java
-package com.example.tpubpfe.service.realtime;
+package com.example.zelqanepfe.service.realtime;
 
 /** Published after every diffusion_logs insert; listeners run after commit. */
 public record DiffusionRecordedEvent(Long diffusionLogId, Long supportId) {
@@ -151,33 +151,33 @@ Backend SSE endpoints live under `/api/realtime/**`. In Next, the dedicated rout
 
 ## 2. L1 `ia-ocr`: OCR, frames, image analysis, LLM providers, learning
 
-### 2.1 Configuration: `config/AiAnalysisProperties` (prefix `tpub.analysis`), registered by `config/AiAnalysisConfig`
+### 2.1 Configuration: `config/AiAnalysisProperties` (prefix `zelqane.analysis`), registered by `config/AiAnalysisConfig`
 
 | Key | Env | Default | local | docker | test |
 |---|---|---|---|---|---|
-| `tpub.analysis.ocr.mode` | `TPUB_OCR_MODE` | `auto` (`auto`\|`tess4j`\|`simulated`; legacy `tesseract` = `tess4j`) | auto | auto | **simulated** |
-| `tpub.analysis.ocr.tessdata-path` | `TPUB_OCR_TESSDATA` | `./tessdata` | `<repo>\BackEnd\tessdata` (set by start-local) | `/app/tessdata` | n/a |
-| `tpub.analysis.ocr.languages` | `TPUB_OCR_LANGUAGES` | `fra+eng+ara` | | | |
-| `tpub.analysis.ocr.timeout-seconds` | | `20` | | | |
-| `tpub.analysis.ocr.min-word-confidence` | | `50` | | | |
-| `tpub.analysis.ocr.max-threads` | | `2` | | | |
-| `tpub.analysis.video.timeout-seconds` | | `20` | | | |
-| `tpub.analysis.image.analysis-max-side` | | `512` | | | |
-| `tpub.analysis.provider.type` | `TPUB_AI_PROVIDER` | `local` (`local`\|`openai`\|`anthropic`) | local | local | **local** |
-| `tpub.analysis.provider.timeout-ms` | `TPUB_AI_PROVIDER_TIMEOUT_MS` | `90000` | | | |
-| `tpub.analysis.provider.max-images` | | `4` | | | |
-| `tpub.analysis.provider.openai.api-key` | `OPENAI_API_KEY` | empty | | | |
-| `tpub.analysis.provider.openai.model` | `OPENAI_MODEL` | `gpt-4o-mini` | | | |
-| `tpub.analysis.provider.anthropic.api-key` | `ANTHROPIC_API_KEY` | empty | | | |
-| `tpub.analysis.provider.anthropic.model` | `ANTHROPIC_MODEL` | `claude-opus-5` | | | |
-| `tpub.analysis.learning.enabled` | `TPUB_AI_LEARNING_ENABLED` | `true` | | | (scheduler off through `tpub.scheduler.enabled=false`) |
-| `tpub.analysis.learning.auto-apply` | `TPUB_AI_LEARNING_AUTO_APPLY` | `true` | | | |
-| `tpub.analysis.learning.cron` | | `0 30 3 * * *` | | | |
-| `tpub.analysis.learning.window-days` | | `180` | | | |
-| `tpub.analysis.learning.min-feedback` | | `20` | | | |
-| `tpub.analysis.learning.min-rule-support` | | `3` | | | |
+| `zelqane.analysis.ocr.mode` | `ZELQANE_OCR_MODE` | `auto` (`auto`\|`tess4j`\|`simulated`; legacy `tesseract` = `tess4j`) | auto | auto | **simulated** |
+| `zelqane.analysis.ocr.tessdata-path` | `ZELQANE_OCR_TESSDATA` | `./tessdata` | `<repo>\BackEnd\tessdata` (set by start-local) | `/app/tessdata` | n/a |
+| `zelqane.analysis.ocr.languages` | `ZELQANE_OCR_LANGUAGES` | `fra+eng+ara` | | | |
+| `zelqane.analysis.ocr.timeout-seconds` | | `20` | | | |
+| `zelqane.analysis.ocr.min-word-confidence` | | `50` | | | |
+| `zelqane.analysis.ocr.max-threads` | | `2` | | | |
+| `zelqane.analysis.video.timeout-seconds` | | `20` | | | |
+| `zelqane.analysis.image.analysis-max-side` | | `512` | | | |
+| `zelqane.analysis.provider.type` | `ZELQANE_AI_PROVIDER` | `local` (`local`\|`openai`\|`anthropic`) | local | local | **local** |
+| `zelqane.analysis.provider.timeout-ms` | `ZELQANE_AI_PROVIDER_TIMEOUT_MS` | `90000` | | | |
+| `zelqane.analysis.provider.max-images` | | `4` | | | |
+| `zelqane.analysis.provider.openai.api-key` | `OPENAI_API_KEY` | empty | | | |
+| `zelqane.analysis.provider.openai.model` | `OPENAI_MODEL` | `gpt-4o-mini` | | | |
+| `zelqane.analysis.provider.anthropic.api-key` | `ANTHROPIC_API_KEY` | empty | | | |
+| `zelqane.analysis.provider.anthropic.model` | `ANTHROPIC_MODEL` | `claude-opus-5` | | | |
+| `zelqane.analysis.learning.enabled` | `ZELQANE_AI_LEARNING_ENABLED` | `true` | | | (scheduler off through `zelqane.scheduler.enabled=false`) |
+| `zelqane.analysis.learning.auto-apply` | `ZELQANE_AI_LEARNING_AUTO_APPLY` | `true` | | | |
+| `zelqane.analysis.learning.cron` | | `0 30 3 * * *` | | | |
+| `zelqane.analysis.learning.window-days` | | `180` | | | |
+| `zelqane.analysis.learning.min-feedback` | | `20` | | | |
+| `zelqane.analysis.learning.min-rule-support` | | `3` | | | |
 
-Once L1 lands, `tpub.ai.openai-enabled` and `tpub.ai.ocr.*` (R1) are **legacy and ignored**. Only `tpub.analysis.provider.type` chooses the provider, and that provider also needs its key. If the key is missing, startup logs one WARN « Fournisseur IA `<type>` sans clé : analyse locale seule », and the effective provider is `local`.
+Once L1 lands, `zelqane.ai.openai-enabled` and `zelqane.ai.ocr.*` (R1) are **legacy and ignored**. Only `zelqane.analysis.provider.type` chooses the provider, and that provider also needs its key. If the key is missing, startup logs one WARN « Fournisseur IA `<type>` sans clé : analyse locale seule », and the effective provider is `local`.
 
 ### 2.2 OCR (Tess4J)
 
@@ -220,7 +220,7 @@ If the probe fails:
 - `apt-get install -y --no-install-recommends libtesseract5 curl ca-certificates`.
 - Symlink `libtesseract.so` → `libtesseract.so.5` in `/usr/lib/x86_64-linux-gnu`.
 - A `tessdata` build stage runs `fetch-tessdata.sh /tessdata`; the files are copied to `/app/tessdata`.
-- `ENV TPUB_OCR_TESSDATA=/app/tessdata`.
+- `ENV ZELQANE_OCR_TESSDATA=/app/tessdata`.
 - The non-root user is kept.
 
 ### 2.3 Video frames (JCodec)
@@ -419,7 +419,7 @@ interface AiCalibrationResponse { version: number; active: boolean; trigger: "IN
   feedbackCount: number; falsePositives: number; falseNegatives: number; createdByName: string|null; createdAt: string }
 ```
 
-**Schedulers** (both expose `runOnce()` and run only when `tpub.scheduler.enabled` is true):
+**Schedulers** (both expose `runOnce()` and run only when `zelqane.scheduler.enabled` is true):
 - `scheduler/AiRecalibrationScheduler`: cron `learning.cron`, trigger `PLANIFIE`, requires `learning.enabled`.
 - `scheduler/AiFeedbackSyncScheduler`: cron `0 */10 * * * *`.
 
@@ -518,33 +518,33 @@ The reference thresholds live in `src/components/ai/image-metrics-model.ts` (pur
 
 ## 3. L2 `securite`: 2FA, device keys, secrets, bootstrap, signed media
 
-### 3.1 Configuration (L2 owns `TpubProperties`, `application.yml`, `application-test.yml`)
+### 3.1 Configuration (L2 owns `ZelqaneProperties`, `application.yml`, `application-test.yml`)
 
 | Key | Env | Default | `local` profile | docker | test |
 |---|---|---|---|---|---|
-| `tpub.jwt.secret` | `JWT_SECRET` | **none** (fail fast) | from `.tpub-local.secrets` | required in `.env` | fixed ≥ 32-byte test value |
-| `tpub.media.signing-secret` | `MEDIA_SIGNING_SECRET` | empty → derived | from secrets file | recommended | test value |
-| `tpub.media.signed-url-ttl-seconds` | `MEDIA_SIGNED_URL_TTL_SECONDS` | `3600` | | | |
-| `tpub.security.totp.issuer` | `TPUB_TOTP_ISSUER` | `TPUB` | | | |
-| `tpub.security.totp.encryption-key` | `TOTP_ENCRYPTION_KEY` | empty → derived | from secrets file | recommended | test value |
-| `tpub.security.totp.required-roles` | `TPUB_TOTP_REQUIRED_ROLES` | empty (comma list among ADMINISTRATEUR, SUPERVISEUR, OPERATEUR; ANNONCEUR ignored with WARN) | empty | documented: `ADMINISTRATEUR,SUPERVISEUR,OPERATEUR` | empty |
-| `tpub.security.totp.challenge-ttl-seconds` | | `300` | | | |
-| `tpub.security.totp.max-attempts` | | `5` | | | |
-| `tpub.security.bootstrap-admin.email` | `TPUB_ADMIN_EMAIL` | `admin@tpub.local` | | | |
-| `tpub.security.bootstrap-admin.initial-password` | `TPUB_ADMIN_INITIAL_PASSWORD` | empty → random, logged once | from secrets file | set in `.env` | n/a |
-| `tpub.security.bootstrap-admin.must-change-password` | `TPUB_ADMIN_MUST_CHANGE_PASSWORD` | `true` | `false` (set by start-local) | true | |
-| `tpub.device.rate-limit.per-minute` | | `120` | | | |
-| `tpub.device.rate-limit.burst` | | `30` | | | |
-| `tpub.device.invalid-key-per-minute-per-ip` | | `20` | | | |
-| `tpub.device.touch-seconds` | | `60` | | | |
-| `tpub.diffusion.simulated-time-enabled` | `TPUB_SIMULATED_TIME_ENABLED` | `false` | **`true`** | false | true |
+| `zelqane.jwt.secret` | `JWT_SECRET` | **none** (fail fast) | from `.zelqane-local.secrets` | required in `.env` | fixed ≥ 32-byte test value |
+| `zelqane.media.signing-secret` | `MEDIA_SIGNING_SECRET` | empty → derived | from secrets file | recommended | test value |
+| `zelqane.media.signed-url-ttl-seconds` | `MEDIA_SIGNED_URL_TTL_SECONDS` | `3600` | | | |
+| `zelqane.security.totp.issuer` | `ZELQANE_TOTP_ISSUER` | `ZELQANE` | | | |
+| `zelqane.security.totp.encryption-key` | `TOTP_ENCRYPTION_KEY` | empty → derived | from secrets file | recommended | test value |
+| `zelqane.security.totp.required-roles` | `ZELQANE_TOTP_REQUIRED_ROLES` | empty (comma list among ADMINISTRATEUR, SUPERVISEUR, OPERATEUR; ANNONCEUR ignored with WARN) | empty | documented: `ADMINISTRATEUR,SUPERVISEUR,OPERATEUR` | empty |
+| `zelqane.security.totp.challenge-ttl-seconds` | | `300` | | | |
+| `zelqane.security.totp.max-attempts` | | `5` | | | |
+| `zelqane.security.bootstrap-admin.email` | `ZELQANE_ADMIN_EMAIL` | `admin@zelqane.local` | | | |
+| `zelqane.security.bootstrap-admin.initial-password` | `ZELQANE_ADMIN_INITIAL_PASSWORD` | empty → random, logged once | from secrets file | set in `.env` | n/a |
+| `zelqane.security.bootstrap-admin.must-change-password` | `ZELQANE_ADMIN_MUST_CHANGE_PASSWORD` | `true` | `false` (set by start-local) | true | |
+| `zelqane.device.rate-limit.per-minute` | | `120` | | | |
+| `zelqane.device.rate-limit.burst` | | `30` | | | |
+| `zelqane.device.invalid-key-per-minute-per-ip` | | `20` | | | |
+| `zelqane.device.touch-seconds` | | `60` | | | |
+| `zelqane.diffusion.simulated-time-enabled` | `ZELQANE_SIMULATED_TIME_ENABLED` | `false` | **`true`** | false | true |
 
-`application.yml` gains a `local` profile document (`spring.config.activate.on-profile: local`) with `tpub.diffusion.simulated-time-enabled: true` and INFO logging. `start-local.ps1` already sets `SPRING_PROFILES_ACTIVE=local`.
+`application.yml` gains a `local` profile document (`spring.config.activate.on-profile: local`) with `zelqane.diffusion.simulated-time-enabled: true` and INFO logging. `start-local.ps1` already sets `SPRING_PROFILES_ACTIVE=local`.
 
 **Secret rules** (`config/SecretsValidator`, runs at startup, not in the test profile):
-- Missing `tpub.jwt.secret`, or fewer than 32 UTF-8 bytes → `IllegalStateException` « JWT_SECRET manquant ou trop court (32 octets minimum). Définissez la variable d'environnement JWT_SECRET (voir .env.example). »
+- Missing `zelqane.jwt.secret`, or fewer than 32 UTF-8 bytes → `IllegalStateException` « JWT_SECRET manquant ou trop court (32 octets minimum). Définissez la variable d'environnement JWT_SECRET (voir .env.example). »
 - A secret whose SHA-256 matches one of the two historical values (the `change_me_jwt_secret_min_32_characters_long` placeholder and the 64-hex value removed from `.env.example`/`start-local.ps1`) → `IllegalStateException` « JWT_SECRET compromis (valeur publiée dans l'historique git) : générez-en un nouveau. » Only the hashes are embedded.
-- Derived keys (when the dedicated secret is empty or < 32 bytes): `HMAC-SHA256(jwtSecret, "tpub-media-signing-v1")` and `HMAC-SHA256(jwtSecret, "tpub-totp-v1")`, with one INFO line each. Docs warn that rotating `JWT_SECRET` then invalidates media URLs (harmless) and **all TOTP secrets** (users must re-enrol). Setting `TOTP_ENCRYPTION_KEY` avoids this.
+- Derived keys (when the dedicated secret is empty or < 32 bytes): `HMAC-SHA256(jwtSecret, "zelqane-media-signing-v1")` and `HMAC-SHA256(jwtSecret, "zelqane-totp-v1")`, with one INFO line each. Docs warn that rotating `JWT_SECRET` then invalidates media URLs (harmless) and **all TOTP secrets** (users must re-enrol). Setting `TOTP_ENCRYPTION_KEY` avoids this.
 - Docs (`README` + `.env.example` header): the previously committed JWT secret is in git history and must be considered **compromised**. Every deployment must set a new one.
 
 ### 3.2 Admin bootstrap and forced password change
@@ -661,7 +661,7 @@ Buckets live in memory (`ConcurrentHashMap`). Entries idle for more than 10 minu
 
 **Route changes:**
 - `POST /api/diffusion/interactions?supportId=` (the query param is now required). `InteractionService` checks `log.support.id == supportId`, else 404 `DIFFUSION_LOG_NOT_FOUND`.
-- `GET /api/diffusion/next`: `DiffusionController` passes `datetime` to the service **only when** `tpub.diffusion.simulated-time-enabled` is true, otherwise `null` (server clock). `DiffusionResponse` gains `simulatedTime: boolean` (true when a provided datetime was used).
+- `GET /api/diffusion/next`: `DiffusionController` passes `datetime` to the service **only when** `zelqane.diffusion.simulated-time-enabled` is true, otherwise `null` (server clock). `DiffusionResponse` gains `simulatedTime: boolean` (true when a provided datetime was used).
 - `SecurityConfig.PUBLIC_ENDPOINTS` gains `"/api/diffusion/heartbeat"` (L2 adds it for L4). Device routes stay `permitAll` at the Spring Security level; the interceptor protects them. `"/uploads/**"` also stays in `PUBLIC_ENDPOINTS`: the signature filter (§3.5) controls access, not a JWT, because `<img>`/`<video>` requests carry no bearer token.
 
 ### 3.5 Signed media URLs
@@ -669,7 +669,7 @@ Buckets live in memory (`ConcurrentHashMap`). Entries idle for more than 10 minu
 **Format** (`service/storage/MediaUrlSigner`, pure, unit-tested):
 
 ```
-url  = {tpub.media.base-url}/{relativePath}?exp={exp}&sig={sig}
+url  = {zelqane.media.base-url}/{relativePath}?exp={exp}&sig={sig}
 exp  = ceil((nowEpochSeconds + ttl) / 300) × 300                       // 5-minute buckets keep URLs cacheable
 sig  = base64url_nopad( HMAC-SHA256(signingKey, "v1\n" + relativePath + "\n" + exp) )
 relativePath = normalised stored path: '\' → '/', leading '/' removed, no '.' or '..' segment,
@@ -771,21 +771,21 @@ CREATE UNIQUE INDEX uq_support_device_keys_active ON support_device_keys (suppor
 - `src/lib/session-cookie.ts`: `SessionUser` gains `mustChangePassword: boolean` and `twoFactorEnabled: boolean`. `isAuthResponse` requires `status === "AUTHENTICATED"` (or an absent `status`, for pre-round-2 backends).
 - `src/lib/session-auth.ts` / `/api/session/login`:
   - `AUTHENTICATED` → cookies + `{ status: "AUTHENTICATED", user }`.
-  - `TOTP_REQUIRED` / `TOTP_ENROLMENT_REQUIRED` → sets the httpOnly cookie `tpub_challenge` (SameSite=Lax, path `/api/session`, max-age = seconds until `expiresAt`, Secure in production). Returns `{ status, email, expiresAt }`. The token never reaches JavaScript.
+  - `TOTP_REQUIRED` / `TOTP_ENROLMENT_REQUIRED` → sets the httpOnly cookie `zelqane_challenge` (SameSite=Lax, path `/api/session`, max-age = seconds until `expiresAt`, Secure in production). Returns `{ status, email, expiresAt }`. The token never reaches JavaScript.
 - New Next routes (same-origin check, forward UA/XFF):
   - `POST /api/session/login/verify` `{ code }`
   - `POST /api/session/enrolment/setup` → `{ secret, otpauthUri, expiresAt }`
   - `POST /api/session/enrolment/enable` `{ code }` → `{ status: "AUTHENTICATED", user, recoveryCodes }`
-  - All three read `tpub_challenge` and clear it on success or `CHALLENGE_EXPIRED`.
+  - All three read `zelqane_challenge` and clear it on success or `CHALLENGE_EXPIRED`.
   - `/api/session/register` is unchanged.
 - `src/middleware.ts`:
   - A session with `mustChangePassword` visiting `/espace/**` or `/admin/**` → redirect to `/mot-de-passe-requis`.
   - `/mot-de-passe-requis` without a session → `/connexion`.
-  - `/connexion/verification` and `/connexion/activer-2fa` without a `tpub_challenge` cookie → `/connexion?expire=1`.
+  - `/connexion/verification` and `/connexion/activer-2fa` without a `zelqane_challenge` cookie → `/connexion?expire=1`.
 - `src/lib/api/client.ts`:
   - A 403 with code `PASSWORD_CHANGE_REQUIRED` → `window.location.assign("/mot-de-passe-requis")` (once).
   - `ApiFetchOptions` gains `headers?: Record<string, string>`.
-- Bridge `src/app/api/[...path]/route.ts`: `x-tpub-device-key` added to `FORWARDED_REQUEST_HEADERS`.
+- Bridge `src/app/api/[...path]/route.ts`: `x-zelqane-device-key` added to `FORWARDED_REQUEST_HEADERS`.
 - `endpoints.ts`:
   - `sessionApi.{ login → SessionLoginResult, verifyTotp, enrolmentSetup, enrolmentEnable }`
   - `meApi.{ twoFactor, twoFactorSetup, twoFactorEnable, twoFactorDisable, regenerateRecoveryCodes }`
@@ -820,7 +820,7 @@ CREATE UNIQUE INDEX uq_support_device_keys_active ON support_device_keys (suppor
 - Player (`/ecran/[supportId]`):
   - `page.tsx` passes `cle` to `PlayerScreen`.
   - `PlayerScreen` on mount: if `cle` is valid → `storeDeviceKey`, then `history.replaceState` removes `cle` (and keeps `datetime`). Reads the key with `readDeviceKey`.
-  - No key → `UnpairedSlide` « Écran non appairé — demandez à un administrateur TPUB de générer le lien d'appairage (Réseau › Porteur › Appairer l'écran) », no polling.
+  - No key → `UnpairedSlide` « Écran non appairé — demandez à un administrateur ZELQANE de générer le lien d'appairage (Réseau › Porteur › Appairer l'écran) », no polling.
   - `DEVICE_KEY_INVALID` → `clearDeviceKey`, then `UnpairedSlide`.
   - `DEVICE_RATE_LIMITED` → back off using `Retry-After` (planAfterError).
   - When `?datetime` was requested and the response has `simulatedTime === false`, the overlay shows « Heure simulée ignorée : le serveur utilise son horloge ».
@@ -829,26 +829,26 @@ CREATE UNIQUE INDEX uq_support_device_keys_active ON support_device_keys (suppor
 
 ## 4. L3 `carte-prix`: polygons, heatmaps, dynamic pricing
 
-### 4.1 Configuration: `config/GeoPricingProperties` (prefixes `tpub.geo` and `tpub.pricing.dynamic`; one class per prefix, registered by `config/GeoPricingConfig`)
+### 4.1 Configuration: `config/GeoPricingProperties` (prefixes `zelqane.geo` and `zelqane.pricing.dynamic`; one class per prefix, registered by `config/GeoPricingConfig`)
 
 | Key | Default |
 |---|---|
-| `tpub.geo.polygon.max-vertices` | `100` (per ring, closing point excluded) |
-| `tpub.geo.polygon.max-total-vertices` | `200` |
-| `tpub.geo.polygon.max-parts` | `5` (MultiPolygon) |
-| `tpub.geo.polygon.max-holes` | `5` (per polygon) |
-| `tpub.geo.polygon.min-area-km2` | `0.01` |
-| `tpub.geo.polygon.max-area-km2` | `2000` |
-| `tpub.geo.polygon.max-radius-km` | `50` (circumscribed radius from the centroid) |
-| `tpub.geo.heatmap.max-range-days` | `366` |
-| `tpub.pricing.dynamic.enabled` (`TPUB_DYNAMIC_PRICING_ENABLED`) | `true` |
-| `tpub.pricing.dynamic.min-multiplier` | `0.70` |
-| `tpub.pricing.dynamic.max-multiplier` | `1.60` |
-| `tpub.pricing.dynamic.hour-bands` | `[{start: "00:00", end: "07:00", multiplier: 0.70, label: "Nuit"}, {start: "07:00", end: "10:00", multiplier: 1.15, label: "Pointe du matin"}, {start: "10:00", end: "16:00", multiplier: 1.00, label: "Journée"}, {start: "16:00", end: "20:00", multiplier: 1.25, label: "Pointe du soir"}, {start: "20:00", end: "24:00", multiplier: 0.90, label: "Soirée"}]` (must cover 00:00–24:00 without overlap, else startup fails) |
-| `tpub.pricing.dynamic.day-multipliers` | `MONDAY 1.00, TUESDAY 1.00, WEDNESDAY 1.00, THURSDAY 1.00, FRIDAY 1.05, SATURDAY 1.15, SUNDAY 0.90` |
-| `tpub.pricing.dynamic.demand-weight` | `0.30` |
-| `tpub.pricing.dynamic.demand-support-share` | `0.60` (zone share = 1 − 0.60) |
-| `tpub.pricing.dynamic.scarcity-weight` | `0.20` |
+| `zelqane.geo.polygon.max-vertices` | `100` (per ring, closing point excluded) |
+| `zelqane.geo.polygon.max-total-vertices` | `200` |
+| `zelqane.geo.polygon.max-parts` | `5` (MultiPolygon) |
+| `zelqane.geo.polygon.max-holes` | `5` (per polygon) |
+| `zelqane.geo.polygon.min-area-km2` | `0.01` |
+| `zelqane.geo.polygon.max-area-km2` | `2000` |
+| `zelqane.geo.polygon.max-radius-km` | `50` (circumscribed radius from the centroid) |
+| `zelqane.geo.heatmap.max-range-days` | `366` |
+| `zelqane.pricing.dynamic.enabled` (`ZELQANE_DYNAMIC_PRICING_ENABLED`) | `true` |
+| `zelqane.pricing.dynamic.min-multiplier` | `0.70` |
+| `zelqane.pricing.dynamic.max-multiplier` | `1.60` |
+| `zelqane.pricing.dynamic.hour-bands` | `[{start: "00:00", end: "07:00", multiplier: 0.70, label: "Nuit"}, {start: "07:00", end: "10:00", multiplier: 1.15, label: "Pointe du matin"}, {start: "10:00", end: "16:00", multiplier: 1.00, label: "Journée"}, {start: "16:00", end: "20:00", multiplier: 1.25, label: "Pointe du soir"}, {start: "20:00", end: "24:00", multiplier: 0.90, label: "Soirée"}]` (must cover 00:00–24:00 without overlap, else startup fails) |
+| `zelqane.pricing.dynamic.day-multipliers` | `MONDAY 1.00, TUESDAY 1.00, WEDNESDAY 1.00, THURSDAY 1.00, FRIDAY 1.05, SATURDAY 1.15, SUNDAY 0.90` |
+| `zelqane.pricing.dynamic.demand-weight` | `0.30` |
+| `zelqane.pricing.dynamic.demand-support-share` | `0.60` (zone share = 1 − 0.60) |
+| `zelqane.pricing.dynamic.scarcity-weight` | `0.20` |
 
 No profile overrides. The test profile uses the defaults.
 
@@ -1014,7 +1014,7 @@ UPDATE reservations SET base_cost = estimated_cost WHERE base_cost IS NULL;
   - Totals: « Coût de base » and « Coût estimé ».
   - `step-zones` availability rows show the multiplier chip when ≠ 1.
 - `campaign-zones-map.tsx`: renders polygons.
-- `emergency-form-dialog.tsx` / `emergency-schema.ts`: target « Zone TPUB / Cercle / Polygone »; polygon drawn with `zone-map-picker.tsx` (extended with `polygonDraft`).
+- `emergency-form-dialog.tsx` / `emergency-schema.ts`: target « Zone ZELQANE / Cercle / Polygone »; polygon drawn with `zone-map-picker.tsx` (extended with `polygonDraft`).
 - Page `/admin/carte-chaleur` (`src/app/admin/carte-chaleur/page.tsx`, `src/components/admin/heatmap-view.tsx`, `heatmap-model.ts`):
   - Tabs « Diffusions » and « Demande »; period picker; content-type filter (Diffusions); zone filter.
   - Full `NetworkMap` with heatmap and legend.
@@ -1026,28 +1026,28 @@ UPDATE reservations SET base_cost = estimated_cost WHERE base_cost IS NULL;
 
 ## 5. L4 `supervision`: SSE, heartbeat, approvals, notifications, exports
 
-### 5.1 Configuration: `config/SupervisionProperties` (prefixes `tpub.supervision`, `tpub.approval`, `tpub.notifications`; one class per prefix, registered by `config/SupervisionConfig`)
+### 5.1 Configuration: `config/SupervisionProperties` (prefixes `zelqane.supervision`, `zelqane.approval`, `zelqane.notifications`; one class per prefix, registered by `config/SupervisionConfig`)
 
 | Key | Env | Default |
 |---|---|---|
-| `tpub.supervision.heartbeat-interval-seconds` | | `30` |
-| `tpub.supervision.offline-timeout-seconds` | | `90` |
-| `tpub.supervision.presence-check-cron` | | `*/15 * * * * *` |
-| `tpub.supervision.saturation-threshold` | | `0.90` |
-| `tpub.supervision.saturation-cron` | | `0 */5 * * * *` |
-| `tpub.supervision.emitter-timeout-minutes` | | `30` |
-| `tpub.supervision.keepalive-seconds` | | `20` |
-| `tpub.supervision.max-emitters` | | `200` |
-| `tpub.approval.emergency-required-approvals` | `TPUB_EMERGENCY_APPROVALS` | `2` (`1` disables) |
-| `tpub.approval.campaign-required-approvals` | `TPUB_CAMPAIGN_APPROVALS` | `2` (`1` disables) |
-| `tpub.approval.campaign-risk-threshold` | `TPUB_CAMPAIGN_APPROVAL_RISK` | `50` |
-| `tpub.notifications.retention-days` | | `90` |
-| `tpub.notifications.mail.from` | `TPUB_MAIL_FROM` | empty (mail disabled) |
-| `tpub.notifications.mail.min-severity` | | `CRITIQUE` |
-| `tpub.notifications.mail.base-url` | `TPUB_PUBLIC_URL` | `http://localhost:3000` (links in mails) |
+| `zelqane.supervision.heartbeat-interval-seconds` | | `30` |
+| `zelqane.supervision.offline-timeout-seconds` | | `90` |
+| `zelqane.supervision.presence-check-cron` | | `*/15 * * * * *` |
+| `zelqane.supervision.saturation-threshold` | | `0.90` |
+| `zelqane.supervision.saturation-cron` | | `0 */5 * * * *` |
+| `zelqane.supervision.emitter-timeout-minutes` | | `30` |
+| `zelqane.supervision.keepalive-seconds` | | `20` |
+| `zelqane.supervision.max-emitters` | | `200` |
+| `zelqane.approval.emergency-required-approvals` | `ZELQANE_EMERGENCY_APPROVALS` | `2` (`1` disables) |
+| `zelqane.approval.campaign-required-approvals` | `ZELQANE_CAMPAIGN_APPROVALS` | `2` (`1` disables) |
+| `zelqane.approval.campaign-risk-threshold` | `ZELQANE_CAMPAIGN_APPROVAL_RISK` | `50` |
+| `zelqane.notifications.retention-days` | | `90` |
+| `zelqane.notifications.mail.from` | `ZELQANE_MAIL_FROM` | empty (mail disabled) |
+| `zelqane.notifications.mail.min-severity` | | `CRITIQUE` |
+| `zelqane.notifications.mail.base-url` | `ZELQANE_PUBLIC_URL` | `http://localhost:3000` (links in mails) |
 
 - **Mail** is enabled only when a `JavaMailSender` bean exists (Spring Boot creates one when `SPRING_MAIL_HOST` is set, together with `SPRING_MAIL_PORT`, `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD`) **and** `mail.from` is non-blank. Otherwise nothing is sent and nothing is simulated. `application.yml` gets **no** `spring.mail.host` default. Maven: `spring-boot-starter-mail`.
-- **Test profile:** defaults. Schedulers are off through `tpub.scheduler.enabled=false`.
+- **Test profile:** defaults. Schedulers are off through `zelqane.scheduler.enabled=false`.
 
 ### 5.2 Player heartbeat and presence
 
@@ -1211,7 +1211,7 @@ interface NotificationResponse { id: number; type: string; severity: "INFO"|"AVE
 ```
 
 **Delivery:**
-- Mail, when enabled: severity ≥ `min-severity`, sent asynchronously after commit to the recipient's e-mail. Subject « [TPUB] <title> », plain text + link `base-url + link`. `emailed_at` is set on success; a failure logs a WARN and never fails the transaction.
+- Mail, when enabled: severity ≥ `min-severity`, sent asynchronously after commit to the recipient's e-mail. Subject « [ZELQANE] <title> », plain text + link `base-url + link`. `emailed_at` is set on success; a failure logs a WARN and never fails the transaction.
 - Purge scheduler (daily 04:00): deletes read notifications older than `retention-days`.
 
 ### 5.6 PDF and Excel exports
@@ -1219,10 +1219,10 @@ interface NotificationResponse { id: number; type: string; severity: "INFO"|"AVE
 - Maven: `com.github.librepdf:openpdf:2.0.3`, `org.apache.poi:poi-ooxml:5.4.1`.
 - `GET /api/statistics/export.pdf` and `GET /api/statistics/export.xlsx`: same query and roles as R1 `export.csv` (`type=views|dashboard|mine|campaign`, `from`, `to`, `groupBy`, `campaignId`), same `EXPORT_TYPE_INVALID`.
   - Content types `application/pdf` and `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
-  - `Content-Disposition` filename `tpub-statistiques-<type>-<from>-<to>.pdf|.xlsx`.
+  - `Content-Disposition` filename `zelqane-statistiques-<type>-<from>-<to>.pdf|.xlsx`.
 - `service/export/ReportModelBuilder` builds a neutral `ReportModel { title; subtitle; periodLabel; generatedAt; kpis: {label, value, unit}[]; tables: {name, headers, rows: Cell[][]}[]; image?: {mediaId} }` from the existing `StatisticsService` responses.
   - `CsvExportService` keeps its format. Renderers: `PdfReportRenderer`, `XlsxReportRenderer`.
-- **PDF (A4 portrait):** TPUB header, title, period, generated date (Africa/Tunis, `dd/MM/yyyy HH:mm`), KPI grid, tables with repeated headers, page footer « Page n / N · Estimations internes TPUB ». Helvetica (Cp1252); characters outside Cp1252 are replaced by « ? » (documented).
+- **PDF (A4 portrait):** ZELQANE header, title, period, generated date (Africa/Tunis, `dd/MM/yyyy HH:mm`), KPI grid, tables with repeated headers, page footer « Page n / N · Estimations internes ZELQANE ». Helvetica (Cp1252); characters outside Cp1252 are replaced by « ? » (documented).
   - `type=campaign` adds identity (name, advertiser, status label, period, budget, consumed), the AI summary (latest non-preview check: status, risk, quality, top 5 issues), and the primary visual. IMAGE/BANNER: the media file read through `FileStorageService.resolve`. VIDEO: the §1.2 thumbnail if present. Scaled to 60 mm height; skipped when unreadable.
 - **XLSX:** sheet « Synthèse » (KPIs), then one sheet per table (« Par jour », « Par campagne », « Par Porteur », « Par zone »).
   - Numbers as numeric cells (TND format `#,##0.00 "TND"`, counts `#,##0`), dates as date cells `dd/mm/yyyy`, bold header row, autosized columns (≤ 60 characters), frozen header.
@@ -1375,16 +1375,16 @@ CREATE INDEX idx_notifications_recipient ON notifications (recipient_user_id, re
 
 | Concern | default (`application.yml`) | `local` (start-local) | `docker` | `test` |
 |---|---|---|---|---|
-| JWT secret | required, fail fast | generated in `.tpub-local.secrets` | `.env` `JWT_SECRET` (required) | fixed test value in `application-test.yml` |
+| JWT secret | required, fail fast | generated in `.zelqane-local.secrets` | `.env` `JWT_SECRET` (required) | fixed test value in `application-test.yml` |
 | Media signing / TOTP keys | derived from JWT when empty | generated | `.env` recommended | fixed test values |
 | Simulated player time | off | **on** | off | on |
 | Bootstrap admin must change password | true | false (password generated and printed by start-local) | true | n/a |
-| OCR | auto (Tess4J if tessdata, else simulated) | auto, `TPUB_OCR_TESSDATA=BackEnd\tessdata` | tess4j (tessdata baked in the image) | simulated |
-| AI provider | local | local unless `TPUB_AI_PROVIDER` is set before launch | from `.env` | local |
+| OCR | auto (Tess4J if tessdata, else simulated) | auto, `ZELQANE_OCR_TESSDATA=BackEnd\tessdata` | tess4j (tessdata baked in the image) | simulated |
+| AI provider | local | local unless `ZELQANE_AI_PROVIDER` is set before launch | from `.env` | local |
 | 2FA required roles | none | none | recommended `ADMINISTRATEUR,SUPERVISEUR,OPERATEUR` | none |
 | Emergency / campaign approvals | 2 / 2 (capped by active admins) | 2 / 2 | 2 / 2 | 2 / 2 (tests set explicitly) |
 | Dynamic pricing | on | on | on | on |
-| Mail | off (no SMTP) | off | on when `SPRING_MAIL_HOST` + `TPUB_MAIL_FROM` | off |
+| Mail | off (no SMTP) | off | on when `SPRING_MAIL_HOST` + `ZELQANE_MAIL_FROM` | off |
 | Schedulers | on | on | on | off |
 
 ## 7. Migrations summary
@@ -1414,7 +1414,7 @@ No migration depends on another round-2 migration, so V6–V9 apply in order aft
 
 ## 9. File ownership
 
-### 9.1 Backend (paths under `BackEnd/src/main/java/com/example/tpubpfe/` unless absolute; tests belong to the owner of the class under test)
+### 9.1 Backend (paths under `BackEnd/src/main/java/com/example/zelqanepfe/` unless absolute; tests belong to the owner of the class under test)
 
 **L1 `ia-ocr`**
 - `service/ai/**` (incl. new `ocr/`, `media/`, `provider/`, `learning/` subpackages; delete `TesseractOcrService`)
@@ -1431,7 +1431,7 @@ No migration depends on another round-2 migration, so V6–V9 apply in order aft
 
 **L2 `securite`**
 - `security/**` (except `DeviceRequest`, §1.1), `exception/**`
-- `config/TpubProperties`, `DataInitializer`, `GlobalExceptionHandler`, `AppConfig`, `CorsConfig`, `MediaWebConfig`, `OpenApiConfig`, new `SecretsValidator`, `DeviceWebMvcConfig`
+- `config/ZelqaneProperties`, `DataInitializer`, `GlobalExceptionHandler`, `AppConfig`, `CorsConfig`, `MediaWebConfig`, `OpenApiConfig`, new `SecretsValidator`, `DeviceWebMvcConfig`
 - `service/storage/**` (`FileStorageService`, new `MediaUrlSigner`), `MediaService`, `AuthService`, `MeService`, `SessionService`, `LoginHistoryService`, `AdminUserService`, `AccountErrors`, `SecurityUtils`, `AuditService`, `InteractionService`, `DiffusionLogQueryService`, new `TwoFactorService`, `DeviceKeyService`, `LoginChallengeService`
 - controllers `AuthController`, `MeController`, `AdminUserController`, `AuditController`, `DiffusionController`, `MediaController`, new `DeviceKeyController`, `TwoFactorController`
 - dto `AuthResponse`, `LoginRequest`, `RegisterRequest`, `Me*`, `PasswordChangeRequest`, `Session*`, `LoginHistoryResponse`, `AdminUser*`, `ClientValidationRequest`, `AuditLogResponse`, `RoleResponse`, `RevokedCountResponse`, `MessageResponse`, `MediaFileResponse`, `DiffusionResponse`, `DiffusionLogResponse`, `InteractionRequest`, new 2FA / device DTOs
@@ -1520,7 +1520,7 @@ Unlisted existing files: anyone who must change one records a Deviation first. F
 | `config/GlobalExceptionHandler` (L2) | L4 | One new method at the end of the class: `@ExceptionHandler({AsyncRequestTimeoutException.class, AsyncRequestNotUsableException.class}) public void asyncDone() { }` (no body written) |
 | `src/main/resources/application.yml` (L2) | L1 | Nothing (L1 uses env-backed defaults in `AiAnalysisProperties`). |
 | same | L3, L4 | Nothing (Java defaults). |
-| `src/test/resources/application-test.yml` (L2) | L1 | Directly before the line `  # Lane B: keep test uploads out of the source tree`, insert these lines (two-space indent, children of `tpub:`): `  analysis:` / `    ocr:` / `      mode: simulated` / `    provider:` / `      type: local` |
+| `src/test/resources/application-test.yml` (L2) | L1 | Directly before the line `  # Lane B: keep test uploads out of the source tree`, insert these lines (two-space indent, children of `zelqane:`): `  analysis:` / `    ocr:` / `      mode: simulated` / `    provider:` / `      type: local` |
 | `service/DiffusionService` (L3) | L2 | In `diffuseAd`: keep `mediaUrl` (signed) for the response; pass `media != null ? storage.canonicalUrl(media.getFilePath()) : null` to `saveLog` instead of `mediaUrl`. `FileStorageService.canonicalUrl(String)` (L2) returns the unsigned `base/relativePath`. |
 | same | L4 | (a) Add field `private final org.springframework.context.ApplicationEventPublisher eventPublisher;` as the **first** field (before `supportRepository`). (b) In `saveLog`, replace `return diffusionLogRepository.save(…);` with `DiffusionLog saved = diffusionLogRepository.save(…); eventPublisher.publishEvent(new DiffusionRecordedEvent(saved.getId(), support.getId())); return saved;`. L4 may also add the matching constructor argument (a mock publisher) wherever `DiffusionServiceTest` or `NetworkDiffusionIntegrationTest` build the service by hand. |
 | `service/EmergencyService` (L4) | L3 | (a) In `create`: replace the two target checks and the zone resolution block with a call to `EmergencyTargeting.resolve(request, zoneService, zoneRepository)` (L3 class, returns zone + circle + polygon, throws the §4.4 errors). (b) In the builder: `.targetPolygon(target.polygon())` after `.radiusKm(...)`. (c) Body of `affectedSupports` → `TargetingGeometry.emergencyTargets(message, s)` inside the ACTIF filter. (d) `toResponse`: `.targetPolygon(message.getTargetPolygon())` after `.radiusKm(...)`. |
@@ -1543,33 +1543,33 @@ Unlisted existing files: anyone who must change one records a Deviation first. F
 ## 10. Demo & docs impact
 
 **`start-local.ps1` (L2):**
-1. Creates `.tpub-local.secrets` (repo root, gitignored, `KEY=value` lines) on first run and reuses it afterwards: `JWT_SECRET` (64 hex from `RandomNumberGenerator`), `MEDIA_SIGNING_SECRET`, `TOTP_ENCRYPTION_KEY`, `TPUB_ADMIN_INITIAL_PASSWORD` (20-character generated).
-2. Sets the backend environment from that file, plus `SPRING_PROFILES_ACTIVE=local` (simulated time on) and `TPUB_ADMIN_MUST_CHANGE_PASSWORD=false`.
-3. Sets `TPUB_AI_PROVIDER` to `local` only when it is not already set, and `TPUB_OCR_TESSDATA=<repo>\BackEnd\tessdata`.
+1. Creates `.zelqane-local.secrets` (repo root, gitignored, `KEY=value` lines) on first run and reuses it afterwards: `JWT_SECRET` (64 hex from `RandomNumberGenerator`), `MEDIA_SIGNING_SECRET`, `TOTP_ENCRYPTION_KEY`, `ZELQANE_ADMIN_INITIAL_PASSWORD` (20-character generated).
+2. Sets the backend environment from that file, plus `SPRING_PROFILES_ACTIVE=local` (simulated time on) and `ZELQANE_ADMIN_MUST_CHANGE_PASSWORD=false`.
+3. Sets `ZELQANE_AI_PROVIDER` to `local` only when it is not already set, and `ZELQANE_OCR_TESSDATA=<repo>\BackEnd\tessdata`.
 4. Prints « OCR simulé : lancez BackEnd\scripts\fetch-tessdata.ps1 pour activer Tesseract » when `fra.traineddata` is missing. It never downloads by itself.
-5. The final message no longer prints a hard-coded password: « Admin : admin@tpub.local — mot de passe dans .tpub-local.secrets (TPUB_ADMIN_INITIAL_PASSWORD) si la base a été créée par ce script ; une base existante garde son mot de passe ».
+5. The final message no longer prints a hard-coded password: « Admin : admin@zelqane.local — mot de passe dans .zelqane-local.secrets (ZELQANE_ADMIN_INITIAL_PASSWORD) si la base a été créée par ce script ; une base existante garde son mot de passe ».
 6. Removes the committed JWT secret and `OPENAI_ENABLED` lines.
 7. Existing local database: the admin created by the old `DataInitializer` keeps its old password (`must_change_password = false` from V7); docs recommend changing it.
 
-**`FrontEnd/scripts/lib/tpub-api.mjs` + `seed-demo.mjs` (L2):**
-- Admin credentials come from `TPUB_ADMIN_EMAIL` (default `admin@tpub.local`) and `TPUB_ADMIN_PASSWORD`, else `TPUB_ADMIN_INITIAL_PASSWORD` read from `../.tpub-local.secrets`. Nothing found → exit 1 with a French message. **No password literal remains in tracked scripts.**
-- TOTP: if login returns `TOTP_REQUIRED`, the scripts compute the code from `TPUB_ADMIN_TOTP_SECRET` (new `scripts/lib/totp.mjs`, RFC 6238 with `node:crypto`), otherwise exit with instructions. `mustChangePassword: true` → exit with « Connectez-vous une première fois sur /connexion pour définir le mot de passe administrateur, puis relancez avec TPUB_ADMIN_PASSWORD ».
-- Demo account passwords (annonceur, opérateur, superviseur, second admin): `TPUB_DEMO_PASSWORD` if set, else generated once into the gitignored `FrontEnd/scripts/.demo-accounts.json` and reused. Printed at the end.
-- New account `admin2@tpub.local` (ADMINISTRATEUR), so the two-admin approval can be demonstrated.
+**`FrontEnd/scripts/lib/zelqane-api.mjs` + `seed-demo.mjs` (L2):**
+- Admin credentials come from `ZELQANE_ADMIN_EMAIL` (default `admin@zelqane.local`) and `ZELQANE_ADMIN_PASSWORD`, else `ZELQANE_ADMIN_INITIAL_PASSWORD` read from `../.zelqane-local.secrets`. Nothing found → exit 1 with a French message. **No password literal remains in tracked scripts.**
+- TOTP: if login returns `TOTP_REQUIRED`, the scripts compute the code from `ZELQANE_ADMIN_TOTP_SECRET` (new `scripts/lib/totp.mjs`, RFC 6238 with `node:crypto`), otherwise exit with instructions. `mustChangePassword: true` → exit with « Connectez-vous une première fois sur /connexion pour définir le mot de passe administrateur, puis relancez avec ZELQANE_ADMIN_PASSWORD ».
+- Demo account passwords (annonceur, opérateur, superviseur, second admin): `ZELQANE_DEMO_PASSWORD` if set, else generated once into the gitignored `FrontEnd/scripts/.demo-accounts.json` and reused. Printed at the end.
+- New account `admin2@zelqane.local` (ADMINISTRATEUR), so the two-admin approval can be demonstrated.
 - Device keys: for every ACTIF Porteur without an active key (`GET /supports/device-keys`), `POST /supports/{id}/device-key`. Keys are written to the gitignored `FrontEnd/scripts/.demo-device-keys.json` (`{ "<supportId>": "tpd_…" }`). Pairing URLs `http://localhost:3000/ecran/<id>?cle=…` are printed. `--rotate-keys` re-issues all keys.
-- `FrontEnd/.gitignore` gains `scripts/.demo-accounts.json` and `scripts/.demo-device-keys.json`. The root `.gitignore` gains `.tpub-local.secrets`.
+- `FrontEnd/.gitignore` gains `scripts/.demo-accounts.json` and `scripts/.demo-device-keys.json`. The root `.gitignore` gains `.zelqane-local.secrets`.
 
 **`demo-scenario.mjs` (L2, with L4 content defined here):**
-- The player steps (14–15, 18) send `X-TPUB-Device-Key` from `.demo-device-keys.json`. A missing key → the scenario pairs the support as admin first.
+- The player steps (14–15, 18) send `X-ZELQANE-Device-Key` from `.demo-device-keys.json`. A missing key → the scenario pairs the support as admin first.
 - `datetime` works only with the `local` profile. The scenario checks `simulatedTime` in the response and warns « le backend n'est pas en profil local : horloge serveur utilisée ».
-- Step 13 (validation): on a 202 (double approval) the scenario logs in as `admin2@tpub.local` and validates again. The log shows « 1/2 approbations » then « validée par … et … ».
+- Step 13 (validation): on a 202 (double approval) the scenario logs in as `admin2@zelqane.local` and validates again. The log shows « 1/2 approbations » then « validée par … et … ».
 - Step 17 (emergency): created by admin, then approved by `admin2` (`POST /emergency/{id}/approve`) before the player poll shows the takeover.
 - New optional step « Supervision »: sends a heartbeat and prints `GET /supervision/snapshot` counts.
 
 **Docs:**
 - `FrontEnd/README.md` « Démo avec le vrai backend » (L2): secrets file, tessdata script, pairing URLs, second admin, simulated time only in the local profile, 2FA and forced password change, and a security note stating that **the JWT secret previously committed in `.env.example` and `start-local.ps1` is in git history and must be treated as compromised**.
 - `FrontEnd/docs/api-contract.md`: per §9.3 anchors.
-- `.env.example` (L2): every new key with placeholders (`JWT_SECRET=<générez 64 caractères hexadécimaux>`, `OPENAI_API_KEY=`, `ANTHROPIC_API_KEY=`, `TPUB_AI_PROVIDER=local`, `SPRING_MAIL_HOST=`, …). No concrete secret. `docker-compose.yml` (L2) passes nothing new explicitly (it uses `env_file`), but gets a comment stating that `JWT_SECRET` is required.
+- `.env.example` (L2): every new key with placeholders (`JWT_SECRET=<générez 64 caractères hexadécimaux>`, `OPENAI_API_KEY=`, `ANTHROPIC_API_KEY=`, `ZELQANE_AI_PROVIDER=local`, `SPRING_MAIL_HOST=`, …). No concrete secret. `docker-compose.yml` (L2) passes nothing new explicitly (it uses `env_file`), but gets a comment stating that `JWT_SECRET` is required.
 
 ---
 
@@ -1593,10 +1593,10 @@ _Lanes append entries under their own heading as `YYYY-MM-DD · lane · what cha
 ### L2 `securite`
 
 - 2026-09-17 · L2 · No `qrcode` / `@types/qrcode` npm dependency: QR codes (TOTP enrolment, pairing URL) are drawn by the dependency-free encoder `FrontEnd/src/lib/qr-code.ts` (byte mode, error correction M, unit-tested in `src/lib/__tests__/qr-code.test.ts`) through `components/account/qr-code-svg.tsx` (`role="img"`, `aria-label`). `package.json` / `package-lock.json` are unchanged · lanes may not run `npm install`, and the owner decision allows a tiny dependency-free generator.
-- 2026-09-17 · L2 · Challenge pages: besides the httpOnly `tpub_challenge` cookie (token, path `/api/session`), the Next routes set `tpub_challenge_actif=1` (httpOnly, path `/connexion`, same max-age, no token). The middleware checks this marker on `/connexion/verification` and `/connexion/activer-2fa` · a cookie scoped to `/api/session` is never sent with page requests, so the middleware could not see it. Both are cleared on success and on `CHALLENGE_EXPIRED`. The middleware redirect stays `/connexion?expire=1` (+ `next`). An expiry noticed by the screens themselves goes to `/connexion?verification=expiree`, which shows « La vérification en deux étapes a expiré » instead of the session-expired notice.
+- 2026-09-17 · L2 · Challenge pages: besides the httpOnly `zelqane_challenge` cookie (token, path `/api/session`), the Next routes set `zelqane_challenge_actif=1` (httpOnly, path `/connexion`, same max-age, no token). The middleware checks this marker on `/connexion/verification` and `/connexion/activer-2fa` · a cookie scoped to `/api/session` is never sent with page requests, so the middleware could not see it. Both are cleared on success and on `CHALLENGE_EXPIRED`. The middleware redirect stays `/connexion?expire=1` (+ `next`). An expiry noticed by the screens themselves goes to `/connexion?verification=expiree`, which shows « La vérification en deux étapes a expiré » instead of the session-expired notice.
 - 2026-09-17 · L2 · The challenge e-mail and `expiresAt` (never the token) are kept in `sessionStorage` (`components/auth/challenge-storage.ts`) for the countdown and the « Compte : … » line of the verification screens.
-- 2026-09-17 · L2 · `config/SecretsValidator` also refuses an unedited `<…>` placeholder from `.env.example` for `JWT_SECRET`, `MEDIA_SIGNING_SECRET` and `TOTP_ENCRYPTION_KEY` (« … contient encore la valeur d'exemple de .env.example ») · the placeholders are longer than 32 bytes and publicly known, so they would otherwise pass the length check. In `.env.example`, `TPUB_ADMIN_INITIAL_PASSWORD` is empty (random password logged once) rather than a placeholder that would be a valid password.
-- 2026-09-17 · L2 · `start-local.ps1` keeps the literal password of the portable **local** PostgreSQL cluster (`tpub_local_dev`, bound to localhost) · clusters already initialised with it would stop working. Every application secret (JWT, media signing, TOTP key, initial admin password) now comes from the gitignored `.tpub-local.secrets`.
+- 2026-09-17 · L2 · `config/SecretsValidator` also refuses an unedited `<…>` placeholder from `.env.example` for `JWT_SECRET`, `MEDIA_SIGNING_SECRET` and `TOTP_ENCRYPTION_KEY` (« … contient encore la valeur d'exemple de .env.example ») · the placeholders are longer than 32 bytes and publicly known, so they would otherwise pass the length check. In `.env.example`, `ZELQANE_ADMIN_INITIAL_PASSWORD` is empty (random password logged once) rather than a placeholder that would be a valid password.
+- 2026-09-17 · L2 · `start-local.ps1` keeps the literal password of the portable **local** PostgreSQL cluster (`zelqane_local_dev`, bound to localhost) · clusters already initialised with it would stop working. Every application secret (JWT, media signing, TOTP key, initial admin password) now comes from the gitignored `.zelqane-local.secrets`.
 - 2026-09-17 · L2 · Unlisted shared file `FrontEnd/src/lib/campaign-status.ts`: `LOGIN_FAILURE_LABEL.TOTP_INVALID`, `AUDIT_ACTION_LABEL` entries for `USER_PASSWORD_CHANGE_REQUIRED`, `USER_2FA_ENABLED|DISABLED|RESET`, `SUPPORT_DEVICE_KEY_ISSUED|ROTATED|REVOKED`, and `AUDIT_ENTITY_LABEL.SUPPORT_DEVICE` (additive lines at the end of each record) · these `Record<…>` maps must stay exhaustive once `types.ts` gains the round-2 values. Merge note: L1/L4 labels appended at the same anchors merge by keeping both sides.
 - 2026-09-17 · L2 · New files not named in §9.1/§9.2 but inside L2 areas: `src/lib/use-signed-media.ts` (expired signed URL → refetch the owning resource once, shared by the media consumers and the profile logo), `components/account/{password-change-card,sessions-card,two-factor-card,account-view,code-input,totp-setup-panel,two-factor-model}`, `components/auth/{forced-password-change,totp-verification-form,totp-enrolment-flow,challenge-storage}`, `scripts/lib/demo-auth.mjs` (credentials, generated demo passwords, device keys of the scripts, next to `scripts/lib/totp.mjs`). `LoginHistoryCard` lives with `SessionsCard` in `components/account/sessions-card.tsx`; `profile-view.tsx` re-exports `PASSWORD_CHANGED_NOTICE` and `LOGIN_HISTORY_LIMIT`.
 - 2026-09-17 · L2 · Player: a 429 is classified as the new `rate-limited` error kind and waits `max(backoff, Retry-After)` (capped at 60 s). When `localStorage` is unavailable the `?cle=` key still works for the current page view. The unpaired slide says whether a stored key was refused (« révoquée ou remplacée »). The overlay is hidden on the unpaired slide.
@@ -1609,9 +1609,9 @@ _Lanes append entries under their own heading as `YYYY-MM-DD · lane · what cha
 
 - 2026-09-17 · L3 · `GeoPricingProperties` holds the two `@ConfigurationProperties` classes as nested
   `Geo` and `Dynamic` classes of one file (one class per prefix, as required), registered together by
-  `GeoPricingConfig`; `TPUB_DYNAMIC_PRICING_ENABLED` is applied by that `@Configuration` when
-  `tpub.pricing.dynamic.enabled` is not set, because relaxed binding alone would only read
-  `TPUB_PRICING_DYNAMIC_ENABLED`.
+  `GeoPricingConfig`; `ZELQANE_DYNAMIC_PRICING_ENABLED` is applied by that `@Configuration` when
+  `zelqane.pricing.dynamic.enabled` is not set, because relaxed binding alone would only read
+  `ZELQANE_PRICING_DYNAMIC_ENABLED`.
 - 2026-09-17 · L3 · §4.2 does not say which latitude the equirectangular projection uses: the
   implementation takes the **mean latitude/longitude of the outer-ring vertices** (translation
   invariant, so area and centroid are unchanged) and both sides share the same test vectors
@@ -1639,10 +1639,10 @@ _Lanes append entries under their own heading as `YYYY-MM-DD · lane · what cha
 ### L4 `supervision`
 
 - 2026-09-17 · L4 · `AdminCampaignService.validate` now returns `ValidationOutcome(campaign, pending)` instead of `CampaignResponse`, and `AdminCampaignController` answers 202 with `ApprovalPendingResponse` when another administrator is still needed · §5.4 asks for a 202 body, which the previous signature could not express. The two L3-owned call sites of the validation (`CampaignLifecycleIntegrationTest`, kept unchanged otherwise) only add `.campaign()`.
-- 2026-09-17 · L4 · new file `BackEnd/src/test/resources/application-test.properties` setting `tpub.approval.emergency-required-approvals=1` and `tpub.approval.campaign-required-approvals=1` · the shared H2 context of the integration tests holds several active administrators (bootstrap admin + one per integration test), so the default two-admin policy would turn the single-admin flows of the L1/L3 integration tests into pending approvals. A separate file was chosen over a hunk in the L2-owned `application-test.yml` to avoid a merge conflict. The multi-level approval itself is unit-tested with explicit values (`AdminCampaignServiceTest`, `EmergencyServiceTest`, `ApprovalPolicyTest`).
+- 2026-09-17 · L4 · new file `BackEnd/src/test/resources/application-test.properties` setting `zelqane.approval.emergency-required-approvals=1` and `zelqane.approval.campaign-required-approvals=1` · the shared H2 context of the integration tests holds several active administrators (bootstrap admin + one per integration test), so the default two-admin policy would turn the single-admin flows of the L1/L3 integration tests into pending approvals. A separate file was chosen over a hunk in the L2-owned `application-test.yml` to avoid a merge conflict. The multi-level approval itself is unit-tested with explicit values (`AdminCampaignServiceTest`, `EmergencyServiceTest`, `ApprovalPolicyTest`).
 - 2026-09-17 · L4 · `scheduler/EmergencyAutoStopScheduler` takes `AlertService` to close the `EMERGENCY_PENDING_APPROVAL` alert of a message whose window ended while still pending · §5.4 requires the auto-stop to deactivate pending messages; leaving their alert open would keep the supervision badge lit forever.
-- 2026-09-17 · L4 · the `stats` event is pushed by `scheduler/SupervisionStatsScheduler` (a `@Scheduled` component, off in tests through `tpub.scheduler.enabled`), and the `: ping` keepalive by a daemon executor inside `SseHub` · §5.3 asks for both without naming their owner; the scheduler package is L4's.
-- 2026-09-17 · L4 · `SupervisionProperties` holds three nested `@ConfigurationProperties` classes (one per prefix) and `SupervisionConfig` registers them, reading the short environment names (`TPUB_EMERGENCY_APPROVALS`, `TPUB_CAMPAIGN_APPROVALS`, `TPUB_CAMPAIGN_APPROVAL_RISK`, `TPUB_MAIL_FROM`, `TPUB_PUBLIC_URL`) itself, because `application.yml` (L2) receives nothing from L4 and relaxed binding would otherwise expect `TPUB_APPROVAL_EMERGENCYREQUIREDAPPROVALS`.
+- 2026-09-17 · L4 · the `stats` event is pushed by `scheduler/SupervisionStatsScheduler` (a `@Scheduled` component, off in tests through `zelqane.scheduler.enabled`), and the `: ping` keepalive by a daemon executor inside `SseHub` · §5.3 asks for both without naming their owner; the scheduler package is L4's.
+- 2026-09-17 · L4 · `SupervisionProperties` holds three nested `@ConfigurationProperties` classes (one per prefix) and `SupervisionConfig` registers them, reading the short environment names (`ZELQANE_EMERGENCY_APPROVALS`, `ZELQANE_CAMPAIGN_APPROVALS`, `ZELQANE_CAMPAIGN_APPROVAL_RISK`, `ZELQANE_MAIL_FROM`, `ZELQANE_PUBLIC_URL`) itself, because `application.yml` (L2) receives nothing from L4 and relaxed binding would otherwise expect `ZELQANE_APPROVAL_EMERGENCYREQUIREDAPPROVALS`.
 - 2026-09-17 · L4 · `NotificationResponse.type` is typed `string` in the frontend (with `NotificationType` documented as the closed list) · the lint rule `no-redundant-type-constituents` refuses `NotificationType | string`, and a backend type unknown to the browser must not break the list.
 - 2026-09-17 · L4 · the round-1 tests that asserted « Exporter en CSV » now open the « Exporter » menu (`admin-pages`, `espace/views`, `overview-view`, `campaign-detail`) and `shell.test.tsx` expects the new navigation entries · direct consequence of §5.6 and §5.9, all files owned by L4.
 - 2026-09-17 · L4 · `moderation-view.test.tsx` mocks `@/lib/api/endpoints-supervision` because the review dialog validates through `approvalsApi.validateCampaign` (§5.8).
@@ -1652,7 +1652,7 @@ _Lanes append entries under their own heading as `YYYY-MM-DD · lane · what cha
 - 2026-09-17 · Intégration · new migration `V10__hash_columns_varchar.sql`: `user_recovery_codes.code_hash`, `login_challenges.token_hash` and `support_device_keys.key_hash` move from `CHAR(64)` to `VARCHAR(64)` · V7 declared them `CHAR(64)`, which PostgreSQL exposes as `bpchar`; Hibernate's schema validation then refused to start the backend against the real database (« wrong column type … found [bpchar], but expecting [varchar(64)] »). V7 is left untouched so the checksum of databases that already ran it stays valid, and `CHAR` would also have padded the hashes with spaces.
 - 2026-09-17 · Intégration · new endpoint `POST /api/admin/users/{id}/password/reset` (ADMINISTRATEUR, never on self) → `TemporaryPasswordResponse`, audit `USER_PASSWORD_RESET`, with the « Réinitialiser le mot de passe » action in `/admin/utilisateurs` · without it, demo accounts created before round 2 (their passwords were literals in the old scripts) could not be realigned on the generated passwords of `scripts/.demo-accounts.json`, and an administrator had no way to unlock a colleague. `seed-demo.mjs` uses it through `loginOrAdopt()`, which resets, consumes the forced change and sets the stored password back.
 - 2026-09-17 · Intégration · the password generator of the bootstrap administrator moved to `security/GeneratedPasswords` (shared by `DataInitializer` and `AdminUserService`); `DataInitializer.generatePassword()` / `isAcceptable()` stay as thin delegates so their tests are unchanged.
-- 2026-09-17 · Intégration · new `FrontEnd/scripts/bonus-scenario.mjs` (18 HTTP checks of the round-2 features) and its fixture `FrontEnd/scripts/fixtures/demo-clip.mp4` (14 Ko, H.264 baseline, 2 s) · the task asks for a live check of every bonus; the MP4 is committed rather than generated so no scenario ever requires ffmpeg. The OCR check draws its own text with `makeTextPng()` (5×7 bitmap font added to `scripts/lib/tpub-api.mjs`).
-- 2026-09-17 · Intégration · new backend test `controller/DiffusionSimulatedTimeTest` pinning that `?datetime=` is ignored (and `simulatedTime: false`) when `tpub.diffusion.simulated-time-enabled` is false · the local profile has it on, so the disabled branch could not be shown live.
+- 2026-09-17 · Intégration · new `FrontEnd/scripts/bonus-scenario.mjs` (18 HTTP checks of the round-2 features) and its fixture `FrontEnd/scripts/fixtures/demo-clip.mp4` (14 Ko, H.264 baseline, 2 s) · the task asks for a live check of every bonus; the MP4 is committed rather than generated so no scenario ever requires ffmpeg. The OCR check draws its own text with `makeTextPng()` (5×7 bitmap font added to `scripts/lib/zelqane-api.mjs`).
+- 2026-09-17 · Intégration · new backend test `controller/DiffusionSimulatedTimeTest` pinning that `?datetime=` is ignored (and `simulatedTime: false`) when `zelqane.diffusion.simulated-time-enabled` is false · the local profile has it on, so the disabled branch could not be shown live.
 - 2026-09-17 · Intégration · merge conflicts resolved by keeping both sides: imports of `EmergencyResponse`, `EmergencyService` and `campaign-review-dialog.tsx`, and in `DiffusionServiceTest` the L3 `DynamicPricingService` argument of `EstimationService` together with the L4 `ApplicationEventPublisher` first argument of `DiffusionService`. `docs/round2-contract.md` was merged by keeping every lane's own §11 subsection.
-- 2026-09-18 · Revue finale · removed the dead `tpub.ai` block from `application.yml` and the `TpubProperties.Ai` / `TpubProperties.Ocr` classes, replaced by a real `tpub.analysis` block (OCR mode/tessdata/languages, vision provider and keys, learning switches) bound by `config/AiAnalysisProperties`; the legacy `AI_SERVICE_URL` / `AI_SERVICE_TIMEOUT_MS` lines left `.env.example` · nothing read `tpub.ai` any more, and it advertised a different OCR prefix, an obsolete `command: tesseract` key, `languages: fra+eng` instead of the real `fra+eng+ara`, plus a second, unused `OPENAI_API_KEY`. The round-2 defaults previously existed only as `System.getenv` fallbacks in Java, so a yml or profile override of `tpub.analysis.*` was invisible in the configuration file. Verified after redeploy: `GET /api/ai/providers` still reports `TESSERACT`, `fra+eng+ara`, provider `LOCAL`, learning enabled.
+- 2026-09-18 · Revue finale · removed the dead `zelqane.ai` block from `application.yml` and the `ZelqaneProperties.Ai` / `ZelqaneProperties.Ocr` classes, replaced by a real `zelqane.analysis` block (OCR mode/tessdata/languages, vision provider and keys, learning switches) bound by `config/AiAnalysisProperties`; the legacy `AI_SERVICE_URL` / `AI_SERVICE_TIMEOUT_MS` lines left `.env.example` · nothing read `zelqane.ai` any more, and it advertised a different OCR prefix, an obsolete `command: tesseract` key, `languages: fra+eng` instead of the real `fra+eng+ara`, plus a second, unused `OPENAI_API_KEY`. The round-2 defaults previously existed only as `System.getenv` fallbacks in Java, so a yml or profile override of `zelqane.analysis.*` was invisible in the configuration file. Verified after redeploy: `GET /api/ai/providers` still reports `TESSERACT`, `fra+eng+ara`, provider `LOCAL`, learning enabled.

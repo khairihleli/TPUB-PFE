@@ -146,7 +146,7 @@ export function BroadcastScreen({
   return (
     <div ref={rootRef} className={cx("relative mx-auto w-full max-w-[400px]", className)}>
       <p className="sr-only">
-        Illustration d&apos;un écran TPUB diffusant à tour de rôle des créations d&apos;exemple,
+        Illustration d&apos;un écran ZELQANE diffusant à tour de rôle des créations d&apos;exemple,
         avec un extrait simulé de journal de diffusion. Aucune donnée réelle.
       </p>
 
@@ -197,7 +197,7 @@ export function BroadcastScreen({
                 </span>
                 <span className="relative text-[0.8125rem] font-medium text-white/80">{c.sub}</span>
                 <span className="relative mt-1 font-label text-[0.625rem] font-semibold tracking-[0.16em] text-white/60 uppercase">
-                  Exemple · Réseau TPUB
+                  Exemple · Réseau ZELQANE
                 </span>
               </div>
             ))}

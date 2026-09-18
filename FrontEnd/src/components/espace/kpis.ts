@@ -33,7 +33,7 @@ export function campaignBucket(
   return getCampaignBucket(campaign, today).key;
 }
 
-/** Refused campaigns (AI or TPUB): they need a correction before diffusion. */
+/** Refused campaigns (AI or ZELQANE): they need a correction before diffusion. */
 export function isRefused(status: CampaignStatus): boolean {
   return status === "REJECTED_BY_AI" || status === "BLOCKED";
 }
@@ -287,7 +287,7 @@ export function onboardingMilestones(
     {
       key: "soumission",
       title: "Soumettre la campagne",
-      description: "Analyse IA immédiate, puis validation par l'équipe TPUB.",
+      description: "Analyse IA immédiate, puis validation par l'équipe ZELQANE.",
       href: draftWith
         ? routes.espace.wizard(draftWith.id, "verification")
         : drafts[0]
@@ -331,7 +331,7 @@ export function inDaysLabel(days: number): string {
 
 const DEADLINE_LABEL: Record<DeadlineKind, string> = {
   start: "Début de diffusion",
-  "start-pending": "Début prévu · en examen TPUB",
+  "start-pending": "Début prévu · en examen ZELQANE",
   "start-draft": "Début prévu · brouillon à finaliser",
   end: "Fin de diffusion",
 };

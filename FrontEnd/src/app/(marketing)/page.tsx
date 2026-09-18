@@ -18,7 +18,7 @@ import { CtaBand } from "@/components/marketing/cta-band";
 import { SITE } from "@/content/site";
 
 export const metadata: Metadata = {
-  title: { absolute: "TPUB — Des écrans réels. Des diffusions tracées." },
+  title: { absolute: "ZELQANE — Des écrans réels. Des diffusions tracées." },
   description: SITE.description,
   alternates: { canonical: "/" },
 };

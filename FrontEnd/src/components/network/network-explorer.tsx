@@ -356,7 +356,7 @@ function ExplorerWorkspace({ data, refreshing }: { data: NetworkCatalogue; refre
             onClusterPorteursChange={(regrouper) => update({ regrouper })}
             showListTool={false}
             height={WORKSPACE_HEIGHT}
-            ariaLabel="Carte du réseau TPUB"
+            ariaLabel="Carte du réseau ZELQANE"
           />
         </div>
 

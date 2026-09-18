@@ -162,7 +162,7 @@ export function PlayerOverlay({
             Démo
           </span>
           {details ? (
-            <span className="truncate">Lecteur TPUB</span>
+            <span className="truncate">Lecteur ZELQANE</span>
           ) : (
             // Compact: connection state + countdown live in the header row.
             <span

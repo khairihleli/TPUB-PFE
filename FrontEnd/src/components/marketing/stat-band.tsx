@@ -12,7 +12,7 @@ export interface StatBandItem {
   icon?: ReactNode;
   /**
    * Optional numeric count-up. ONLY for real, sourced figures (the brief forbids invented
-   * metrics — TPUB is pre-launch, so the default use is mechanism items without numbers).
+   * metrics — ZELQANE is pre-launch, so the default use is mechanism items without numbers).
    */
   countTo?: number;
   prefix?: string;

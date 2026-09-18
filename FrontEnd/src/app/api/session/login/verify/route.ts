@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/session/login/verify { code } → { status: "AUTHENTICATED", user, recoveryCodeUsed }
- * + session cookies. The challenge token is read from the httpOnly `tpub_challenge` cookie.
+ * + session cookies. The challenge token is read from the httpOnly `zelqane_challenge` cookie.
  */
 export function POST(req: Request): Promise<NextResponse> {
   return forwardChallenge(req, "verify");

@@ -63,7 +63,7 @@ export function BasemapPanel({
               >
                 <input
                   type="radio"
-                  name="tpub-map-basemap"
+                  name="zelqane-map-basemap"
                   value={b.id}
                   checked={checked}
                   onChange={() => onChange(b.id)}
@@ -92,7 +92,7 @@ export function BasemapPanel({
         {CARTO_API_KEY
           ? "Fonds © OpenStreetMap contributors, © CARTO, imagerie © Esri."
           : "Fonds © Esri, HERE, Garmin, © OpenStreetMap contributors, imagerie © Esri."}{" "}
-        Les zones et Porteurs TPUB restent affichés même si le fond ne se charge pas.
+        Les zones et Porteurs ZELQANE restent affichés même si le fond ne se charge pas.
       </p>
     </MapPanel>
   );

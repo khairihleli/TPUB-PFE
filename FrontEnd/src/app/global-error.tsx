@@ -33,7 +33,7 @@ export default function GlobalError({
               textTransform: "uppercase",
             }}
           >
-            TPUB · Incident
+            ZELQANE · Incident
           </p>
           <h1 style={{ fontSize: 32, lineHeight: 1.15, margin: "16px 0 12px", color: "#ffffff" }}>
             Le site est momentanément indisponible.
