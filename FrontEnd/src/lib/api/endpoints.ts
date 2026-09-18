@@ -94,6 +94,7 @@ import type {
   SupportFilters,
   SupportRequest,
   SupportResponse,
+  TemporaryPasswordResponse,
   TotpSetupResponse,
   TwoFactorDisableRequest,
   TwoFactorStatusResponse,
@@ -907,6 +908,15 @@ export const adminUsersApi = {
   /** Round 2 — ADMINISTRATEUR, never on self: new password required, sessions closed. */
   requirePasswordChange: (userId: number, o: CallOptions = {}) =>
     apiFetch<AdminUserResponse>(`/admin/users/${userId}/require-password-change`, {
+      method: "POST",
+      ...o,
+    }),
+  /**
+   * Round 2 — ADMINISTRATEUR, never on self: replaces the password with a temporary one returned
+   * once, forces a new password at the next login and closes the user's sessions.
+   */
+  resetPassword: (userId: number, o: CallOptions = {}) =>
+    apiFetch<TemporaryPasswordResponse>(`/admin/users/${userId}/password/reset`, {
       method: "POST",
       ...o,
     }),

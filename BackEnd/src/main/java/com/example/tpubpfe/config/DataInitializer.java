@@ -1,21 +1,19 @@
 package com.example.tpubpfe.config;
 
-import com.example.tpubpfe.dto.PasswordChangeRequest;
 import com.example.tpubpfe.model.Role;
 import com.example.tpubpfe.model.RoleCode;
 import com.example.tpubpfe.model.User;
 import com.example.tpubpfe.repository.RoleRepository;
 import com.example.tpubpfe.repository.UserRepository;
+import com.example.tpubpfe.security.GeneratedPasswords;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import java.security.SecureRandom;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /**
  * Bootstrap administrator (docs/round2-contract.md §3.2). Nothing is created when an active administrator exists
@@ -28,10 +26,8 @@ import java.util.regex.Pattern;
 public class DataInitializer implements CommandLineRunner {
 
     /** Alphabet of generated passwords: {@code A-Za-z0-9} without the ambiguous {@code 0 O 1 l I}. */
-    static final String PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-    static final int GENERATED_LENGTH = 20;
-    private static final Pattern STRENGTH = Pattern.compile(PasswordChangeRequest.STRENGTH_PATTERN);
-    private static final SecureRandom RANDOM = new SecureRandom();
+    static final String PASSWORD_ALPHABET = GeneratedPasswords.ALPHABET;
+    static final int GENERATED_LENGTH = GeneratedPasswords.LENGTH;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -105,21 +101,11 @@ public class DataInitializer implements CommandLineRunner {
 
     /** Same policy as the account forms: 8..100 characters, at least one letter and one digit. */
     static boolean isAcceptable(String password) {
-        return password != null && password.length() >= 8 && password.length() <= 100
-                && STRENGTH.matcher(password).matches();
+        return GeneratedPasswords.isAcceptable(password);
     }
 
-    /** 20 characters from {@link #PASSWORD_ALPHABET}, with at least one digit and one letter. */
+    /** {@link GeneratedPasswords#LENGTH} characters, with at least one digit and one letter. */
     static String generatePassword() {
-        while (true) {
-            StringBuilder password = new StringBuilder(GENERATED_LENGTH);
-            for (int i = 0; i < GENERATED_LENGTH; i++) {
-                password.append(PASSWORD_ALPHABET.charAt(RANDOM.nextInt(PASSWORD_ALPHABET.length())));
-            }
-            String value = password.toString();
-            if (value.chars().anyMatch(Character::isDigit) && value.chars().anyMatch(Character::isLetter)) {
-                return value;
-            }
-        }
+        return GeneratedPasswords.generate();
     }
 }

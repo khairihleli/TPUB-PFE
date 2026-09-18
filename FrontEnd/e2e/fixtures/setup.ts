@@ -87,7 +87,19 @@ const ESPACE_ROUTES = [
   "/espace/profil",
 ];
 
-const ADMIN_ROUTES = ["/admin", "/admin/moderation", "/admin/reseau", "/admin/urgences"];
+const ADMIN_ROUTES = [
+  "/admin",
+  "/admin/moderation",
+  "/admin/reseau",
+  "/admin/urgences",
+  // Round 2 (docs/round2-contract.md): supervision, approvals, notifications, heatmap, AI quality.
+  "/admin/supervision",
+  "/admin/approbations",
+  "/admin/notifications",
+  "/admin/carte-chaleur",
+  "/admin/ia-qualite",
+  "/admin/compte",
+];
 
 export function slugOf(path: string): string {
   if (path === "/") return "accueil";
@@ -124,6 +136,12 @@ export function captureConsoleErrors(page: Page): string[] {
       if (TILE_HOSTS.test(hostnameOf(location))) return;
       // Studio 3D probes /models/porteur-*.glb with HEAD; 404 → procedural Porteur (PORTEUR-3D.md).
       if (/\/models\/porteur[\w-]*\.glb/.test(location)) return;
+    }
+    // MapLibre also reports a blocked tile itself ("AJAXError: Failed to fetch (0): <url>"), next to
+    // the browser's own line: same blocked basemap, still not an application error.
+    if (/AJAXError/.test(text)) {
+      const url = /https?:\/\/\S+/.exec(text)?.[0] ?? "";
+      if (TILE_HOSTS.test(hostnameOf(url))) return;
     }
     errors.push(text);
   });

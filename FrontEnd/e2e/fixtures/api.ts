@@ -16,6 +16,17 @@
  */
 import type { BrowserContext, Page, Request, Route } from "@playwright/test";
 
+import type { AiCalibrationResponse } from "../../src/lib/api/types-ia";
+import type { HeatmapFeature, PricingConfig } from "../../src/lib/api/types-carte";
+import type {
+  ApprovalReason,
+  CampaignApprovalStatus,
+  PendingCampaignApproval,
+  PresenceState,
+  SupervisionSnapshot,
+  SupervisionSupportRow,
+} from "../../src/lib/api/types-supervision";
+
 import type {
   AdminUserResponse,
   AiIssue,
@@ -723,6 +734,192 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Round 2 views (docs/round2-contract.md §4 and §5)
+  // -------------------------------------------------------------------------
+  const PRICING_CONFIG: PricingConfig = {
+    enabled: true,
+    minMultiplier: 0.7,
+    maxMultiplier: 1.6,
+    hourBands: [
+      { start: "00:00", end: "07:00", multiplier: 0.7, label: "Nuit" },
+      { start: "07:00", end: "10:00", multiplier: 1.15, label: "Matin" },
+      { start: "10:00", end: "16:00", multiplier: 1, label: "Journée" },
+      { start: "16:00", end: "20:00", multiplier: 1.25, label: "Pointe du soir" },
+      { start: "20:00", end: "24:00", multiplier: 0.9, label: "Soirée" },
+    ],
+    dayMultipliers: {
+      LUNDI: 1,
+      MARDI: 1,
+      MERCREDI: 1,
+      JEUDI: 1,
+      VENDREDI: 1.05,
+      SAMEDI: 1.15,
+      DIMANCHE: 0.9,
+    },
+    demandWeight: 0.3,
+    scarcityWeight: 0.2,
+  };
+
+  function feature<P>(lat: number, lng: number, properties: P): HeatmapFeature<P> {
+    return { type: "Feature", geometry: { type: "Point", coordinates: [lng, lat] }, properties };
+  }
+
+  /** Presence is derived from the technical status: only ACTIF Porteurs are considered online. */
+  function supervisionSupports(): SupervisionSupportRow[] {
+    return state.supports.map((s) => {
+      const last = state.diffusionLogs
+        .filter((l) => l.supportId === s.id)
+        .sort((a, b) => (a.diffusedAt < b.diffusedAt ? 1 : -1))[0];
+      const presence: PresenceState =
+        s.technicalStatus === "ACTIF" ? "EN_LIGNE" : s.technicalStatus === "HORS_LIGNE" ? "HORS_LIGNE" : "INCONNU";
+      return {
+        supportId: s.id,
+        name: s.name,
+        zoneId: s.zoneId,
+        zoneName: zoneOf(s.zoneId)?.name ?? s.zoneName ?? null,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        technicalStatus: s.technicalStatus,
+        presence,
+        lastHeartbeatAt: presence === "EN_LIGNE" ? new Date().toISOString() : null,
+        playerVersion: presence === "EN_LIGNE" ? "2.0.0" : null,
+        current: last
+          ? {
+              contentType: last.contentType,
+              title: last.title ?? null,
+              campaignId: last.campaignId ?? null,
+              emergencyId: last.emergencyId ?? null,
+              diffusedAt: last.diffusedAt,
+            }
+          : null,
+      };
+    });
+  }
+
+  function supervisionSnapshot(): SupervisionSnapshot {
+    const supports = supervisionSupports();
+    const live = state.emergencies.filter((e) => e.isActive);
+    const recent = state.diffusionLogs
+      .slice()
+      .sort((a, b) => (a.diffusedAt < b.diffusedAt ? 1 : -1))
+      .slice(0, 50)
+      .map((l) => ({
+        diffusionLogId: l.id,
+        supportId: l.supportId,
+        supportName: l.supportName,
+        zoneName: l.zoneName,
+        contentType: l.contentType,
+        campaignId: l.campaignId,
+        campaignName: l.campaignName,
+        emergencyId: l.emergencyId,
+        title: l.title,
+        diffusedAt: l.diffusedAt,
+      }));
+    return {
+      serverTime: new Date().toISOString(),
+      supports,
+      emergencies: live.map((e) => ({
+        emergencyId: e.id,
+        title: e.title,
+        urgencyLevel: e.urgencyLevel,
+        state: e.state ?? "EN_COURS",
+        approvalStatus: "APPROUVE" as const,
+        approvalsCount: 2,
+        approvalsRequired: 2,
+        affectedSupports: e.affectedSupports ?? 0,
+      })),
+      alerts: state.alerts.filter((a) => a.resolvedAt === null),
+      recentDiffusions: recent,
+      stats: {
+        onlineSupports: supports.filter((s) => s.presence === "EN_LIGNE").length,
+        offlineSupports: supports.filter((s) => s.presence === "HORS_LIGNE").length,
+        unknownSupports: supports.filter((s) => s.presence === "INCONNU").length,
+        diffusionsLastHour: recent.length,
+        activeEmergencies: live.length,
+        openAlerts: state.alerts.filter((a) => a.resolvedAt === null).length,
+      },
+    };
+  }
+
+  /** Occupancy per zone from the reservations that still hold a slot. */
+  function demandHeatmap() {
+    const held = state.reservations.filter(holding);
+    const perSupport = new Map<number, number>();
+    for (const r of held) perSupport.set(r.supportId, (perSupport.get(r.supportId) ?? 0) + 1);
+    const reservations = state.supports
+      .filter((s) => (perSupport.get(s.id) ?? 0) > 0)
+      .map((s) =>
+        feature(s.latitude, s.longitude, {
+          supportId: s.id,
+          supportName: s.name,
+          zoneId: s.zoneId,
+          zoneName: zoneOf(s.zoneId)?.name ?? "",
+          weight: (perSupport.get(s.id) ?? 0) * 16,
+          occupancy: Math.min(1, (perSupport.get(s.id) ?? 0) / 4),
+        }),
+      );
+    const byZone = state.zones.map((z) => {
+      const supports = state.supports.filter((s) => s.zoneId === z.id);
+      const reserved = supports.reduce((sum, s) => sum + (perSupport.get(s.id) ?? 0) * 16, 0);
+      const capacity = Math.max(1, supports.length * 16 * 30);
+      return {
+        zoneId: z.id,
+        zoneName: z.name,
+        reservedHours: reserved,
+        capacityHours: capacity,
+        occupancy: Math.round((reserved / capacity) * 10000) / 10000,
+        targets: state.campaigns.filter((c) => (c.zones ?? []).some((cz) => cz.zoneId === z.id)).length,
+        availableSupports: supports.filter((s) => s.technicalStatus === "ACTIF" && !perSupport.get(s.id)).length,
+        totalSupports: supports.length,
+      };
+    });
+    const weights = reservations.map((f) => f.properties.weight);
+    return {
+      from: today(),
+      to: addDays(today(), 29),
+      reservations: { type: "FeatureCollection" as const, features: reservations },
+      targets: { type: "FeatureCollection" as const, features: [] },
+      maxWeight: weights.length ? Math.max(...weights) : 0,
+      totalWeight: weights.reduce((a, b) => a + b, 0),
+      maxReservationWeight: weights.length ? Math.max(...weights) : 0,
+      byZone,
+    };
+  }
+
+  /** A campaign needs a second administrator when it was overridden or its risk reaches 50. */
+  function campaignApprovalStatus(c: CampaignResponse): CampaignApprovalStatus {
+    const risk = c.aiRiskScore ?? null;
+    const reasons: ApprovalReason[] = [];
+    if (c.aiStatus === "REVIEW_REQUIRED") reasons.push("DEROGATION_IA");
+    if ((risk ?? 0) >= 50) reasons.push("RISQUE_ELEVE");
+    return {
+      campaignId: c.id,
+      required: reasons.length > 0,
+      reasons,
+      riskScore: risk,
+      riskThreshold: 50,
+      approvalsRequired: 2,
+      approvalsRequiredConfigured: 2,
+      approvals: [],
+      cycleKey: `campaign-${c.id}`,
+      canApprove: state.user?.role === "ADMINISTRATEUR",
+    };
+  }
+
+  function pendingCampaignApprovals(): PendingCampaignApproval[] {
+    return state.campaigns
+      .filter((c) => c.status === "REVIEW_REQUIRED")
+      .map((c) => ({
+        ...campaignApprovalStatus(c),
+        required: true,
+        campaignName: c.name,
+        clientName: c.clientCompanyName ?? null,
+        status: c.status,
+        requestedAt: c.submittedAt ?? c.createdAt,
+      }));
+  }
+
   function reopen(c: CampaignResponse): void {
     Object.assign(c, {
       status: "BROUILLON",
@@ -853,6 +1050,7 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
     const role = user?.role ?? null;
     const isStaff = role !== null && STAFF.includes(role);
     const isAdmin = role === "ADMINISTRATEUR";
+    const isOperateur = role === "OPERATEUR";
     const isAnnonceur = role === "ANNONCEUR";
 
     // ---- Session (Next route handlers)
@@ -913,6 +1111,23 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
     // ---- Contact (Next route handler): accept without writing to disk
     if (seg[0] === "contact" && method === "POST") {
       return json(route, 201, { ok: true, id: `e2e-${Date.now()}` });
+    }
+
+    // ---- Player heartbeat (round 2 §5.2): presence of a paired screen.
+    if (seg[0] === "diffusion" && seg[1] === "heartbeat" && method === "POST") {
+      const supportId = Number(url.searchParams.get("supportId"));
+      if (!url.searchParams.get("supportId") || !Number.isFinite(supportId)) {
+        return apiError(route, 400, "MISSING_PARAMETER", "Le paramètre supportId est obligatoire.");
+      }
+      if (!supportOf(supportId)) {
+        return apiError(route, 404, "SUPPORT_NOT_FOUND", "Ce Porteur est introuvable.");
+      }
+      return json(route, 200, {
+        supportId,
+        state: "EN_LIGNE",
+        serverTime: new Date().toISOString(),
+        nextHeartbeatSeconds: 30,
+      });
     }
 
     // ---- Diffusion (public)
@@ -3418,6 +3633,302 @@ export async function mockApi(page: Page, options: MockApiOptions): Promise<Mock
       return json(route, 200, paginate(items, url));
     }
 
+    // -----------------------------------------------------------------------
+    // Round 2 (docs/round2-contract.md): supervision, approvals, notifications,
+    // heatmaps, dynamic pricing, AI quality and binary exports.
+    // -----------------------------------------------------------------------
+
+    // ---- Notifications (staff)
+    if (seg[0] === "notifications") {
+      if (!isStaff) return denied(route);
+      if (seg.length === 1 && method === "GET") {
+        const unreadOnly = url.searchParams.get("unreadOnly") === "true";
+        const items = state.notifications
+          .filter((n) => !unreadOnly || n.readAt === null)
+          .sort(byCreatedDesc);
+        return json(route, 200, paginate(items, url));
+      }
+      if (seg[1] === "unread-count" && method === "GET") {
+        return json(route, 200, { count: state.notifications.filter((n) => !n.readAt).length });
+      }
+      if (seg[1] === "read-all" && method === "POST") {
+        let updated = 0;
+        for (const n of state.notifications) {
+          if (!n.readAt) {
+            n.readAt = new Date().toISOString();
+            updated++;
+          }
+        }
+        return json(route, 200, { updated });
+      }
+      if (seg[2] === "read" && method === "POST") {
+        const target = state.notifications.find((n) => n.id === Number(seg[1]));
+        if (!target) {
+          return apiError(route, 404, "NOTIFICATION_NOT_FOUND", "Cette notification est introuvable.");
+        }
+        target.readAt ??= new Date().toISOString();
+        return empty(route);
+      }
+    }
+
+    // ---- Realtime (SSE): one snapshot frame, then the stream stays open.
+    if (seg[0] === "realtime" && method === "GET") {
+      if (!isStaff) return denied(route);
+      const first =
+        seg[1] === "notifications"
+          ? `event:unread-count\ndata:${JSON.stringify({ count: state.notifications.filter((n) => !n.readAt).length })}\n\n`
+          : `event:snapshot\ndata:${JSON.stringify(supervisionSnapshot())}\n\n`;
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          "x-accel-buffering": "no",
+        },
+        body: `retry:5000\n:connecte\n\nid:1\n${first}`,
+      });
+    }
+
+    // ---- Supervision
+    if (seg[0] === "supervision") {
+      if (!isStaff) return denied(route);
+      if (seg[1] === "snapshot" && method === "GET") {
+        return json(route, 200, supervisionSnapshot());
+      }
+      if (seg[1] === "alerts" && seg.length === 2 && method === "GET") {
+        const status = url.searchParams.get("status") ?? "OUVERTE";
+        const type = url.searchParams.get("type");
+        const items = state.alerts
+          .filter((a) =>
+            status === "TOUTES" ? true : status === "RESOLUE" ? a.resolvedAt !== null : a.resolvedAt === null,
+          )
+          .filter((a) => !type || a.type === type)
+          .sort(byCreatedDesc);
+        return json(route, 200, paginate(items, url));
+      }
+      if (seg[1] === "alerts" && seg[3] === "acknowledge" && method === "POST") {
+        const alert = state.alerts.find((a) => a.id === Number(seg[2]));
+        if (!alert) return apiError(route, 404, "ALERT_NOT_FOUND", "Cette alerte est introuvable.");
+        alert.acknowledgedAt ??= new Date().toISOString();
+        alert.acknowledgedByName ??= user?.nom ?? null;
+        audit("ALERT_ACKNOWLEDGED", "SUPPORT", alert.id, `Alerte « ${alert.title} » prise en compte`);
+        return json(route, 200, alert);
+      }
+    }
+
+    // ---- Approvals
+    if (seg[0] === "approvals") {
+      if (!isStaff || isOperateur) return denied(route);
+      if (seg[1] === "pending" && method === "GET") {
+        return json(route, 200, { campaigns: pendingCampaignApprovals(), emergencies: [] });
+      }
+      if (seg[1] === "campaigns" && method === "GET") {
+        const id = Number(seg[2]);
+        const campaign = state.campaigns.find((c) => c.id === id);
+        if (!campaign) return apiError(route, 404, "CAMPAIGN_NOT_FOUND", "Cette campagne est introuvable.");
+        return json(route, 200, campaignApprovalStatus(campaign));
+      }
+    }
+
+    // ---- Heatmaps
+    if (seg[0] === "heatmap" && method === "GET") {
+      const from = url.searchParams.get("from");
+      const to = url.searchParams.get("to");
+      if (from && to && to < from) {
+        return apiError(route, 400, "INVALID_RANGE", "La date de fin précède la date de début.");
+      }
+      if (seg[1] === "diffusions") {
+        if (!isStaff) return denied(route);
+        const perSupport = new Map<number, number>();
+        for (const log of state.diffusionLogs) {
+          perSupport.set(log.supportId, (perSupport.get(log.supportId) ?? 0) + 1);
+        }
+        const features = state.supports
+          .filter((s) => (perSupport.get(s.id) ?? 0) > 0)
+          .map((s) =>
+            feature(s.latitude, s.longitude, {
+              supportId: s.id,
+              supportName: s.name,
+              zoneId: s.zoneId,
+              zoneName: zoneOf(s.zoneId)?.name ?? "",
+              weight: perSupport.get(s.id) ?? 0,
+              clicks: 0,
+            }),
+          );
+        const weights = features.map((f) => f.properties.weight);
+        return json(route, 200, {
+          from: from ?? addDays(today(), -29),
+          to: to ?? today(),
+          maxWeight: weights.length ? Math.max(...weights) : 0,
+          totalWeight: weights.reduce((a, b) => a + b, 0),
+          points: { type: "FeatureCollection", features },
+        });
+      }
+      if (seg[1] === "demand" && seg.length === 2) {
+        if (!isStaff) return denied(route);
+        return json(route, 200, demandHeatmap());
+      }
+      if (seg[1] === "demand" && seg[2] === "public") {
+        const startTime = apiTime(url.searchParams.get("startTime")) ?? "07:00:00";
+        const endTime = apiTime(url.searchParams.get("endTime")) ?? "23:00:00";
+        if (startTime >= endTime) {
+          return apiError(route, 400, "INVALID_TIME_RANGE", "L'heure de début doit précéder l'heure de fin.");
+        }
+        const demand = demandHeatmap();
+        return json(route, 200, {
+          startDate: url.searchParams.get("startDate") ?? today(),
+          endDate: url.searchParams.get("endDate") ?? addDays(today(), 29),
+          startTime,
+          endTime,
+          points: demand.reservations,
+          byZone: demand.byZone.map((z) => ({
+            zoneId: z.zoneId,
+            zoneName: z.zoneName,
+            occupancy: z.occupancy,
+            availableSupports: z.availableSupports ?? 0,
+            totalSupports: z.totalSupports ?? 0,
+          })),
+        });
+      }
+    }
+
+    // ---- Dynamic pricing scale
+    if (seg[0] === "pricing" && seg[1] === "config" && method === "GET") {
+      if (!user) return apiError(route, 401, "UNAUTHENTICATED", "Vous n'êtes pas connecté.");
+      return json(route, 200, PRICING_CONFIG);
+    }
+
+    // ---- AI engines, quality, feedback and calibration (L1)
+    if (seg[0] === "ai" && (seg[1] === "providers" || seg[1] === "quality" || seg[1] === "feedback" || seg[1] === "calibrations")) {
+      if (!isStaff || isOperateur) return denied(route);
+      if (seg[1] === "providers" && method === "GET") {
+        return json(route, 200, {
+          provider: "LOCAL",
+          configured: true,
+          model: null,
+          ocr: {
+            engine: "TESSERACT",
+            languages: "fra+eng+ara",
+            tessdataPresent: true,
+            reason: null,
+          },
+          video: { mp4: true, webm: false },
+          learning: { enabled: true, autoApply: true, cron: "0 30 3 * * *" },
+        });
+      }
+      if (seg[1] === "quality" && method === "GET") {
+        const from = url.searchParams.get("from");
+        const to = url.searchParams.get("to");
+        if (from && to && to < from) {
+          return apiError(route, 400, "INVALID_RANGE", "La période demandée n'est pas valide.");
+        }
+        return json(route, 200, {
+          from: from ?? addDays(today(), -89),
+          to: to ?? today(),
+          feedbackCount: state.aiFeedback.length,
+          confirmedApprovals: state.aiFeedback.filter((f) => f.outcome === "CONFIRMED_APPROVAL").length,
+          falseNegatives: state.aiFeedback.filter((f) => f.outcome === "FALSE_NEGATIVE").length,
+          falsePositives: state.aiFeedback.filter((f) => f.outcome === "FALSE_POSITIVE").length,
+          confirmedFlags: state.aiFeedback.filter((f) => f.outcome === "CONFIRMED_FLAG").length,
+          falsePositiveRate: 0.25,
+          falseNegativeRate: 0.1,
+          accuracy: 0.75,
+          overrideRate: 0.25,
+          perRule: state.aiRules.slice(0, 3).map((r, i) => ({
+            ruleId: r.id,
+            ruleName: r.ruleName,
+            severity: r.severity,
+            active: r.isActive,
+            matches: 8 - i,
+            confirmed: 6 - i,
+            falsePositives: 2,
+            precision: Math.round(((6 - i) / (8 - i)) * 100) / 100,
+            weight: i === 0 ? 0.85 : 1,
+          })),
+          weekly: [0, 1, 2, 3].map((w) => ({
+            weekStart: addDays(today(), -7 * (3 - w) - 6),
+            feedback: 3 + w,
+            falsePositives: w % 2,
+            falseNegatives: 0,
+            overrides: w % 2,
+          })),
+          activeCalibration: state.aiCalibrations[0],
+        });
+      }
+      if (seg[1] === "feedback" && method === "GET") {
+        const outcomes = listParam(url, "outcome");
+        const items = state.aiFeedback
+          .filter((f) => !outcomes || outcomes.includes(f.outcome))
+          .sort(byCreatedDesc);
+        return json(route, 200, paginate(items, url));
+      }
+      if (seg[1] === "calibrations" && seg.length === 2 && method === "GET") {
+        return json(route, 200, state.aiCalibrations);
+      }
+      if (seg[1] === "calibrations" && seg[2] === "recalibrate" && method === "POST") {
+        if (!isAdmin) return denied(route);
+        const previous = state.aiCalibrations[0];
+        if (!previous) {
+          return apiError(route, 404, "CALIBRATION_NOT_FOUND", "Aucune calibration active.");
+        }
+        const created: AiCalibrationResponse = {
+          ...previous,
+          version: previous.version + 1,
+          trigger: "MANUEL" as const,
+          changed: true,
+          active: true,
+          approveThreshold: 34,
+          createdAt: new Date().toISOString(),
+          createdByName: user?.nom ?? null,
+        };
+        for (const c of state.aiCalibrations) c.active = false;
+        state.aiCalibrations.unshift(created);
+        audit("AI_RECALIBRATED", "AI_CALIBRATION", created.version, `Recalibration IA v${created.version}`);
+        return json(route, 201, created);
+      }
+      if (seg[1] === "calibrations" && seg[3] === "activate" && method === "POST") {
+        if (!isAdmin) return denied(route);
+        const version = Number(seg[2]);
+        const target = state.aiCalibrations.find((c) => c.version === version);
+        if (!target) return apiError(route, 404, "CALIBRATION_NOT_FOUND", "Cette version est introuvable.");
+        for (const c of state.aiCalibrations) c.active = c.version === version;
+        audit("AI_CALIBRATION_ACTIVATED", "AI_CALIBRATION", version, `Calibration v${version} activée`);
+        return json(route, 200, target);
+      }
+    }
+
+    // ---- Binary statistics exports (PDF and Excel)
+    if (
+      seg[0] === "statistics" &&
+      (seg[1] === "export.pdf" || seg[1] === "export.xlsx") &&
+      method === "GET"
+    ) {
+      const type = url.searchParams.get("type");
+      if (!type || !["views", "dashboard", "mine", "campaign"].includes(type)) {
+        return apiError(route, 400, "EXPORT_TYPE_INVALID", "Ce type d'export n'existe pas.");
+      }
+      if ((type === "views" || type === "dashboard") && !isStaff) return denied(route);
+      if (type === "mine" && !isAnnonceur) return denied(route);
+      const pdf = seg[1] === "export.pdf";
+      // Minimal but real signatures: "%PDF" and the ZIP magic "PK\x03\x04" the callers check.
+      const body = pdf
+        ? Buffer.from("%PDF-1.4\n% TPUB export simulé\n%%EOF\n", "utf8")
+        : Buffer.concat([
+            Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+            Buffer.from("TPUB export simulé", "utf8"),
+          ]);
+      return route.fulfill({
+        status: 200,
+        headers: {
+          "content-type": pdf
+            ? "application/pdf"
+            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "content-disposition": `attachment; filename="tpub-statistiques-${type}.${pdf ? "pdf" : "xlsx"}"`,
+          "cache-control": "no-store",
+        },
+        body,
+      });
+    }
     api.unhandled.push(`${method} ${path}`);
     return apiError(route, 500, "INTERNAL_ERROR", "Erreur inattendue du serveur simulé.");
   };

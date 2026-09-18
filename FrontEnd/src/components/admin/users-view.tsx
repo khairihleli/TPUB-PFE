@@ -25,6 +25,7 @@ import {
   deviceLabel,
   emptyStaffForm,
   passwordChangeBlocker,
+  passwordResetBlocker,
   securityBadges,
   NOTES_MAX,
   STAFF_CREATE_FIELDS,
@@ -46,6 +47,7 @@ import {
   VALIDATION_EFFECT,
   VALIDATION_STATUSES,
 } from "@/components/admin/users-model";
+import { CopyButton } from "@/components/contact/copy-button";
 import { useSession } from "@/components/shell/session-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -957,7 +959,34 @@ function UserDetailDialog({
   );
 }
 
-type SecurityAction = "reset-2fa" | "require-password";
+type SecurityAction = "reset-2fa" | "require-password" | "reset-password";
+
+const SECURITY_ACTION_COPY: Record<
+  SecurityAction,
+  { title: (name: string) => string; description: string; confirmLabel: string; toast: string }
+> = {
+  "reset-2fa": {
+    title: (name) => `Réinitialiser la double authentification de ${name} ?`,
+    description:
+      "Son application et ses codes de secours ne fonctionneront plus et ses sessions sont fermées. Si son rôle l'impose, une nouvelle activation lui sera demandée à la prochaine connexion.",
+    confirmLabel: "Réinitialiser",
+    toast: "Double authentification réinitialisée",
+  },
+  "require-password": {
+    title: (name) => `Exiger un nouveau mot de passe de ${name} ?`,
+    description:
+      "Ses sessions sont fermées. À sa prochaine connexion, la personne devra définir un nouveau mot de passe avant de continuer.",
+    confirmLabel: "Exiger le changement",
+    toast: "Nouveau mot de passe exigé",
+  },
+  "reset-password": {
+    title: (name) => `Réinitialiser le mot de passe de ${name} ?`,
+    description:
+      "Son mot de passe actuel est remplacé par un mot de passe temporaire affiché une seule fois, et ses sessions sont fermées. La personne devra en choisir un nouveau à la connexion suivante.",
+    confirmLabel: "Réinitialiser le mot de passe",
+    toast: "Mot de passe réinitialisé",
+  },
+};
 
 function UserDetail({
   userId,
@@ -974,6 +1003,7 @@ function UserDetail({
   const detail = useResource(`admin:user:${userId}`, (signal) => loadUserDetail(userId, signal));
   const [revoking, setRevoking] = useState(false);
   const [securityAction, setSecurityAction] = useState<SecurityAction | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState<string | null>(null);
   const account = detail.data?.account;
 
   const revoke = async () => {
@@ -1077,39 +1107,58 @@ function UserDetail({
                 >
                   Exiger un nouveau mot de passe
                 </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabledReason={passwordResetBlocker(account, currentUserId)}
+                  onClick={() => setSecurityAction("reset-password")}
+                >
+                  Réinitialiser le mot de passe
+                </Button>
               </div>
+              {temporaryPassword ? (
+                <Alert
+                  tone="warning"
+                  live="status"
+                  title="Mot de passe temporaire — affiché une seule fois"
+                  className="mt-3"
+                >
+                  <p>
+                    Transmettez-le à {accountTitle(account)} par un canal sûr. Un nouveau mot de
+                    passe lui sera demandé dès sa prochaine connexion.
+                  </p>
+                  <div className="mt-2 flex items-start gap-2">
+                    <code className="min-w-0 flex-1 rounded-control border border-line bg-overlay-inset px-3 py-2 font-mono text-[0.8125rem] break-all text-ink-strong">
+                      {temporaryPassword}
+                    </code>
+                    <CopyButton value={temporaryPassword} label="Copier le mot de passe" />
+                  </div>
+                </Alert>
+              ) : null}
               <ConfirmDialog
                 open={securityAction !== null}
                 onOpenChange={(open) => {
                   if (!open) setSecurityAction(null);
                 }}
-                title={
-                  securityAction === "reset-2fa"
-                    ? `Réinitialiser la double authentification de ${accountTitle(account)} ?`
-                    : `Exiger un nouveau mot de passe de ${accountTitle(account)} ?`
-                }
-                description={
-                  securityAction === "reset-2fa"
-                    ? "Son application et ses codes de secours ne fonctionneront plus et ses sessions sont fermées. Si son rôle l'impose, une nouvelle activation lui sera demandée à la prochaine connexion."
-                    : "Ses sessions sont fermées. À sa prochaine connexion, la personne devra définir un nouveau mot de passe avant de continuer."
-                }
-                confirmLabel={
-                  securityAction === "reset-2fa" ? "Réinitialiser" : "Exiger le changement"
-                }
+                title={SECURITY_ACTION_COPY[securityAction ?? "reset-2fa"].title(
+                  accountTitle(account),
+                )}
+                description={SECURITY_ACTION_COPY[securityAction ?? "reset-2fa"].description}
+                confirmLabel={SECURITY_ACTION_COPY[securityAction ?? "reset-2fa"].confirmLabel}
                 onConfirm={async () => {
-                  const updated =
-                    securityAction === "reset-2fa"
-                      ? await adminUsersApi.resetTwoFactor(userId)
-                      : await adminUsersApi.requirePasswordChange(userId);
-                  onUpdated(updated);
+                  const action = securityAction ?? "reset-2fa";
+                  if (action === "reset-password") {
+                    const issued = await adminUsersApi.resetPassword(userId);
+                    setTemporaryPassword(issued.temporaryPassword);
+                  } else {
+                    const updated =
+                      action === "reset-2fa"
+                        ? await adminUsersApi.resetTwoFactor(userId)
+                        : await adminUsersApi.requirePasswordChange(userId);
+                    onUpdated(updated);
+                  }
                   detail.reload();
-                  toast({
-                    title:
-                      securityAction === "reset-2fa"
-                        ? "Double authentification réinitialisée"
-                        : "Nouveau mot de passe exigé",
-                    variant: "success",
-                  });
+                  toast({ title: SECURITY_ACTION_COPY[action].toast, variant: "success" });
                 }}
               />
             </section>

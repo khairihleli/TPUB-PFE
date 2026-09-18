@@ -25,6 +25,7 @@ import {
   adminCredentials,
   demoPassword,
   login,
+  loginOrAdopt,
   pairingUrl,
   readDeviceKeys,
   saveDeviceKey,
@@ -411,6 +412,8 @@ async function seedAccounts(admin) {
       console.log(`+ compte ${staff.role} ${staff.email}`);
     } catch (err) {
       if (err.code !== "EMAIL_ALREADY_REGISTERED") throw err;
+      // Account left by an older seed: realign its password on the generated one.
+      await loginOrAdopt({ email: staff.email, password: demoPassword(staff.email) }, admin.token);
     }
   }
 
@@ -423,7 +426,10 @@ async function seedAccounts(admin) {
     console.log(`+ compte annonceur ${ADVERTISER.email}`);
   } catch (err) {
     if (err.code !== "EMAIL_ALREADY_REGISTERED") throw err;
-    advertiser = await login({ email: ADVERTISER.email, password: advertiserPassword });
+    advertiser = await loginOrAdopt(
+      { email: ADVERTISER.email, password: advertiserPassword },
+      admin.token,
+    );
   }
 
   // Manual validation of the advertiser (only from PENDING, so an admin decision is never undone).

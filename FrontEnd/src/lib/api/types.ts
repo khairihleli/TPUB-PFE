@@ -167,6 +167,7 @@ export type AuditAction =
   | "USER_SESSIONS_REVOKED"
   // Round 2 (L2): account security and player device keys
   | "USER_PASSWORD_CHANGE_REQUIRED"
+  | "USER_PASSWORD_RESET"
   | "USER_2FA_ENABLED"
   | "USER_2FA_DISABLED"
   | "USER_2FA_RESET"
@@ -389,6 +390,15 @@ export interface LoginHistoryResponse {
 
 export interface RevokedCountResponse {
   revoked: number;
+}
+
+/** POST /api/admin/users/{id}/password/reset — the temporary password is returned once. */
+export interface TemporaryPasswordResponse {
+  userId: number;
+  email: string;
+  temporaryPassword: string;
+  mustChangePassword: boolean;
+  revokedSessions: number;
 }
 
 // ---------------------------------------------------------------------------

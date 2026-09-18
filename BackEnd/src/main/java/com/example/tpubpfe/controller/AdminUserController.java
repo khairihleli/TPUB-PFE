@@ -9,6 +9,7 @@ import com.example.tpubpfe.dto.PageResponse;
 import com.example.tpubpfe.dto.RevokedCountResponse;
 import com.example.tpubpfe.dto.RoleResponse;
 import com.example.tpubpfe.dto.SessionResponse;
+import com.example.tpubpfe.dto.TemporaryPasswordResponse;
 import com.example.tpubpfe.model.ClientValidationStatus;
 import com.example.tpubpfe.model.RoleCode;
 import com.example.tpubpfe.service.AdminUserService;
@@ -119,6 +120,13 @@ public class AdminUserController {
     @PostMapping("/users/{id}/require-password-change")
     public ResponseEntity<AdminUserResponse> requirePasswordChange(@PathVariable Long id) {
         return ResponseEntity.ok(adminUserService.requirePasswordChange(id));
+    }
+
+    @Operation(summary = "Reset the user password (temporary password shown once, sessions closed)")
+    @PreAuthorize("hasRole('ADMINISTRATEUR')")
+    @PostMapping("/users/{id}/password/reset")
+    public ResponseEntity<TemporaryPasswordResponse> resetPassword(@PathVariable Long id) {
+        return ResponseEntity.ok(adminUserService.resetPassword(id));
     }
 
     @Operation(summary = "Reset the user's two-factor authentication (closes the user's sessions)")

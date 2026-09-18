@@ -9,6 +9,7 @@ import com.example.tpubpfe.dto.PageResponse;
 import com.example.tpubpfe.dto.RevokedCountResponse;
 import com.example.tpubpfe.dto.RoleResponse;
 import com.example.tpubpfe.dto.SessionResponse;
+import com.example.tpubpfe.dto.TemporaryPasswordResponse;
 import com.example.tpubpfe.model.Client;
 import com.example.tpubpfe.model.ClientValidationStatus;
 import com.example.tpubpfe.model.Role;
@@ -19,6 +20,7 @@ import com.example.tpubpfe.repository.ClientRepository;
 import com.example.tpubpfe.repository.RoleRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.repository.UserSessionRepository;
+import com.example.tpubpfe.security.GeneratedPasswords;
 import com.example.tpubpfe.security.UserDetailsImpl;
 import com.example.tpubpfe.security.totp.TotpPolicy;
 import com.example.tpubpfe.service.storage.FileStorageService;
@@ -247,6 +249,30 @@ public class AdminUserService {
         auditService.record("USER_PASSWORD_CHANGE_REQUIRED", "USER", user.getId(),
                 "Changement de mot de passe exigé pour « " + user.getEmail() + " »", Map.of("revokedSessions", revoked));
         return toResponse(user);
+    }
+
+    /**
+     * Round 2: replaces the password with a generated temporary one, returned once, forces a new password at the
+     * next login and closes every session. Never on self.
+     */
+    @Transactional
+    public TemporaryPasswordResponse resetPassword(Long id) {
+        User user = find(id);
+        ensureNotSelf(user, "Vous ne pouvez pas réinitialiser votre propre mot de passe ici : utilisez « Mon compte ».");
+        String temporary = GeneratedPasswords.generate();
+        user.setPasswordHash(passwordEncoder.encode(temporary));
+        user.setMustChangePassword(true);
+        userRepository.save(user);
+        int revoked = sessionService.revokeAll(user.getId(), null, SessionRevokeReason.REVOKED_BY_ADMIN);
+        auditService.record("USER_PASSWORD_RESET", "USER", user.getId(),
+                "Réinitialisation du mot de passe de « " + user.getEmail() + " »", Map.of("revokedSessions", revoked));
+        return TemporaryPasswordResponse.builder()
+                .userId(user.getId())
+                .email(user.getEmail())
+                .temporaryPassword(temporary)
+                .mustChangePassword(true)
+                .revokedSessions(revoked)
+                .build();
     }
 
     /** Round 2: disables TOTP, deletes recovery codes and closes every session. Never on self. */

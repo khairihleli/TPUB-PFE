@@ -14,6 +14,7 @@ import com.example.tpubpfe.repository.ClientRepository;
 import com.example.tpubpfe.repository.RoleRepository;
 import com.example.tpubpfe.repository.UserRepository;
 import com.example.tpubpfe.repository.UserSessionRepository;
+import com.example.tpubpfe.security.GeneratedPasswords;
 import com.example.tpubpfe.security.totp.TotpPolicy;
 import com.example.tpubpfe.service.storage.FileStorageService;
 import org.assertj.core.api.ThrowableAssert;
@@ -219,6 +220,29 @@ class AdminUserServiceTest {
         verify(sessionService).revokeAll(eq(8L), isNull(), eq(SessionRevokeReason.REVOKED_BY_ADMIN));
         verify(auditService).record(eq("USER_2FA_RESET"), eq("USER"), eq(8L), anyString(), anyMap());
         assertThat(response.isTwoFactorRequired()).isTrue();
+    }
+
+    @Test
+    void resetPasswordIssuesATemporaryPasswordRevokesAndAuditsButNeverOnSelf() {
+        user(1L, RoleCode.ADMINISTRATEUR, true);
+        assertCode(() -> service.resetPassword(1L), "ROLE_NOT_ALLOWED");
+
+        User target = user(9L, RoleCode.SUPERVISEUR, true);
+        String previousHash = target.getPasswordHash();
+        when(sessionService.revokeAll(9L, null, SessionRevokeReason.REVOKED_BY_ADMIN)).thenReturn(2);
+        var response = service.resetPassword(9L);
+
+        assertThat(response.getTemporaryPassword()).hasSize(GeneratedPasswords.LENGTH);
+        assertThat(GeneratedPasswords.isAcceptable(response.getTemporaryPassword())).isTrue();
+        assertThat(response.getUserId()).isEqualTo(9L);
+        assertThat(response.isMustChangePassword()).isTrue();
+        assertThat(response.getRevokedSessions()).isEqualTo(2);
+        // The stored hash is the encoded temporary password, never the clear value.
+        assertThat(target.getPasswordHash()).isEqualTo("hash:" + response.getTemporaryPassword())
+                .isNotEqualTo(previousHash);
+        assertThat(target.getMustChangePassword()).isTrue();
+        verify(auditService).record(eq("USER_PASSWORD_RESET"), eq("USER"), eq(9L), anyString(),
+                eq(Map.of("revokedSessions", 2)));
     }
 
     private static AdminUserUpdateRequest update(RoleCode role) {

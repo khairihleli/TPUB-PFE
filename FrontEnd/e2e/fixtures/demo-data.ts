@@ -29,6 +29,14 @@ import type {
   UserSessionResponse,
   ZoneResponse,
 } from "../../src/lib/api/types";
+import type {
+  AiCalibrationResponse,
+  AiFeedbackResponse,
+} from "../../src/lib/api/types-ia";
+import type {
+  NotificationResponse,
+  SupervisionAlert,
+} from "../../src/lib/api/types-supervision";
 
 const TZ = "Africa/Tunis";
 
@@ -1250,6 +1258,11 @@ export function createDemoState() {
     users,
     sessions: demoSessions(),
     auditLogs: demoAuditLogs(),
+    // Round 2: supervision alerts and staff notifications.
+    alerts: demoAlerts(),
+    notifications: demoNotifications(),
+    aiCalibrations: demoCalibrations(),
+    aiFeedback: demoAiFeedback(),
     /** Extra platform-wide diffusion log rows (admin « Lignes du journal de diffusion »). */
     diffusionLogCount: 1284,
     diffusion: "publicite" as "publicite" | "urgence" | "defaut",
@@ -1260,3 +1273,176 @@ export function createDemoState() {
 }
 
 export type DemoState = ReturnType<typeof createDemoState>;
+
+// ---------------------------------------------------------------------------
+// Round 2 — supervision alerts and staff notifications (docs/round2-contract.md §5)
+// ---------------------------------------------------------------------------
+/** One open alert (a Porteur that stopped reporting) and one already resolved. */
+export function demoAlerts(): SupervisionAlert[] {
+  const at = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  return [
+    {
+      id: 1,
+      type: "SUPPORT_OFFLINE",
+      severity: "CRITIQUE",
+      title: "Écran hors ligne : Écran Boulevard Hédi Chaker",
+      message:
+        "Le Porteur « Écran Boulevard Hédi Chaker » n'a plus donné signe de vie depuis 90 secondes.",
+      supportId: 9,
+      zoneId: 4,
+      emergencyId: null,
+      campaignId: null,
+      createdAt: at(25),
+      resolvedAt: null,
+      acknowledgedAt: null,
+      acknowledgedByName: null,
+    },
+    {
+      id: 2,
+      type: "ZONE_SATURATION",
+      severity: "AVERTISSEMENT",
+      title: "Zone saturée : Tunis Centre",
+      message: "Tous les Porteurs ACTIF de « Tunis Centre » sont réservés sur la période.",
+      supportId: null,
+      zoneId: 1,
+      emergencyId: null,
+      campaignId: null,
+      createdAt: at(180),
+      resolvedAt: at(60),
+      acknowledgedAt: at(120),
+      acknowledgedByName: "Administrateur TPUB",
+    },
+  ];
+}
+
+/** Two unread notifications and one already read, newest first. */
+export function demoNotifications(): NotificationResponse[] {
+  const at = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  return [
+    {
+      id: 3,
+      type: "SUPPORT_OFFLINE",
+      severity: "CRITIQUE",
+      title: "Écran hors ligne : Écran Boulevard Hédi Chaker",
+      message: "Le Porteur ne répond plus depuis 90 secondes.",
+      link: "/admin/supervision?porteur=9",
+      entityType: "SUPPORT",
+      entityId: "9",
+      createdAt: at(25),
+      readAt: null,
+    },
+    {
+      id: 2,
+      type: "CAMPAIGN_APPROVAL_REQUIRED",
+      severity: "AVERTISSEMENT",
+      title: "Deuxième validation demandée : Promo rentrée",
+      message: "Une dérogation à l'avis de l'IA attend un second administrateur.",
+      link: "/admin/approbations",
+      entityType: "CAMPAIGN",
+      entityId: "4",
+      createdAt: at(90),
+      readAt: null,
+    },
+    {
+      id: 1,
+      type: "EMERGENCY_BROADCAST",
+      severity: "CRITIQUE",
+      title: "Message prioritaire diffusé : Alerte météo",
+      message: "Le message prioritaire est diffusé sur les écrans de la zone.",
+      link: "/admin/urgences",
+      entityType: "EMERGENCY",
+      entityId: "1",
+      createdAt: at(240),
+      readAt: at(200),
+    },
+  ];
+}
+
+/** Active calibration of the AI (round 2 §2.6) plus the initial version. */
+export function demoCalibrations(): AiCalibrationResponse[] {
+  return [
+    {
+      version: 2,
+      active: true,
+      trigger: "PLANIFIE",
+      changed: true,
+      approveThreshold: 33,
+      rejectThreshold: 70,
+      ruleWeights: [{ ruleId: 1, ruleName: "promesse-gratuit-garanti", weight: 0.85 }],
+      feedbackCount: 24,
+      falsePositives: 6,
+      falseNegatives: 2,
+      createdByName: null,
+      createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+    },
+    {
+      version: 1,
+      active: false,
+      trigger: "INITIAL",
+      changed: false,
+      approveThreshold: 31,
+      rejectThreshold: 70,
+      ruleWeights: [],
+      feedbackCount: 0,
+      falsePositives: 0,
+      falseNegatives: 0,
+      createdByName: null,
+      createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+    },
+  ];
+}
+
+/** Admin decisions compared with the AI verdict, newest first. */
+export function demoAiFeedback(): AiFeedbackResponse[] {
+  const at = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+  return [
+    {
+      id: 3,
+      campaignId: 4,
+      campaignName: "Promo rentrée",
+      checkId: 1002,
+      decisionLogId: 12,
+      aiStatus: "REVIEW_REQUIRED",
+      adminDecision: "VALIDATED_OVERRIDE",
+      outcome: "FALSE_POSITIVE",
+      riskScore: 42,
+      qualityScore: 68,
+      matchedRuleIds: [1],
+      calibrationVersion: 2,
+      decidedByName: "Administrateur TPUB",
+      createdAt: at(1),
+    },
+    {
+      id: 2,
+      campaignId: 2,
+      campaignName: "Soldes d'été",
+      checkId: 1001,
+      decisionLogId: 8,
+      aiStatus: "APPROVED",
+      adminDecision: "VALIDATED",
+      outcome: "CONFIRMED_APPROVAL",
+      riskScore: 12,
+      qualityScore: 82,
+      matchedRuleIds: [],
+      calibrationVersion: 2,
+      decidedByName: "Administrateur TPUB",
+      createdAt: at(4),
+    },
+    {
+      id: 1,
+      campaignId: 5,
+      campaignName: "Ouverture boutique",
+      checkId: 1000,
+      decisionLogId: 5,
+      aiStatus: "REVIEW_REQUIRED",
+      adminDecision: "REJECTED",
+      outcome: "CONFIRMED_FLAG",
+      riskScore: 55,
+      qualityScore: 40,
+      matchedRuleIds: [2],
+      calibrationVersion: 1,
+      decidedByName: "Administrateur TPUB",
+      createdAt: at(9),
+    },
+  ];
+}

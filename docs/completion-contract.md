@@ -6,7 +6,17 @@ Scope is fixed by the owner:
 - **In:** every CdC `[MVP]` bullet from §3.1 to §8.
 - **In ("Important" bonuses):** statistics, charts and history; budget and views estimation; OCR / text-in-image (simulated OCR, with Tesseract used only if it is on PATH); quality and risk scores; best-zone recommendation.
 - **In (cheap bonuses):** campaign duplication, statistics CSV export, audit trail, urgency levels, alternative slots when a zone is saturated.
-- **Out:** 2FA, polygon drawing, dynamic pricing, learning from admin decisions, websocket realtime.
+- **Out (round 1):** 2FA, polygon drawing, dynamic pricing, learning from admin decisions, websocket realtime.
+  **Round 2 brought every one of them in**, plus real OCR and media analysis, heatmaps, PDF/Excel exports,
+  multi-level approval, operator notifications and player/media/secret hardening. They are specified in
+  `docs/round2-contract.md` and implemented: real Tess4J OCR (`fra+eng+ara`, tessdata downloaded by
+  `BackEnd/scripts/fetch-tessdata.*`, simulated fallback with a WARN), JCodec video frames and local image
+  metrics, optional OpenAI/Anthropic vision providers, learning from admin decisions with versioned
+  recalibration and the `/admin/ia-qualite` error dashboard, TOTP 2FA with recovery codes, polygon campaign
+  zones and polygon emergency targeting, diffusion and demand heatmaps, dynamic pricing with a price
+  breakdown, SSE supervision with heartbeats and alerts, two-administrator approval, notification centre,
+  PDF/Excel exports, player device keys, signed expiring media URLs and generated local secrets.
+  Round-2 behaviour is exercised end to end by `FrontEnd/scripts/bonus-scenario.mjs`.
 
 If this contract conflicts with AC, **this contract wins**. Any change to this contract goes in §6 "Deviations", with the reason.
 

@@ -108,8 +108,12 @@ export async function login({ email, password }, { env = process.env } = {}) {
     auth = await call("POST", "/api/auth/login", { body: { email, password } });
   } catch (err) {
     if (err.code === "BAD_CREDENTIALS") {
-      throw new SetupError(
-        `Connexion refusée pour ${email} : mot de passe incorrect. Une base existante garde son ancien mot de passe : relancez avec TPUB_ADMIN_PASSWORD=<mot de passe> (administrateur) ou TPUB_DEMO_PASSWORD=<mot de passe> (comptes de démonstration).`,
+      // `code` is kept so loginOrAdopt() can realign the password of a pre-round-2 account.
+      throw Object.assign(
+        new SetupError(
+          `Connexion refusée pour ${email} : mot de passe incorrect. Une base existante garde son ancien mot de passe : relancez avec TPUB_ADMIN_PASSWORD=<mot de passe> (administrateur) ou TPUB_DEMO_PASSWORD=<mot de passe> (comptes de démonstration).`,
+        ),
+        { code: "BAD_CREDENTIALS" },
       );
     }
     throw err;
@@ -136,6 +140,43 @@ export async function login({ email, password }, { env = process.env } = {}) {
     );
   }
   return auth;
+}
+
+/**
+ * Logs a demo account in, realigning its password when the account predates the generated ones.
+ * An account created by an older seed keeps its own password, which no tracked file may hold: the
+ * administrator resets it (POST /api/admin/users/{id}/password/reset, temporary password returned
+ * once), the script consumes the forced change with POST /api/me/password and the account ends up
+ * with the password stored in .demo-accounts.json. Never used on the administrator's own account.
+ */
+export async function loginOrAdopt({ email, password }, adminToken, { env = process.env } = {}) {
+  try {
+    return await login({ email, password }, { env });
+  } catch (err) {
+    if (err.code !== "BAD_CREDENTIALS" || !adminToken) throw err;
+  }
+  const page = await call("GET", "/api/admin/users", {
+    token: adminToken,
+    query: { q: email, size: 5 },
+  });
+  const account = (page?.items ?? []).find((u) => u.email?.toLowerCase() === email.toLowerCase());
+  if (!account) {
+    throw new SetupError(
+      `Le compte ${email} existe mais reste introuvable côté administration : relancez avec TPUB_DEMO_PASSWORD=<mot de passe>.`,
+    );
+  }
+  const issued = await call("POST", `/api/admin/users/${account.userId}/password/reset`, {
+    token: adminToken,
+  });
+  const temporary = await call("POST", "/api/auth/login", {
+    body: { email, password: issued.temporaryPassword },
+  });
+  await call("POST", "/api/me/password", {
+    token: temporary.token,
+    body: { currentPassword: issued.temporaryPassword, newPassword: password },
+  });
+  console.log(`~ mot de passe de ${email} réaligné sur celui de la démonstration`);
+  return login({ email, password }, { env });
 }
 
 /** Stored device keys by support id. */

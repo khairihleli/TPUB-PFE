@@ -121,6 +121,17 @@ export function passwordChangeBlocker(
   return null;
 }
 
+/** Why « Réinitialiser le mot de passe » is unavailable, null when it is allowed. */
+export function passwordResetBlocker(
+  u: Pick<AdminUserResponse, "userId">,
+  currentUserId: number,
+): string | null {
+  if (u.userId === currentUserId) {
+    return "Changez votre propre mot de passe depuis « Mon compte ».";
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Staff account creation / update
 // ---------------------------------------------------------------------------

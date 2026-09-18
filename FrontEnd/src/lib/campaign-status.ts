@@ -1060,6 +1060,7 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   CLIENT_VALIDATION_CHANGED: "Validation annonceur modifiée",
   USER_SESSIONS_REVOKED: "Sessions révoquées",
   USER_PASSWORD_CHANGE_REQUIRED: "Nouveau mot de passe exigé",
+  USER_PASSWORD_RESET: "Mot de passe réinitialisé",
   USER_2FA_ENABLED: "Double authentification activée",
   USER_2FA_DISABLED: "Double authentification désactivée",
   USER_2FA_RESET: "Double authentification réinitialisée",

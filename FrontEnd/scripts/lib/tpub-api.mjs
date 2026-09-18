@@ -144,3 +144,120 @@ export function pngForm(fileName, seed) {
   form.append("file", new Blob([makePng(1280, 720, seed)], { type: "image/png" }), fileName);
   return form;
 }
+
+// ---------------------------------------------------------------------------
+// Text rendering (bonus scenario: real OCR must read words from a generated PNG)
+// ---------------------------------------------------------------------------
+/**
+ * 5×7 glyphs, one string of five bits per row, for the characters the bonus scenario draws.
+ * Kept deliberately blocky: scaled up with hard edges, Tesseract reads them like a pixel font.
+ */
+const GLYPHS = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01111", "10000", "10000", "10011", "10001", "10001", "01111"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00010", "00010", "00010", "00010", "10010", "01100"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "11011", "10001"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  0: ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  1: ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  2: ["01110", "10001", "00001", "00110", "01000", "10000", "11111"],
+  3: ["11111", "00010", "00100", "00010", "00001", "10001", "01110"],
+  4: ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  5: ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+  6: ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+  7: ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  8: ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  9: ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+};
+
+const GLYPH_WIDTH = 5;
+const GLYPH_HEIGHT = 7;
+
+/** Characters {@link makeTextPng} can draw (anything else is refused rather than silently dropped). */
+export function canRender(text) {
+  return [...text.toUpperCase()].every((c) => GLYPHS[c] !== undefined);
+}
+
+/**
+ * A white PNG with `lines` written in black, one line per entry, using {@link GLYPHS} scaled by
+ * `scale`. Used by the bonus scenario so the real OCR has actual words to read.
+ */
+export function makeTextPng(lines, { scale = 12, padding = 40 } = {}) {
+  const rows = lines.map((line) => [...line.toUpperCase()]);
+  for (const row of rows) {
+    for (const c of row) {
+      if (!GLYPHS[c]) throw new Error(`Caractère non dessinable : « ${c} »`);
+    }
+  }
+  const columns = Math.max(...rows.map((r) => r.length));
+  const glyphPitch = (GLYPH_WIDTH + 1) * scale;
+  const linePitch = (GLYPH_HEIGHT + 3) * scale;
+  const width = padding * 2 + columns * glyphPitch;
+  const height = padding * 2 + rows.length * linePitch;
+  const raw = Buffer.alloc((width * 3 + 1) * height, 0xff);
+  for (let y = 0; y < height; y++) raw[y * (width * 3 + 1)] = 0; // filter: none
+  const setPixel = (x, y) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const offset = y * (width * 3 + 1) + 1 + x * 3;
+    raw[offset] = 0;
+    raw[offset + 1] = 0;
+    raw[offset + 2] = 0;
+  };
+  rows.forEach((row, lineIndex) => {
+    row.forEach((char, charIndex) => {
+      const glyph = GLYPHS[char];
+      const originX = padding + charIndex * glyphPitch;
+      const originY = padding + lineIndex * linePitch;
+      glyph.forEach((bits, gy) => {
+        [...bits].forEach((bit, gx) => {
+          if (bit !== "1") return;
+          for (let dy = 0; dy < scale; dy++) {
+            for (let dx = 0; dx < scale; dx++) {
+              setPixel(originX + gx * scale + dx, originY + gy * scale + dy);
+            }
+          }
+        });
+      });
+    });
+  });
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // bit depth
+  header[9] = 2; // colour type RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(raw, { level: 6 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** Multipart body for a buffer already built (PNG with text, MP4 fixture…). */
+export function fileForm(buffer, fileName, type) {
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type }), fileName);
+  return form;
+}

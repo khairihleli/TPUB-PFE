@@ -326,8 +326,20 @@ simulée du lecteur (`?datetime=`) ; hors de ce profil, le serveur utilise son h
 `TPUB_ADMIN_INITIAL_PASSWORD` de `.tpub-local.secrets` (sans cette variable, hors start-local, un
 mot de passe aléatoire est affiché une seule fois dans le journal du backend et doit être changé à
 la première connexion sur `/mot-de-passe-requis`). **Une base existante garde son administrateur
-et son ancien mot de passe** (la migration V7 ne force aucun changement) : changez-le depuis
-`/admin/compte`, puis relancez les scripts avec `TPUB_ADMIN_PASSWORD=<nouveau mot de passe>`.
+et son ancien mot de passe** (la migration V7 pose `must_change_password = false` sur les comptes
+déjà créés, donc rien n'est bloqué) : `admin@tpub.local` continue de se connecter avec le mot de
+passe du round 1, `Admin@123`, qui était **écrit en clair dans le code** (`DataInitializer`) et
+reste donc lisible dans l'historique git — il est **compromis**. Changez-le dès la première
+connexion depuis `/admin/compte`, puis relancez les scripts avec
+`TPUB_ADMIN_PASSWORD=<nouveau mot de passe>` (sans cette variable, les scripts lisent
+`TPUB_ADMIN_INITIAL_PASSWORD` de `.tpub-local.secrets`, qui ne vaut que pour une base neuve).
+
+**Réinitialiser le mot de passe d'un compte** : dans `/admin/utilisateurs`, le détail d'un compte
+propose « Réinitialiser le mot de passe » (jamais sur soi-même). Le backend tire un mot de passe
+temporaire, l'affiche **une seule fois**, ferme les sessions du compte et impose un nouveau mot de
+passe à la connexion suivante (`POST /api/admin/users/{id}/password/reset`, audit
+`USER_PASSWORD_RESET`). `seed-demo.mjs` s'en sert pour réaligner automatiquement les comptes de
+démonstration créés par une ancienne version sur les mots de passe de `scripts/.demo-accounts.json`.
 
 **OCR** : sans `BackEnd\tessdata\fra.traineddata`, l'OCR est simulé ; lancez
 `BackEnd\scripts\fetch-tessdata.ps1` pour activer Tesseract (start-local ne télécharge rien).
@@ -348,8 +360,10 @@ diffusion aujourd'hui, une à valider, une en revue manuelle, un brouillon) et l
 
 Aucun mot de passe n'est écrit dans les scripts : `TPUB_DEMO_PASSWORD` impose un mot de passe
 commun aux comptes de démonstration, sinon chacun est généré une fois dans
-`scripts/.demo-accounts.json` (ignoré par git) et affiché en fin de seed. Des comptes créés par une
-ancienne version gardent leur ancien mot de passe : relancez alors avec `TPUB_DEMO_PASSWORD`. Le
+`scripts/.demo-accounts.json` (ignoré par git) et affiché en fin de seed. Un compte de
+démonstration créé par une ancienne version est **réaligné automatiquement** : le seed le
+réinitialise en administrateur, consomme le changement imposé et lui redonne le mot de passe du
+fichier (ligne « ~ mot de passe de … réaligné »). Le
 second administrateur sert aux **doubles approbations** (messages d'urgence, validations avec
 dérogation ou risque élevé).
 
@@ -379,6 +393,18 @@ simulée n'est honorée qu'avec le profil `local` (sinon avertissement « horlog
 et les doubles approbations sont complétées avec `admin2@tpub.local` (« 1/2 approbations » puis
 « validée par … et … »). À la fin, il donne l'URL du lecteur (`/ecran/<id>?datetime=…`) qui montre la
 même diffusion à l'écran.
+
+**Scénario bonus (fonctionnalités round 2)** : `node scripts/bonus-scenario.mjs` vérifie en HTTP,
+en 18 points, tout ce que le round 2 ajoute — OCR Tesseract réel sur un PNG dont le script dessine
+le texte, métriques d'image locales, extraction d'images d'une vidéo (`scripts/fixtures/demo-clip.mp4`,
+14 Ko), tarification dynamique creux/pointe, zone polygonale et refus d'un Porteur hors polygone,
+cartes de chaleur, exports PDF (`%PDF`) et Excel (`PK`), clé d'appareil obligatoire, heure simulée,
+URL de média signée / non signée / expirée, flux SSE de supervision, double validation d'une
+campagne (202 puis 200), urgence diffusée seulement après deux approbations, notification de
+l'opérateur, enrôlement TOTP puis connexion en deux temps, et recalibration de l'IA après des
+dérogations administrateur. Le scénario est rejouable : il cherche une fenêtre libre pour chaque
+réservation, désactive son urgence et bloque ses campagnes de test à la fin. Sans
+`BackEnd\tessdata`, le point OCR échoue avec le rappel de lancer `fetch-tessdata.ps1`.
 
 Parcours à montrer dans l'interface :
 
