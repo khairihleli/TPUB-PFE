@@ -2,6 +2,8 @@
 .env
 .env.local
 .env.*.local
+# start-local.ps1 secrets (JWT, media signing, TOTP key, initial admin password)
+.zelqane-local.secrets
 
 # OS
 .DS_Store
@@ -19,3 +21,6 @@ Thumbs.db
 
 # Uploads (runtime data)
 BackEnd/uploads/
+*.log.err
+cloudflared.log
+.wrangler/

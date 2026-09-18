@@ -1,0 +1,13 @@
+# Keeps the Render free backend awake (Render sleeps after 15 min without traffic).
+# Deploy: npx wrangler deploy (Cloudflare account Tukai@tukhnanutha.com)
+name = "zelqane-keepalive"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "ba96891b20b03b9ab8a260e05f32b26b"
+workers_dev = false
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+TARGET_URL = "https://zelqane-backend.onrender.com/actuator/health"

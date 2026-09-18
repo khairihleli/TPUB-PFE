@@ -1,0 +1,814 @@
+                            TUKHNANUTHA
+
+                     TPUB
+
+     Plateforme intelligente de publicité, diffusion et monétisation
+
+                Cahier des Charges
+
+Gestion publicitaire, carte de diffusion, disponibilité temporelle, IA de
+                        vérification et moteur intelligent
+
+                         Tukhnanutha • Document interne • TPUB
+
+             Document confidentiel. Diffusion strictement limitée aux personnes autorisées.
+             Toute copie, reproduction ou transmission – totale ou partielle – est interdite
+
+                                              sans accord écrit préalable.
+Tukhnanutha – Cahier des Charges TPUB           v1.3
+
+Table des matières
+
+1 Introduction & Objectif du Projet             3
+
+2 Périmètre Fonctionnel Global                  3
+
+3 Modules Fonctionnels                          4
+
+3.1 Compte, Authentification & Rôles . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+
+3.2 Espace Client / Annonceur . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+
+3.3 Dashboard Administrateur TPUB . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+
+3.4 Gestion des Campagnes Publicitaires . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+
+3.5 IA de Filtration & Vérification du Contenu . . . . . . . . . . . . . . . . . . . . . . . 6
+
+3.6 Carte Interactive de Sélection des Zones . . . . . . . . . . . . . . . . . . . . . . . . . 7
+
+3.7 Disponibilité Temporelle & Réservation des Supports . . . . . . . . . . . . . . . . . . 8
+
+3.8 Gestion des Supports de Diffusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9
+
+3.9 API de Vérification IA du Contenu . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+
+3.10 API de Diffusion Intelligente . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10
+
+4 Moteur Intelligent de Sélection Publicitaire  11
+
+4.1 Critères de Décision . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+
+4.2 Règles de Priorité . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+
+4.3 Contrôle IA avant Diffusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12
+
+5 Module Messages d’Urgence                     13
+
+6 Statistiques & Tableau de Bord                13
+
+7 Recherche, Filtres & Supervision              14
+
+8 Sécurité & Contrôle                           14
+
+9 Modèle de Données Principal                   15
+
+9.1 Modèle de Données du Module IA . . . . . . . . . . . . . . . . . . . . . . . . . . . . 15
+
+10 Architecture Technique Recommandée           16
+
+10.1 Stack recommandée . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+
+10.2 Architecture logique . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16
+
+11 Scénario de Démonstration Attendu            17
+
+12 Récapitulatif des Priorités                  17
+
+                                       Page 1
+Tukhnanutha – Cahier des Charges TPUB          v1.3
+
+13 Conclusion                                  18
+
+                                       Page 2
+Tukhnanutha – Cahier des Charges TPUB          v1.3
+
+1. Introduction & Objectif du Projet
+
+Ce document constitue le cahier des charges de TPUB, une plateforme intelligente de gestion,
+diffusion, monétisation et contrôle publicitaire développée dans l’écosystème Tukhnanutha Holding.
+Le projet TPUB vise à fournir une solution web complète permettant aux annonceurs de créer des
+campagnes publicitaires, de choisir les zones de diffusion depuis une carte interactive, de consulter
+la disponibilité des supports selon le temps, de réserver des créneaux publicitaires, de faire vérifier
+automatiquement les contenus par une IA avant autorisation, puis de suivre les performances de
+leurs campagnes.
+Vision du produit : TPUB centralise la publicité numérique et physique connectée à travers une
+plateforme capable de gérer les annonceurs, les campagnes, les zones, les supports, les créneaux
+horaires, les statistiques, les alertes prioritaires, l’analyse IA des contenus et la diffusion intelligente.
+La distinction fondamentale du projet réside dans son moteur intelligent de sélection publi-
+citaire et son module IA de filtration et vérification du contenu. Avant toute diffusion,
+le contenu publicitaire est analysé automatiquement afin d’identifier les risques, les anomalies, la
+qualité du message et la conformité aux règles internes. Ensuite, le moteur décide quelle publicité
+doit être diffusée selon la zone, le temps, la disponibilité, le budget, le type de support, la priorité
+et les règles d’urgence.
+
+Convention de lecture
+MVP : fonctionnalités obligatoires constituant la base irréductible du projet.
+BONUS : fonctionnalités avancées renforçant la valeur académique, technique et professionnelle
+du PFE.
+
+2. Périmètre Fonctionnel Global
+
+TPUB doit être développé comme une plateforme web composée de plusieurs espaces fonctionnels :
+
+    — un espace administrateur TPUB ;
+
+    — un espace client annonceur ;
+
+    — un module de création et gestion des campagnes ;
+
+    — une carte interactive de choix des zones de diffusion ;
+
+    — un module de disponibilité temporelle et réservation ;
+
+    — un module de gestion des supports publicitaires ;
+
+    — un module IA de filtration et vérification du contenu avant autorisation ;
+
+    — une API de vérification IA du contenu ;
+
+    — une API de diffusion intelligente ;
+
+    — un moteur de décision publicitaire ;
+
+    — un module d’urgence prioritaire ;
+
+    — un tableau de bord de statistiques et revenus.
+
+                                       Page 3
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+3. Modules Fonctionnels
+
+3.1 Compte, Authentification & Rôles
+
+[MVP]
+    — inscription et connexion par e-mail ;
+    — authentification sécurisée avec JWT ;
+    — gestion des rôles : administrateur, annonceur, opérateur, superviseur ;
+    — profil utilisateur : nom, société, téléphone, adresse, logo ;
+    — gestion des sessions actives ;
+    — déconnexion sécurisée.
+
+[BONUS]
+    — authentification à deux facteurs ;
+    — historique des connexions ;
+    — validation manuelle des comptes annonceurs ;
+    — niveau de confiance du client annonceur.
+
+3.2 Espace Client / Annonceur
+
+[MVP]
+    — création d’un compte annonceur ;
+    — consultation du tableau de bord client ;
+    — création d’une campagne publicitaire ;
+    — upload des médias : image, vidéo ou bannière ;
+    — déclenchement de l’analyse IA après soumission du contenu ;
+    — choix de la zone depuis la carte ;
+    — choix de la période et des créneaux horaires ;
+    — consultation de la disponibilité avant validation ;
+    — suivi du statut de la campagne : brouillon, analyse IA, à vérifier, validée, active, terminée,
+        refusée ;
+    — suivi des statistiques : affichages, clics, interactions, coût estimé.
+
+[BONUS]
+    — duplication d’une campagne existante ;
+    — bibliothèque média du client ;
+    — comparaison entre plusieurs zones ;
+    — recommandation automatique des meilleures zones ;
+
+                                                            Page 4
+Tukhnanutha – Cahier des Charges TPUB                                        v1.3
+
+    — simulation du budget avant validation ;
+    — recommandations IA pour améliorer le texte ou le visuel publicitaire.
+
+3.3 Dashboard Administrateur TPUB
+
+[MVP]
+    — vue globale des campagnes, clients, supports, zones et revenus ;
+    — consultation du rapport IA avant décision ;
+    — validation ou refus des campagnes ;
+    — validation finale après analyse automatique du contenu ;
+    — gestion des comptes annonceurs ;
+    — gestion des supports publicitaires ;
+    — gestion des zones et disponibilités ;
+    — suivi des réservations ;
+    — suivi des diffusions ;
+    — consultation des logs et historiques ;
+    — création des messages d’urgence prioritaires.
+
+[BONUS]
+    — audit trail complet ;
+    — export des statistiques en PDF / Excel ;
+    — tableau de supervision temps réel ;
+    — système d’approbation multi-niveaux ;
+    — tableau de contrôle des décisions IA et corrections administrateur.
+
+3.4 Gestion des Campagnes Publicitaires
+
+[MVP]
+    — création, modification, suppression et consultation des campagnes ;
+    — définition du nom, objectif, média, budget, période et zone ;
+    — gestion des statuts de campagne ;
+    — passage automatique en statut d’analyse IA après upload du contenu ;
+    — validation administrative avant diffusion ;
+    — liaison entre campagne, zone, supports et créneaux ;
+    — calcul des affichages estimés ;
+    — suivi du budget consommé.
+
+[BONUS]
+
+                                                            Page 5
+Tukhnanutha – Cahier des Charges TPUB              v1.3
+
+    — campagnes multi-zones ;
+    — campagnes récurrentes ;
+    — limitation par nombre d’affichages ;
+    — recommandation du budget optimal ;
+    — scoring automatique de la qualité du média.
+
+Statuts fonctionnels de la campagne
+
+Statut              Signification
+brouillon
+pending_ai_check    La campagne est créée mais non soumise.
+approved_by_ai      La campagne attend l’analyse IA du contenu.
+review_required     Le contenu est accepté par l’IA.
+                    Le contenu doit être vérifié manuellement par l’administra-
+rejected_by_ai      teur.
+                    Le contenu est refusé par l’IA et ne peut pas être diffusé sans
+validated_by_admin  correction ou décision spéciale.
+active              La campagne est validée par l’administrateur.
+terminated          La campagne est en diffusion.
+blocked             La campagne est terminée.
+                    La campagne est bloquée et ne peut pas être diffusée.
+
+3.5 IA de Filtration & Vérification du Contenu
+
+Ce module permet d’analyser automatiquement les contenus publicitaires avant leur autorisation
+de diffusion. Il agit comme une couche de contrôle intelligente entre la création de la campagne par
+le client annonceur et la validation finale par l’administrateur TPUB.
+[MVP]
+
+    — analyse automatique du texte de la publicité ;
+    — analyse automatique des images publicitaires ;
+    — analyse automatique des vidéos ou des miniatures vidéo ;
+    — extraction du texte intégré dans les images par OCR lorsque cela est possible ;
+    — détection des contenus non conformes aux règles internes de diffusion ;
+    — détection des mots interdits, messages trompeurs, contenus sensibles, incohérents ou non
+
+        professionnels ;
+    — attribution d’un score de risque au contenu ;
+    — attribution d’un score de qualité publicitaire ;
+    — génération automatique d’un rapport de vérification ;
+    — classification du contenu selon trois états : autorisé, à vérifier manuellement ou refusé ;
+    — blocage automatique de toute campagne non analysée ou non validée ;
+
+                                                            Page 6
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+    — affichage du résultat de vérification dans le dashboard administrateur ;
+    — obligation de validation finale par l’administrateur avant diffusion.
+
+[BONUS]
+
+    — résumé automatique du contenu de la publicité ;
+    — comparaison entre le texte déclaré par le client et le contenu réel du média ;
+    — détection de publicité dupliquée ou quasi-identique ;
+    — détection de contenu trompeur ou incohérent ;
+    — recommandation automatique d’amélioration du contenu ;
+    — classification par secteur : restauration, événement, immobilier, service, commerce, santé,
+
+        formation, transport, etc. ;
+    — apprentissage progressif basé sur les décisions précédentes des administrateurs ;
+    — tableau de suivi des erreurs IA, faux positifs et corrections manuelles.
+
+Règle fonctionnelle importante
+Aucune campagne publicitaire ne doit être autorisée à la diffusion sans passer par le module IA de
+filtration et de vérification. L’IA assiste l’administrateur en détectant les risques, les contenus non
+conformes et les anomalies. La décision finale reste toujours sous le contrôle de l’administrateur
+TPUB.
+
+Flux de validation IA
+
+Client cree campagne
+         |
+
+Upload texte / image / video
+         |
+
+Analyse IA du contenu
+         |
+
+Resultat IA : approved / review_required / rejected
+         |
+
+Administrateur consulte le rapport IA
+         |
+
+Validation ou refus final
+         |
+
+Reservation confirmee
+         |
+
+Diffusion autorisee
+
+3.6 Carte Interactive de Sélection des Zones
+
+Ce module est obligatoire. Il permet au client de choisir visuellement la zone de diffusion de sa
+campagne publicitaire.
+[MVP]
+
+    — affichage d’une carte interactive dans le formulaire de création de campagne ;
+    — utilisation recommandée : Leaflet.js avec OpenStreetMap ;
+
+                                                            Page 7
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+    — sélection d’un point sur la carte ;
+    — définition d’un rayon autour du point sélectionné ;
+    — affichage des supports publicitaires disponibles dans la zone ;
+    — enregistrement des coordonnées : latitude, longitude, rayon ;
+    — liaison de la zone sélectionnée à la campagne ;
+    — vérification que seuls les supports appartenant à la zone ciblée peuvent diffuser la campagne.
+[BONUS]
+    — dessin libre d’un polygone sur la carte ;
+    — sélection de plusieurs zones ;
+    — stockage de la zone en format GeoJSON ;
+    — affichage d’une heatmap des zones les plus demandées ;
+    — filtres par type de support : écran, panneau numérique, point Wi-Fi, application, site web ;
+    — recommandation IA des zones les plus pertinentes.
+
+Règle fonctionnelle importante
+Le client ne doit pas uniquement choisir une zone depuis une liste. Il doit pouvoir sélectionner
+sa zone directement sur une carte, visualiser les supports présents dans cette zone, puis vérifier
+leur disponibilité selon la période et les créneaux souhaités.
+
+3.7 Disponibilité Temporelle & Réservation des Supports
+
+Ce module complète la carte interactive. Il permet au client de voir si les supports présents dans la
+zone choisie sont disponibles pendant la période et les horaires demandés.
+[MVP]
+
+    — choix d’une date de début et d’une date de fin de campagne ;
+    — choix de créneaux horaires : matin, après-midi, soir, journée complète ou horaires personna-
+
+        lisés ;
+    — affichage de la disponibilité des supports sur la carte selon le temps choisi ;
+    — affichage des états : disponible, réservé, occupé, en maintenance, hors ligne ;
+    — blocage automatique d’un support déjà réservé sur le même créneau ;
+    — réservation temporaire lors de la création de la campagne ;
+    — confirmation définitive après validation administrative ;
+    — calcul automatique du nombre de supports disponibles ;
+    — estimation du nombre d’affichages disponibles sur la période.
+[BONUS]
+    — calendrier visuel par support ;
+    — grille horaire de disponibilité ;
+
+                                                            Page 8
+Tukhnanutha – Cahier des Charges TPUB                                                         v1.3
+
+    — comparaison de disponibilité entre plusieurs zones ;
+    — proposition automatique de créneaux alternatifs si la zone est saturée ;
+    — tarification dynamique selon l’heure, la demande et la disponibilité ;
+    — réservation multi-zones avec contrôle des conflits.
+
+Exemple de fonctionnement attendu
+
+    1. Le client ouvre le formulaire de création d’une campagne.
+    2. Il ajoute le contenu publicitaire.
+    3. TPUB lance l’analyse IA du contenu.
+    4. Il sélectionne une zone sur la carte, par exemple Tunis Centre avec un rayon de 3 km.
+    5. Il choisit la période : du 01/06/2026 au 07/06/2026.
+    6. Il choisit les horaires : 08h00 - 20h00.
+    7. TPUB affiche les supports disponibles, occupés ou en maintenance.
+    8. Le client sélectionne les supports disponibles.
+    9. Le système calcule le budget estimé et le nombre d’affichages estimés.
+   10. La campagne passe en statut « en attente de validation ».
+   11. Après validation par l’administrateur, les créneaux deviennent réservés.
+
+Données à stocker
+
+Champ                Description
+
+campaign_id          Identifiant de la campagne liée à la réservation.
+zone_id              Zone géographique sélectionnée sur la carte.
+support_id           Support publicitaire concerné par la réservation.
+start_date           Date de début de diffusion.
+end_date             Date de fin de diffusion.
+start_time           Heure de début du créneau.
+end_time             Heure de fin du créneau.
+availability_status  Disponible, réservé, occupé, maintenance ou hors ligne.
+reservation_status   Temporaire, confirmée, annulée ou expirée.
+estimated_views      Nombre estimé d’affichages pendant le créneau.
+estimated_cost       Coût estimé pour la période choisie.
+
+3.8 Gestion des Supports de Diffusion
+
+[MVP]
+    — création et modification des supports publicitaires ;
+    — type de support : écran, panneau numérique, point Wi-Fi, application, site web ;
+    — position géographique du support ;
+    — zone d’appartenance ;
+
+                                       Page 9
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+    — statut technique : actif, inactif, maintenance, hors ligne ;
+    — capacité de diffusion ;
+    — disponibilité par date et horaire.
+[BONUS]
+    — supervision temps réel des supports ;
+    — historique de fonctionnement ;
+    — score de performance du support ;
+    — estimation automatique de la visibilité.
+
+3.9 API de Vérification IA du Contenu
+
+Cette API permet de lancer l’analyse automatique d’une campagne et de récupérer le rapport IA
+avant la validation administrative.
+[MVP]
+
+    — endpoint pour lancer l’analyse IA d’une campagne ;
+    — endpoint pour récupérer le rapport IA ;
+    — endpoint pour afficher les problèmes détectés ;
+    — endpoint pour valider ou refuser manuellement une campagne ;
+    — blocage automatique de l’API de diffusion si la campagne n’est pas validée par l’IA et l’ad-
+
+        ministrateur.
+
+Exemples d’endpoints
+
+POST /api/ai/check-content/{campaignId}
+GET /api/ai/report/{campaignId}
+POST /api/admin/campaigns/{campaignId}/validate
+POST /api/admin/campaigns/{campaignId}/reject
+
+Exemple de réponse IA
+
+{
+   "campaign_id": 45,
+   "ai_status": "review_required",
+   "risk_score": 62,
+   "quality_score": 74,
+   "detected_issues": ["texte ambigu", "image a verifier"],
+   "recommendation": "verification manuelle avant diffusion"
+
+}
+
+3.10 API de Diffusion Intelligente
+
+L’API de diffusion permet à un support de demander au serveur TPUB le contenu publicitaire à
+afficher.
+
+                                                            Page 10
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+[MVP]
+    — endpoint de récupération de la prochaine publicité ;
+    — filtrage selon la zone du support ;
+    — filtrage selon le temps courant ;
+    — vérification de la disponibilité et de la réservation ;
+    — vérification obligatoire du statut IA et du statut administrateur ;
+    — retour d’un contenu sous forme JSON ;
+    — journalisation de chaque diffusion.
+
+Exemple d’appel API
+
+GET /api/diffusion/next?supportId=12&zone=Tunis&datetime=2026-06-01T10:30:00
+
+Exemple de réponse JSON
+
+{
+   "type": "publicite",
+   "campaign_id": 45,
+   "title": "Promotion Restaurant",
+   "media_url": "/uploads/campaigns/resto.jpg",
+   "duration": 10,
+   "zone": "Tunis Centre",
+   "priority": 2
+
+}
+
+4. Moteur Intelligent de Sélection Publicitaire
+
+Le moteur intelligent est le coeur différenciateur de TPUB. Il choisit automatiquement la publicité
+la plus adaptée à diffuser selon un ensemble de règles métier.
+
+4.1 Critères de Décision
+
+[MVP]
+    — priorité des messages d’urgence ;
+    — zone géographique du support ;
+    — date et heure courante ;
+    — disponibilité du support ;
+    — réservation confirmée ;
+    — statut de la campagne ;
+    — statut IA du contenu ;
+    — validation finale par l’administrateur ;
+
+                                                            Page 11
+Tukhnanutha – Cahier des Charges TPUB                                              v1.3
+
+    — budget disponible ;
+    — fréquence maximale d’affichage ;
+    — rotation équitable entre campagnes actives.
+[BONUS]
+    — score de pertinence par zone ;
+    — score de performance historique ;
+    — prédiction du meilleur créneau ;
+    — optimisation automatique du budget ;
+    — recommandation de diffusion selon l’audience estimée ;
+    — pondération de la diffusion selon le score qualité IA.
+
+4.2 Règles de Priorité
+
+Priorité  Règle
+1
+2         Si un message d’urgence actif concerne la zone, il est diffusé avant
+3         toute publicité.
+4         Si une campagne est confirmée et réservée sur ce support à cet horaire,
+5         elle devient candidate.
+6         Si plusieurs campagnes sont candidates, le système applique le score
+          de priorité et le budget.
+          Si les scores sont équivalents, le système applique une rotation équi-
+          table.
+          Si la campagne n’est pas approuvée par l’IA et par l’administrateur,
+          elle est exclue du moteur de diffusion.
+          Si aucune campagne n’est disponible, le support affiche un contenu
+          par défaut.
+
+4.3 Contrôle IA avant Diffusion
+
+Avant qu’une campagne devienne candidate pour la diffusion, le moteur intelligent doit vérifier son
+statut de validation IA.
+[MVP]
+
+    — une campagne avec un contenu non analysé ne peut pas être diffusée ;
+    — une campagne refusée par l’IA ne peut pas être diffusée ;
+    — une campagne signalée comme risquée doit passer par une validation manuelle ;
+    — une campagne validée par l’IA et par l’administrateur peut entrer dans le moteur de diffusion ;
+    — le score IA peut influencer la priorité et la fréquence de diffusion ;
+    — toute décision IA doit être enregistrée dans les logs.
+
+                                       Page 12
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+Règle de décision
+
+SI campaign.ai_status = "approved_by_ai"
+ET campaign.admin_status = "validated_by_admin"
+ET campaign.reservation_status = "confirmed"
+ALORS la campagne peut etre diffusee.
+
+SINON la campagne reste bloquee.
+
+5. Module Messages d’Urgence
+
+TPUB doit pouvoir diffuser des messages prioritaires en cas de besoin : communication institution-
+nelle, sécurité, alerte locale, information urgente ou message de supervision.
+[MVP]
+
+    — création d’un message d’urgence ;
+    — choix de la zone concernée sur la carte ;
+    — choix de la période et durée de diffusion ;
+    — priorité supérieure à toutes les campagnes publicitaires ;
+    — historique des messages diffusés ;
+    — arrêt automatique du message à la fin de la période.
+[BONUS]
+    — niveaux d’urgence ;
+    — validation par plusieurs administrateurs ;
+    — notification des opérateurs ;
+    — rapport post-diffusion.
+
+6. Statistiques & Tableau de Bord
+
+[MVP]
+    — nombre de campagnes totales ;
+    — nombre de campagnes actives ;
+    — nombre de campagnes en attente ;
+    — nombre de campagnes en attente d’analyse IA ;
+    — nombre de campagnes refusées ou signalées par l’IA ;
+    — nombre de supports disponibles ;
+    — nombre de réservations confirmées ;
+    — affichages par campagne ;
+    — affichages par support ;
+
+                                                            Page 13
+Tukhnanutha – Cahier des Charges TPUB  v1.3
+
+    — affichages par zone ;
+    — budget estimé et consommé ;
+    — historique journalier.
+[BONUS]
+    — graphiques avancés ;
+    — carte de chaleur des diffusions ;
+    — prédiction de performance ;
+    — export PDF / Excel ;
+    — tableau comparatif entre zones ;
+    — dashboard IA : score moyen de risque, score moyen de qualité, taux de validation et taux de
+
+        refus.
+
+7. Recherche, Filtres & Supervision
+
+[MVP]
+    — recherche de campagnes par nom, client, zone ou statut ;
+    — filtre par date ;
+    — filtre par disponibilité ;
+    — filtre par type de support ;
+    — filtre par statut IA : approved, review required, rejected ;
+    — recherche des réservations conflictuelles ;
+    — consultation des supports sur carte.
+
+[BONUS]
+    — recherche sémantique ;
+    — recommandations de filtres ;
+    — supervision temps réel ;
+    — alertes de saturation de zone.
+
+8. Sécurité & Contrôle
+
+[MVP]
+    — authentification sécurisée ;
+    — séparation des rôles ;
+    — protection des API ;
+    — contrôle d’accès aux campagnes ;
+
+                                                            Page 14
+Tukhnanutha – Cahier des Charges TPUB                                              v1.3
+
+    — logs des actions administratives ;
+    — limitation des actions sensibles aux administrateurs ;
+    — validation obligatoire avant diffusion ;
+    — journalisation des décisions IA et administrateur ;
+    — blocage des campagnes sans analyse IA.
+[BONUS]
+    — 2FA ;
+    — journal d’audit avancé ;
+    — détection d’activités suspectes ;
+    — export des données client ;
+    — politique de confidentialité et conditions d’utilisation.
+
+9. Modèle de Données Principal
+
+Table                 Rôle
+
+users                 Comptes utilisateurs et administrateurs.
+roles                 Rôles et permissions.
+clients               Informations des annonceurs.
+campaigns             Campagnes publicitaires.
+media_files           Images, vidéos et bannières liées aux campagnes.
+zones                 Zones géographiques disponibles.
+campaign_zones        Liaison entre campagnes et zones.
+diffusion_supports    Supports publicitaires physiques ou numériques.
+support_availability  Disponibilité des supports selon dates et horaires.
+reservations          Réservations des supports pour les campagnes.
+diffusion_logs        Historique des diffusions réalisées.
+ai_content_checks     Résultats des analyses IA sur les textes, images et vidéos.
+ai_moderation_rules   Règles de filtrage utilisées par le système IA.
+ai_decision_logs      Historique des décisions IA et validations administratives.
+emergency_messages    Messages urgents prioritaires.
+payments_simulation   Simulation des paiements et budgets.
+statistics            Agrégation des statistiques.
+
+9.1 Modèle de Données du Module IA
+
+Champ                 Description
+check_id              Identifiant unique de l’analyse IA.
+
+                                       Page 15
+Tukhnanutha – Cahier des Charges TPUB                                   v1.3
+
+campaign_id        Campagne analysée par l’IA.
+media_id           Média analysé : image, vidéo ou bannière.
+content_type       Type de contenu : texte, image, vidéo ou miniature.
+risk_score         Score de risque calculé par l’IA.
+quality_score      Score de qualité publicitaire.
+detected_issues    Liste des problèmes détectés.
+ai_status          Approved, Review Required ou Rejected.
+ai_reason          Motif de la décision IA.
+admin_decision     Décision finale de l’administrateur.
+checked_at         Date et heure de l’analyse.
+
+10. Architecture Technique Recommandée
+
+10.1 Stack recommandée
+
+Couche             Technologie recommandée
+
+Frontend           Angular
+Carte interactive  Leaflet.js + OpenStreetMap
+Backend            Spring Boot
+Module IA          Service Python / Flask ou module backend simulé pour le MVP
+OCR                Tesseract ou service OCR simulé
+Base de données    MySQL ou PostgreSQL
+Authentification   JWT
+API                REST API
+Stockage médias    Dossier serveur ou service objet simulé
+Dashboard          Angular Charts / Chart.js
+
+10.2 Architecture logique
+
+Client Angular
+    |
+    |-- Interface annonceur
+    |-- Dashboard administrateur
+    |-- Carte interactive Leaflet
+    |
+
+Backend Spring Boot
+    |
+    |-- Authentification JWT
+    |-- Gestion campagnes
+    |-- Gestion zones et supports
+    |-- Disponibilite et reservations
+    |-- API de verification IA
+    |-- API de diffusion
+    |-- Moteur intelligent
+
+                                                            Page 16
+Tukhnanutha – Cahier des Charges TPUB                                       v1.3
+
+    |-- Module IA de filtration du contenu
+    |
+Base de donnees MySQL
+
+11. Scénario de Démonstration Attendu
+
+Pour valider le PFE, l’étudiant doit préparer une démonstration complète :
+
+    1. un client annonceur crée un compte ;
+    2. il crée une campagne publicitaire ;
+    3. il ajoute une image ou une vidéo ;
+    4. l’IA analyse automatiquement le contenu ;
+    5. le rapport IA est généré ;
+    6. l’administrateur consulte le rapport IA ;
+    7. le client ouvre la carte interactive ;
+    8. il sélectionne une zone de diffusion ;
+    9. il choisit une période et des créneaux horaires ;
+   10. TPUB affiche la disponibilité des supports selon le temps choisi ;
+   11. le client choisit les supports disponibles ;
+   12. le système estime le budget et les affichages ;
+   13. l’administrateur valide la campagne après analyse IA ;
+   14. un support appelle l’API de diffusion ;
+   15. le moteur sélectionne la bonne publicité ;
+   16. les statistiques sont mises à jour ;
+   17. un message d’urgence est créé ;
+   18. le message d’urgence remplace temporairement la publicité normale.
+
+12. Récapitulatif des Priorités
+
+Priorité     Module / Fonctionnalité                                        Statut
+
+Obligatoire  Authentification, rôles, comptes annonceurs                    MVP complet
+Obligatoire  Dashboard administrateur TPUB                                  MVP complet
+Obligatoire  Interface client annonceur                                     MVP complet
+Obligatoire  Création et gestion des campagnes                              MVP complet
+Obligatoire  IA de filtration et vérification du contenu                    MVP essentiel
+Obligatoire  Rapport IA avant validation admin                              MVP essentiel
+Obligatoire  Blocage des campagnes non conformes                            Sécurité métier
+Obligatoire  Carte interactive de choix de zone                             MVP essentiel
+Obligatoire  Disponibilité selon date et horaire                            MVP essentiel
+Obligatoire  Réservation des supports                                       MVP essentiel
+Obligatoire  API de vérification IA                                         Coeur technique
+Obligatoire  API de diffusion intelligente                                  Coeur technique
+Obligatoire  Moteur de sélection publicitaire                               Coeur du PFE
+
+                                            Page 17
+Tukhnanutha – Cahier des Charges TPUB                                         v1.3
+
+Obligatoire  Messages d’urgence prioritaires         Coeur métier
+Important    Statistiques, graphiques et historique  Bonus fort
+Important    Calcul budget / affichages estimés      Bonus fort
+Important    OCR et analyse texte dans image         Bonus fort
+Important    Score qualité et score risque           Bonus IA
+Important    Recommandation des meilleures zones     Bonus IA
+Optionnel    Apprentissage selon décisions admin     Bonus avancé
+Optionnel    Tarification dynamique                  Bonus avancé
+Optionnel    Supervision temps réel des supports     Bonus avancé
+Optionnel    Heatmap, prédiction, export PDF/Excel   Bonus professionnel
+
+Lecture du tableau
+Les fonctionnalités obligatoires constituent la base irréductible du projet. La carte interactive,
+la disponibilité temporelle et l’IA de vérification sont considérées comme des éléments centraux
+de TPUB, car elles permettent au client de choisir où et quand sa publicité sera diffusée, tout
+en garantissant que le contenu soit contrôlé avant autorisation.
+
+13. Conclusion
+
+La version MVP de TPUB doit permettre de démontrer une plateforme web complète, profession-
+nelle et évolutive. L’étudiant doit se concentrer sur la création d’un système fonctionnel où un
+annonceur peut créer une campagne, importer son contenu, déclencher une analyse IA, sélectionner
+sa zone depuis une carte, vérifier la disponibilité des supports selon la date et l’heure, réserver les
+créneaux disponibles, puis suivre les performances après validation et diffusion.
+
+Le résultat final attendu est une plateforme capable de prouver le fonctionnement du modèle TPUB :
+publicité ciblée par zone, disponibilité temporelle, réservation intelligente, vérification
+IA du contenu, diffusion contrôlée, statistiques et priorité aux messages d’urgence.
+
+Tukhnanutha Holding • TPUB • Cahier des Charges v1.3 • Document confidentiel
+                                              Page 18
+

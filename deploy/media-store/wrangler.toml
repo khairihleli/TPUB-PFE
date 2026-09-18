@@ -1,0 +1,11 @@
+# R2 access for the backend (FileStorageService -> RemoteMediaStore). Private: every call needs
+# "Authorization: Bearer <MEDIA_TOKEN>" (secret: npx wrangler secret put MEDIA_TOKEN).
+name = "zelqane-media"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+account_id = "ba96891b20b03b9ab8a260e05f32b26b"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "zelqane-media"

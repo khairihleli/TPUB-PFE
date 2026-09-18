@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Tesseract OCR data (scripts/fetch-tessdata.*) ###
+tessdata/

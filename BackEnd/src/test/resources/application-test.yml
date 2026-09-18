@@ -7,5 +7,35 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
+    properties:
+      hibernate:
+        # H2 must use its own dialect: the PostgreSQL dialect double-encodes JSON columns on H2.
+        dialect: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: false
+
+zelqane:
+  # Round 2 (L2): fixed test-only secrets (never used outside the test profile)
+  jwt:
+    secret: test-only-jwt-secret-0123456789abcdef-0123456789abcdef
+  security:
+    totp:
+      encryption-key: test-only-totp-key-0123456789abcdef-0123456789
+  diffusion:
+    simulated-time-enabled: true
+  scheduler:
+    enabled: false
+  ai:
+    openai-enabled: false
+    ocr:
+      mode: simulated
+  analysis:
+    ocr:
+      mode: simulated
+    provider:
+      type: local
+  # Lane B: keep test uploads out of the source tree
+  media:
+    upload-dir: target/test-uploads
+    base-url: /uploads
+    signing-secret: test-only-media-signing-secret-0123456789abcdef

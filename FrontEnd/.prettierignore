@@ -1,0 +1,10 @@
+node_modules
+.next
+.data
+.qa
+coverage
+test-results
+playwright-report
+public
+package-lock.json
+docs
