@@ -12,6 +12,13 @@ services:
     dockerfilePath: ./BackEnd/Dockerfile
     healthCheckPath: /actuator/health
     autoDeploy: true
+    # Rebuild only when the backend changes (frontend/docs commits never trigger a build).
+    buildFilter:
+      paths:
+        - BackEnd/**
+      ignoredPaths:
+        - BackEnd/**/*.md
+        - BackEnd/src/test/**
     envVars:
       - key: SPRING_PROFILES_ACTIVE
         value: prod

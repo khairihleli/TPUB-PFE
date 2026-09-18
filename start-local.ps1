@@ -7,11 +7,13 @@
 #   3. Next.js frontend (port 3000)
 #   4. -Public only: Cloudflare Tunnel "zelqane" publishing the frontend on https://zelqane.com
 #      (backend and database stay reachable from this PC only; see deploy\cloudflare\README.md)
-# Usage:  powershell -ExecutionPolicy Bypass -File .\start-local.ps1 [-Seed] [-Public] [-Stop]
+#   -ApiUrl <url>: use a remote backend (Render, see render.yaml) instead of steps 1-3
+# Usage:  powershell -ExecutionPolicy Bypass -File .\start-local.ps1 [-Seed] [-Public] [-ApiUrl <url>] [-Stop]
 # =============================================================================
 param(
   [switch]$Seed,
   [switch]$Public,
+  [string]$ApiUrl = "",
   [switch]$Stop
 )
 
@@ -120,6 +122,8 @@ function Get-LocalSecrets {
   $values
 }
 
+# With -ApiUrl (e.g. the Render backend) steps 1-3 are skipped: no local database or backend.
+if (-not $ApiUrl) {
 # --- 1. PostgreSQL -----------------------------------------------------------
 if (-not (Test-Path "$PgBin\pg_ctl.exe")) {
   throw "PostgreSQL portable introuvable dans $PgBin. Téléchargez https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip et extrayez-le dans $PgHome."
@@ -213,6 +217,8 @@ if ($Seed) {
   Pop-Location
 }
 
+}
+
 # --- 4. Frontend -------------------------------------------------------------
 if (-not (Test-Port 3000)) {
   $fe = Join-Path $Root "FrontEnd"
@@ -229,7 +235,7 @@ if (-not (Test-Port 3000)) {
     Push-Location $fe; npm run build; Pop-Location
     Set-Content -Path $siteUrlMarker -Value $siteUrl -Encoding ascii
   }
-  $env:ZELQANE_API_URL = "http://localhost:8080"
+  $env:ZELQANE_API_URL = if ($ApiUrl) { $ApiUrl } else { "http://localhost:8080" }
   Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run start > `"$FrontendLog`" 2>&1" -WorkingDirectory $fe -WindowStyle Hidden
 }
 if (-not (Wait-Http "http://localhost:3000/" 60)) { throw "Le frontend ne répond pas. Consultez $FrontendLog" }
