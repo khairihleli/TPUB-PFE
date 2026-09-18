@@ -7,7 +7,7 @@ services:
     runtime: docker
     plan: free
     region: frankfurt
-    branch: feat/complete-cahier-des-charges
+    branch: main
     dockerContext: ./BackEnd
     dockerfilePath: ./BackEnd/Dockerfile
     healthCheckPath: /actuator/health
