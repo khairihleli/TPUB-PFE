@@ -47,4 +47,4 @@ une solution de secours : les routes du Worker passent avant lui.
 ## Comptes de test
 
 `test.admin@zelqane.com` (administrateur) et `test.annonceur@zelqane.com` (annonceur validé).
-Mots de passe : `%USERPROFILE%.zelqane-test-accounts.txt` (hors dépôt).
+Mots de passe : `%USERPROFILE%\.zelqane-test-accounts.txt` (hors dépôt).

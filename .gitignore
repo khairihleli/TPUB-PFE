@@ -23,3 +23,4 @@ Thumbs.db
 BackEnd/uploads/
 *.log.err
 cloudflared.log
+.wrangler/
