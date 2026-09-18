@@ -15,7 +15,6 @@ public class TpubProperties {
 
     private Jwt jwt = new Jwt();
     private Media media = new Media();
-    private Ai ai = new Ai();
     private Cors cors = new Cors();
     /** Lane A: business time zone used by the injected {@link java.time.Clock}. */
     private String timezone = "Africa/Tunis";
@@ -129,25 +128,6 @@ public class TpubProperties {
         /** Round 2 (L2): HMAC key of signed media URLs; empty or shorter than 32 bytes → derived from the JWT secret. */
         private String signingSecret;
         private long signedUrlTtlSeconds = 3600;
-    }
-
-    @Data
-    public static class Ai {
-        private String serviceUrl;
-        private long timeoutMs;
-        private boolean openaiEnabled = true;
-        private String openaiApiKey;
-        private String openaiModel = "gpt-4o-mini";
-        /** Lane A: OCR engine selection. */
-        private Ocr ocr = new Ocr();
-    }
-
-    @Data
-    public static class Ocr {
-        /** {@code auto}, {@code tesseract} or {@code simulated}. */
-        private String mode = "auto";
-        private String command = "tesseract";
-        private String languages = "fra+eng";
     }
 
     @Data
