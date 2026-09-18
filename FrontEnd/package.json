@@ -18,7 +18,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "cf:build": "node scripts/cf.mjs build",
+    "cf:preview": "node scripts/cf.mjs preview",
+    "cf:deploy": "node scripts/cf.mjs deploy"
   },
   "dependencies": {
     "framer-motion": "^12.43.0",
@@ -35,6 +38,7 @@
     "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.5",
     "@next/eslint-plugin-next": "15.5.25",
+    "@opennextjs/cloudflare": "^1.20.6",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
@@ -46,6 +50,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.180.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5.2.0",
@@ -56,6 +61,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.70.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.135.0"
   }
 }

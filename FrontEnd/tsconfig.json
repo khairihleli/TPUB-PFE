@@ -25,5 +25,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", ".next", "playwright-report", "test-results", "coverage"]
+  "exclude": ["node_modules", ".next", ".open-next", ".wrangler", "playwright-report", "test-results", "coverage"]
 }

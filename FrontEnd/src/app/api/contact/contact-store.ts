@@ -64,7 +64,22 @@ export function contactDataFile(): string {
   return path.join(process.cwd(), ".data", "contact-requests.ndjson");
 }
 
-export type DeliveryResult = { ok: true; channel: "webhook" | "file" } | { ok: false };
+export type DeliveryResult = { ok: true; channel: "webhook" | "r2" | "file" } | { ok: false };
+
+type ContactBucket = {
+  put(key: string, value: string, options?: { httpMetadata?: { contentType?: string } }): Promise<unknown>;
+};
+
+/** The CONTACT_BUCKET R2 binding when running on Cloudflare Workers, else null (Node: file fallback). */
+async function contactBucket(): Promise<ContactBucket | null> {
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const env = (await getCloudflareContext({ async: true })).env as { CONTACT_BUCKET?: ContactBucket };
+    return env.CONTACT_BUCKET ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const WEBHOOK_TIMEOUT_MS = 8_000;
 
@@ -92,6 +107,23 @@ export async function deliverContact(record: ContactRecord): Promise<DeliveryRes
     } catch (e) {
       console.error(
         `[contact] webhook unreachable for request ${record.id}: ${(e as Error | null)?.message ?? "unknown error"}`,
+      );
+      return { ok: false };
+    }
+  }
+
+  // Cloudflare Workers: no writable disk, the requests go to the CONTACT_BUCKET R2 bucket.
+  const bucket = await contactBucket();
+  if (bucket) {
+    try {
+      await bucket.put(`requests/${record.receivedAt.slice(0, 10)}/${record.id}.json`, JSON.stringify(record), {
+        httpMetadata: { contentType: "application/json" },
+      });
+      console.info(`[contact] request ${record.id} stored in R2 (${record.profil} · ${record.besoin})`);
+      return { ok: true, channel: "r2" };
+    } catch (e) {
+      console.error(
+        `[contact] R2 refused request ${record.id}: ${(e as Error | null)?.message ?? "unknown error"}`,
       );
       return { ok: false };
     }

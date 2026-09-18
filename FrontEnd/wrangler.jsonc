@@ -1,0 +1,23 @@
+// ZELQANE frontend on Cloudflare Workers (OpenNext). Deploy: npm run cf:deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zelqane-frontend",
+  "account_id": "ba96891b20b03b9ab8a260e05f32b26b",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "zelqane-frontend" }],
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "zelqane.com/*", "zone_name": "zelqane.com" },
+    { "pattern": "www.zelqane.com/*", "zone_name": "zelqane.com" }
+  ],
+  "vars": {
+    "ZELQANE_API_URL": "https://zelqane-backend.onrender.com",
+    "SITE_URL": "https://zelqane.com"
+  },
+  // Contact form requests (the Worker has no writable disk)
+  "r2_buckets": [{ "binding": "CONTACT_BUCKET", "bucket_name": "zelqane-contact" }],
+  "observability": { "enabled": true }
+}

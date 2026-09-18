@@ -27,3 +27,8 @@ scripts/.demo-device-keys.json
 # misc
 .DS_Store
 npm-debug.log*
+
+# Cloudflare (OpenNext / wrangler)
+.open-next/
+.wrangler/
+.dev.vars
